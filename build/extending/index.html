@@ -754,6 +754,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/safety/" class="md-nav__link">
         
   
@@ -1110,6 +1138,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbooks/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1404,6 +1460,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#conditionally-registered-servers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conditionally-registered servers
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1667,6 +1734,17 @@
     <span class="md-ellipsis">
       
         Option B: HTTP server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conditionally-registered-servers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conditionally-registered servers
       
     </span>
   </a>
@@ -1976,6 +2054,16 @@
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="p">}</span>
 </span></code></pre></div>
 <p>Add the env var to <code>src/config.ts</code> following the existing <code>context7ApiKey</code> pattern, document it in <a href="../../operate/configuration/"><code>../operate/configuration.md</code></a>, and you're done.</p>
+<h3 id="conditionally-registered-servers">Conditionally-registered servers<a class="headerlink" href="#conditionally-registered-servers" title="Permanent link">&para;</a></h3>
+<p>A server need not be registered on every run. <code>github-state</code> is registered
+only when <code>enableGithubState</code> is set, and <code>merge_readiness</code> (the scheduled-
+actions auto-merge gate) only when <code>enableMergeReadiness</code> is set: the daemon
+passes that flag only for a scheduled action whose effective <code>auto_merge</code> is
+on. Add an <code>enableX?: boolean</code> to <code>ResolveMcpServersOptions</code> and gate the
+<code>servers["x"] = …</code> line on it. MCP servers in <code>src/mcp/servers/</code> must not
+import the daemon <code>config</code>; pass everything they need via env (see
+<code>merge-readiness.ts</code>, which takes <code>BOT_APP_LOGIN</code> from env rather than
+importing <code>config</code>).</p>
 <h2 id="the-webhook-workflow-boundary">The webhook → workflow boundary<a class="headerlink" href="#the-webhook-workflow-boundary" title="Permanent link">&para;</a></h2>
 <p>If your extension reacts to a GitHub event the bot does not yet handle (e.g. <code>push</code>, <code>pull_request_target</code>), the work splits in two:</p>
 <ol>

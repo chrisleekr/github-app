@@ -754,6 +754,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/safety/" class="md-nav__link">
         
   
@@ -1426,6 +1454,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runbooks/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1978,6 +2034,7 @@
 </tr>
 </tbody>
 </table>
+<p>The <code>daemon</code> image additionally bundles <code>@mermaid-js/mermaid-cli</code> (<code>mmdc</code>) plus a headless Chromium, used by the scheduled <code>research</code> action's diagram-validation gate. It is daemon-only because the agent runs on the daemon, not the orchestrator.</p>
 <p>The two images intentionally diverge after the shared base because their cost and attack surface differ. The shared prefix is enforced byte-identical by <code>scripts/check-dockerfile-base-sync.ts</code> (in CI) between the <code># --- SHARED-BASE-BEGIN ---</code> and <code># --- SHARED-BASE-END ---</code> markers.</p>
 <h3 id="shared-base-stages">Shared base stages<a class="headerlink" href="#shared-base-stages" title="Permanent link">&para;</a></h3>
 <table>
@@ -1991,7 +2048,7 @@
 <tbody>
 <tr>
 <td><code>base</code></td>
-<td><code>oven/bun:1.3.13</code></td>
+<td><code>oven/bun:1.3.14</code></td>
 <td>Installs Node.js 20 (for the Claude Code CLI), npm 11, <code>curl</code>, <code>git</code>, <code>@anthropic-ai/claude-code</code> globally, plus targeted openssl CVE upgrades.</td>
 </tr>
 <tr>

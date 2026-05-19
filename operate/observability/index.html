@@ -754,6 +754,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/safety/" class="md-nav__link">
         
   
@@ -1090,6 +1118,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#scheduled-action-log-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled action log fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#aggregate-reporting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1279,6 +1318,34 @@
     
   
     Stuck bot:ship session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runbooks/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
   
 
     
@@ -1597,6 +1664,17 @@
     <span class="md-ellipsis">
       
         Dispatch reasons
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduled-action-log-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled action log fields
       
     </span>
   </a>
@@ -1934,6 +2012,41 @@
 </tr>
 </tbody>
 </table>
+<h2 id="scheduled-action-log-fields">Scheduled action log fields<a class="headerlink" href="#scheduled-action-log-fields" title="Permanent link">&para;</a></h2>
+<p>Emitted by the scheduler (<code>src/scheduler/</code>, component <code>scheduler</code>) and the
+daemon executor.</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scheduler.action.claimed</code></td>
+<td>A due cron slot was claimed and a <code>scheduled-action</code> job enqueued.</td>
+</tr>
+<tr>
+<td><code>scheduler.action.skipped_missed</code></td>
+<td>A slot fired while the server was down; advanced over, not run.</td>
+</tr>
+<tr>
+<td><code>scheduler.action.daemon.started</code></td>
+<td>The daemon began running a scheduled action.</td>
+</tr>
+<tr>
+<td><code>scheduler.action.daemon.completed</code></td>
+<td>The action's agent session finished (<code>success</code>, <code>costUsd</code>, <code>numTurns</code>).</td>
+</tr>
+<tr>
+<td><code>scheduler.action.daemon.failed</code></td>
+<td>The action failed before the agent ran (e.g. repo lookup).</td>
+</tr>
+</tbody>
+</table>
+<p>The scheduler logs action metadata (<code>name</code>, <code>cron</code>, <code>owner</code>, <code>repo</code>,
+<code>deliveryId</code>) only, never the resolved prompt text.</p>
 <h2 id="aggregate-reporting">Aggregate reporting<a class="headerlink" href="#aggregate-reporting" title="Permanent link">&para;</a></h2>
 <p>When <code>DATABASE_URL</code> is set, helpers in <code>src/db/queries/dispatch-stats.ts</code> expose the most operator-relevant aggregates:</p>
 <table>

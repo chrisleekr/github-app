@@ -754,6 +754,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/safety/" class="md-nav__link">
         
   
@@ -1100,6 +1128,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#scheduled-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled actions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prompt-cache-layout" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1328,6 +1367,34 @@
     
   
     Stuck bot:ship session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runbooks/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
   
 
     
@@ -1684,6 +1751,17 @@
     <span class="md-ellipsis">
       
         Ship
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduled-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled actions
       
     </span>
   </a>
@@ -2294,6 +2372,41 @@ cap, so there is nothing else to tune.</p>
 <td><code>SHIP_FORBIDDEN_TARGET_BRANCHES</code></td>
 <td>empty</td>
 <td>Comma-separated branches the bot refuses to shepherd PRs against.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="scheduled-actions">Scheduled actions<a class="headerlink" href="#scheduled-actions" title="Permanent link">&para;</a></h2>
+<p>Controls the internal scheduler that runs prompt-based actions declared in a
+repo's <code>.github-app.yaml</code>. See <a href="../../use/scheduled-actions/">Scheduled actions</a>
+for the file schema. Server mode only; a daemon process ignores these.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SCHEDULER_ENABLED</code></td>
+<td><code>false</code></td>
+<td>Master kill-switch. When false the scheduler never starts. It also will not start without <code>DATABASE_URL</code> and a non-empty <code>ALLOWED_OWNERS</code>.</td>
+</tr>
+<tr>
+<td><code>SCHEDULER_SCAN_INTERVAL_MS</code></td>
+<td><code>300000</code> (5 min)</td>
+<td>Cadence of the scan that enumerates installations, fetches each <code>.github-app.yaml</code>, and enqueues due actions. A value outside <code>[60000, 3600000]</code> is rejected at startup.</td>
+</tr>
+<tr>
+<td><code>SCHEDULER_ALLOW_AUTO_MERGE</code></td>
+<td><code>false</code></td>
+<td>Hard kill-switch for unattended auto-merge. Effective auto-merge requires BOTH this AND a per-action <code>auto_merge: true</code>; otherwise no merge tool runs.</td>
+</tr>
+<tr>
+<td><code>SCHEDULER_CONFIG_FILE</code></td>
+<td><code>.github-app.yaml</code></td>
+<td>Filename read from each installed repo's default-branch root.</td>
 </tr>
 </tbody>
 </table>

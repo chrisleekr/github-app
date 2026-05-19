@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://chrisleekr.github.io/github-app-playground/build/architecture/">
       
       
-        <link rel="prev" href="../../operate/runbooks/stuck-ship-intent/">
+        <link rel="prev" href="../../operate/runbooks/scheduled-actions/">
       
       
         <link rel="next" href="../extending/">
@@ -754,6 +754,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/safety/" class="md-nav__link">
         
   
@@ -1110,6 +1138,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbooks/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1364,6 +1420,17 @@
     <span class="md-ellipsis">
       
         System/user trust boundary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduled-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled actions
       
     </span>
   </a>
@@ -1661,6 +1728,17 @@
     <span class="md-ellipsis">
       
         System/user trust boundary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduled-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled actions
       
     </span>
   </a>
@@ -1971,6 +2049,18 @@
     classDef cache fill:#0b5cad,stroke:#083e74,color:#ffffff</code></pre>
 <p>The per-call nonce on <code>&lt;untrusted_*&gt;</code> tags lives only in the user message; the append references those tags by literal <code>&lt;nonce&gt;</code> placeholder. The attacker-unpredictable suffix stays intact (so injected user data cannot close the spotlight block with a fixed string) while the append remains byte-identical across calls. The trust boundary is now structural rather than positional: append = trusted, user message = data.</p>
 <p>Three handlers ship the split today: the main pipeline (<code>src/core/pipeline.ts</code>) reads <code>config.promptCacheLayout</code> and conditionally threads <code>buildPromptParts()</code> output through; <code>src/workflows/handlers/triage.ts</code> and <code>src/workflows/handlers/plan.ts</code> do the same with their handler-specific builders. The executor's completion log surfaces <code>cacheReadInputTokens</code>, <code>cacheCreationInputTokens</code>, and <code>promptCacheLayout</code> so operators can verify hits before deciding to roll out further. See <a href="../../operate/configuration/#prompt-cache-layout"><code>../operate/configuration.md</code></a> for the rollout playbook.</p>
+<h2 id="scheduled-actions">Scheduled actions<a class="headerlink" href="#scheduled-actions" title="Permanent link">&para;</a></h2>
+<p>A GitHub App receives no native cron event, so scheduled automation runs on an
+internal timer inside the webhook server (<code>src/scheduler/</code>), alongside the
+ship-tickle scheduler and proposal poller. Each scan enumerates installed
+repos (owner-allowlist filtered), reads a <code>.github-app.yaml</code> from each,
+evaluates every action's cron against a per-action <code>last_run_at</code> row, and
+claims a due slot with a compare-and-swap UPDATE so multi-replica deployments
+never double-fire. A claimed slot enqueues a <code>scheduled-action</code> job: a job
+kind on the scoped-job rail, which the daemon runs as one agent session
+(<code>src/daemon/scheduled-action-executor.ts</code>), entity-free and with no tracking
+comment. Missed slots are skipped, not backfilled. See
+<a href="../../use/scheduled-actions/">Scheduled actions</a>.</p>
 <h2 id="directory-layout">Directory layout<a class="headerlink" href="#directory-layout" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2069,7 +2159,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../operate/runbooks/stuck-ship-intent/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Stuck bot:ship session">
+          <a href="../../operate/runbooks/scheduled-actions/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Scheduled actions">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2079,7 +2169,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Stuck bot:ship session
+                Scheduled actions
               </div>
             </div>
           </a>
