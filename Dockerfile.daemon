@@ -99,7 +99,7 @@ ARG STERN_VERSION=v1.34.0
 # renovate: datasource=github-releases depName=argoproj/argo-cd
 ARG ARGOCD_VERSION=v3.4.1
 # renovate: datasource=github-releases depName=fluxcd/flux2
-ARG FLUX_VERSION=v2.8.6
+ARG FLUX_VERSION=v2.8.7
 # renovate: datasource=github-releases depName=terraform-linters/tflint
 ARG TFLINT_VERSION=v0.62.0
 # renovate: datasource=github-releases depName=koalaman/shellcheck
