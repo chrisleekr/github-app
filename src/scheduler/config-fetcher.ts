@@ -48,6 +48,13 @@ const etagCache = new Map<string, CacheEntry>();
 // first key is a simple FIFO. One entry per (owner, repo), 1000 is ample.
 const MAX_ETAG_CACHE_ENTRIES = 1_000;
 
+/** Evict the oldest entry when inserting a new key would exceed the cap. */
+function evictIfFull(cacheKey: string): void {
+  if (etagCache.has(cacheKey) || etagCache.size < MAX_ETAG_CACHE_ENTRIES) return;
+  const oldest = etagCache.keys().next().value;
+  if (oldest !== undefined) etagCache.delete(oldest);
+}
+
 function statusOf(err: unknown): number | undefined {
   return typeof err === "object" && err !== null && "status" in err
     ? (err as { status?: number }).status
@@ -111,10 +118,7 @@ export async function fetchRepoConfig(
   const value: FetchedRepoConfig = { config: result.data, sha: data.sha };
   const etag = res.headers.etag;
   if (typeof etag === "string" && etag.length > 0) {
-    if (!etagCache.has(cacheKey) && etagCache.size >= MAX_ETAG_CACHE_ENTRIES) {
-      const oldest = etagCache.keys().next().value;
-      if (oldest !== undefined) etagCache.delete(oldest);
-    }
+    evictIfFull(cacheKey);
     etagCache.set(cacheKey, { etag, value });
   }
   return value;

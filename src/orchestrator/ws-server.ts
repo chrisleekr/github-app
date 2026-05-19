@@ -49,7 +49,7 @@ interface AuthExpectations {
   readonly padLength: number;
 }
 
-function buildAuthExpectations(
+export function buildAuthExpectations(
   primaryToken: string,
   previousToken: string | undefined,
 ): AuthExpectations {
@@ -108,7 +108,7 @@ function buildAuthExpectations(
  * length-equality checks are combined with bitwise `&` and the per-token
  * results with bitwise `|` to avoid the JS `&&`/`||` short-circuit.
  */
-function isAuthHeaderValid(
+export function isAuthHeaderValid(
   authHeader: string | null | undefined,
   expectations: AuthExpectations,
 ): boolean {

@@ -660,10 +660,10 @@ async function handleScopedJobCompletion(
   await decrementDaemonActiveJobs(daemonId);
 
   // Release the scheduled-action single-flight lock now the run is terminal
-  // (success or failure). Without this the lock would persist until the
-  // stale window, skipping every slot of a sub-stale-window cron.
+  // (success or failure). Best-effort: a lock-release DB failure must not
+  // throw past this point and skip `finalizeScopedExecution` below.
   if (jobKind === "scheduled-action") {
-    await clearInFlightByJobId(deliveryId);
+    await releaseScheduledActionLock(deliveryId);
   }
 
   // Per-kind event keys match the FR-018 canonical names documented in

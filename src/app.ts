@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { access, constants, mkdir, readdir, rm, stat } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
@@ -38,7 +38,12 @@ import {
   requireValkeyClient,
 } from "./orchestrator/valkey";
 import { sweepValkeyOrphans } from "./orchestrator/valkey-cleanup";
-import { startWebSocketServer, stopWebSocketServer } from "./orchestrator/ws-server";
+import {
+  buildAuthExpectations,
+  isAuthHeaderValid,
+  startWebSocketServer,
+  stopWebSocketServer,
+} from "./orchestrator/ws-server";
 import { createScheduler, type SchedulerHandle } from "./scheduler";
 import type { BotContext } from "./types";
 import { handleCheckRun } from "./webhook/events/check-run";
@@ -506,16 +511,28 @@ void runStartupChecks().catch((err: unknown) => {
 });
 
 /**
+ * Precomputed expected `Authorization` values for the operator scheduler
+ * endpoint. `null` when no daemon auth token is configured, in which case
+ * the endpoint rejects every request. Reuses the WS server's comparator so
+ * operator auth honours the same `DAEMON_AUTH_TOKEN_PREVIOUS` rotation
+ * window as the daemon handshake.
+ */
+const schedulerAuthExpectations =
+  config.daemonAuthToken !== undefined
+    ? buildAuthExpectations(config.daemonAuthToken, config.daemonAuthTokenPrevious)
+    : null;
+
+/** Max accepted body size for `POST /api/scheduler/run`; the payload is tiny. */
+const MAX_SCHEDULER_BODY_BYTES = 4096;
+
+/**
  * Constant-time bearer-token check for the operator scheduler endpoint.
  * The endpoint triggers an agent run, so it is gated on the daemon auth
  * token (an existing operator secret) rather than left unauthenticated.
  */
 function schedulerBearerOk(header: string | undefined): boolean {
-  if (header === undefined) return false;
-  if (!header.startsWith("Bearer ")) return false;
-  const provided = Buffer.from(header.slice(7));
-  const expected = Buffer.from(config.daemonAuthToken ?? "");
-  return provided.length === expected.length && timingSafeEqual(provided, expected);
+  if (schedulerAuthExpectations === null) return false;
+  return isAuthHeaderValid(header, schedulerAuthExpectations);
 }
 
 /**
@@ -537,9 +554,24 @@ async function handleSchedulerRun(
     return;
   }
   try {
+    // The payload is a tiny `{ owner, repo, action }` object. Cap the body
+    // so a slowloris-style or oversized upload cannot pressure memory before
+    // the parse/validation below even runs. On overflow the 413 is written
+    // from the data handler; the post-await `headersSent` guard then bails.
     const body = await new Promise<string>((resolve, reject) => {
       let data = "";
+      let size = 0;
       req.on("data", (chunk: Buffer) => {
+        if (res.headersSent) return;
+        size += chunk.length;
+        if (size > MAX_SCHEDULER_BODY_BYTES) {
+          res
+            .writeHead(413, { "Content-Type": "application/json" })
+            .end(JSON.stringify({ error: "request body too large" }));
+          req.destroy();
+          resolve("");
+          return;
+        }
         data += chunk.toString();
       });
       req.on("end", () => {
@@ -547,6 +579,7 @@ async function handleSchedulerRun(
       });
       req.on("error", reject);
     });
+    if (res.headersSent) return;
     let payload: { owner?: unknown; repo?: unknown; action?: unknown };
     try {
       payload = JSON.parse(body) as typeof payload;

@@ -10,11 +10,13 @@
 -- concurrency lock, mirroring research.yml's `concurrency:
 -- cancel-in-progress: false` (skip, never overlap). The claim UPDATE
 -- refuses to fire while a run is in-flight UNLESS the lock is stale
--- (`in_flight_started_at` older than a generous window). Staleness makes
--- the lock self-healing: a daemon that dies mid-run cannot strand the
--- action, and no completion hook is needed to release it. The cron
--- cadence is always far longer than the stale window, so a fast run
--- holding the lock until the window elapses is harmless in practice.
+-- (`in_flight_started_at` older than a generous window). The lock is
+-- released two ways: actively, when a run reaches a terminal state
+-- (`clearInFlightByJobId` from the scoped-job-completion handler and
+-- from every terminal-failure path in connection-handler.ts), and
+-- passively, via the stale window. The stale window is the crash-safety
+-- fallback: a daemon that dies before any terminal path runs cannot
+-- strand the action permanently.
 --
 -- Per-run history is NOT stored here; it reuses the existing `executions`
 -- table, same as every other daemon job.

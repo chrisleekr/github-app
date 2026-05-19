@@ -89,7 +89,8 @@ const scopedOpenPrJobSchema = z.object({
  * prompt (the `.github-app.yaml` feature). It rides the scoped-job rail
  * (offer/accept transport) but carries no PR/issue and no trigger comment;
  * the base fields are filled with sentinels (`entityNumber: 0`,
- * `isPR: false`, empty `triggerUsername`/`labels`/`triggerBodyPreview`).
+ * `isPR: false`, `triggerUsername: "scheduler"`, empty `labels` and
+ * `triggerBodyPreview`).
  */
 const scheduledActionJobSchema = z.object({
   kind: z.literal("scheduled-action"),
