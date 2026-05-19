@@ -9,13 +9,15 @@ The repository ships **two container images**, an orchestrator and a daemon, bui
 | `orchestrator` | `Dockerfile.orchestrator` | Webhook server, WebSocket daemon registry, triage classifier, ephemeral-daemon spawner.                                            | GitHub API, Anthropic / Bedrock, Postgres, Valkey, K8s API. |
 | `daemon`       | `Dockerfile.daemon`       | Worker image with the toolchain Claude shells out to (`kubectl`, `helm`, `terraform`, `aws`, `gcloud`, `docker`, `go`, `rust`, …). | Orchestrator WebSocket (outbound), GitHub API, Anthropic.   |
 
+The `daemon` image additionally bundles `@mermaid-js/mermaid-cli` (`mmdc`) plus a headless Chromium, used by the scheduled `research` action's diagram-validation gate. It is daemon-only because the agent runs on the daemon, not the orchestrator.
+
 The two images intentionally diverge after the shared base because their cost and attack surface differ. The shared prefix is enforced byte-identical by `scripts/check-dockerfile-base-sync.ts` (in CI) between the `# --- SHARED-BASE-BEGIN ---` and `# --- SHARED-BASE-END ---` markers.
 
 ### Shared base stages
 
 | Stage         | Base              | Purpose                                                                                                                                         |
 | ------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `base`        | `oven/bun:1.3.13` | Installs Node.js 20 (for the Claude Code CLI), npm 11, `curl`, `git`, `@anthropic-ai/claude-code` globally, plus targeted openssl CVE upgrades. |
+| `base`        | `oven/bun:1.3.14` | Installs Node.js 20 (for the Claude Code CLI), npm 11, `curl`, `git`, `@anthropic-ai/claude-code` globally, plus targeted openssl CVE upgrades. |
 | `development` | `base`            | `bun install` (all deps) + `bun run build` → `dist/` (app, daemon main, MCP stdio servers).                                                     |
 | `deps`        | `base`            | `bun install --production --ignore-scripts` (runtime deps only).                                                                                |
 

@@ -619,6 +619,34 @@ const configSchema = z
     // those target branches; the maintainer-facing rejection message
     // surfaces the offending branch name.
     shipForbiddenTargetBranches: shipForbiddenTargetBranchesField,
+
+    // --- 14. Scheduled actions (.github-app.yaml) ---
+
+    // Master kill-switch for the scheduled-actions scheduler
+    // (src/scheduler/). When false (default) the scheduler never starts:
+    // no installation enumeration, no config fetch, no jobs enqueued.
+    // Server mode only; a daemon process ignores it.
+    schedulerEnabled: z.boolean().default(false),
+
+    // Cadence of the scheduler scan. On each tick the scheduler
+    // enumerates installations, fetches each repo's `.github-app.yaml`,
+    // and enqueues any action whose cron slot is due. A value outside
+    // [60s, 1h] is rejected at startup: below 60s the per-tick GitHub API
+    // cost is not worth it; above 1h cron precision degrades. Default 5m.
+    schedulerScanIntervalMs: z.coerce.number().int().min(60_000).max(3_600_000).default(300_000),
+
+    // Gate for the bot-provided `merge_readiness` MCP tool. The tool is
+    // exposed to a scheduled action only when this is true AND the action
+    // sets `auto_merge: true`. NOTE: this does not sandbox the agent from
+    // merging by other means: `allowed_tools` is owner-trusted config, so an
+    // action granted a merge-capable tool (e.g. `Bash(gh pr merge:*)`) can
+    // still merge. This switch governs the deterministic readiness tool, not
+    // every possible merge path.
+    schedulerAllowAutoMerge: z.boolean().default(false),
+
+    // Filename the scheduler reads from each installed repo's default
+    // branch root. Default `.github-app.yaml`.
+    schedulerConfigFile: z.string().default(".github-app.yaml"),
   })
   .superRefine((data, ctx) => {
     validateServerModeCredentials(data, ctx);
@@ -957,6 +985,15 @@ function loadConfig(): Config {
     reviewBarrierSafetyMarginMs: process.env["REVIEW_BARRIER_SAFETY_MARGIN_MS"],
     fixAttemptsPerSignatureCap: process.env["FIX_ATTEMPTS_PER_SIGNATURE_CAP"],
     shipForbiddenTargetBranches: process.env["SHIP_FORBIDDEN_TARGET_BRANCHES"],
+
+    // Group 14, Scheduled actions
+    schedulerEnabled: parseBooleanEnv("SCHEDULER_ENABLED", process.env["SCHEDULER_ENABLED"]),
+    schedulerScanIntervalMs: process.env["SCHEDULER_SCAN_INTERVAL_MS"],
+    schedulerAllowAutoMerge: parseBooleanEnv(
+      "SCHEDULER_ALLOW_AUTO_MERGE",
+      process.env["SCHEDULER_ALLOW_AUTO_MERGE"],
+    ),
+    schedulerConfigFile: process.env["SCHEDULER_CONFIG_FILE"],
   });
 
   assertOauthRequiresAllowlist(cfg);

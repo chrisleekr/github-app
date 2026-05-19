@@ -1,0 +1,34 @@
+# Example .github-app.yaml: scheduled actions for the GitHub App bot.
+#
+# Place this at your repo's default-branch root. The bot's scheduler reads it
+# on each scan and runs due actions on the daemon fleet.
+# Full schema: docs/use/scheduled-actions.md
+
+version: 1
+
+config:
+  # IANA timezone for cron evaluation. Default "UTC".
+  timezone: "Australia/Melbourne"
+
+scheduled_actions:
+  - name: research
+    cron: "0 3 * * *" # daily at 03:00 in config.timezone
+    enabled: true
+    model: "opus" # optional; defaults to the bot's CLAUDE_MODEL
+    max_turns: 200 # optional; agent turn cap (1-500)
+    timeout: 60m # optional; wall-clock ceiling
+    auto_merge: false # set true to expose the merge_readiness tool
+    allowed_tools:
+      - WebSearch
+      - WebFetch
+      - Read
+      - Glob
+      - Grep
+      - "Bash(gh issue create:*)"
+      - "Bash(gh issue list:*)"
+      - "Bash(gh label create:*)"
+      - "Bash(git log:*)"
+      - "Bash(mmdc:*)"
+    prompt:
+      # One of: inline | a single-file ref | a folder ref (+ entrypoint).
+      ref: ".github/skills/research.md"

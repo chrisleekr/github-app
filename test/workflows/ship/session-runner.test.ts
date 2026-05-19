@@ -243,6 +243,7 @@ describe.skipIf(sql === null)("runShipFromCommand", () => {
   beforeAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;
       DROP TABLE IF EXISTS chat_proposals CASCADE;
@@ -263,6 +264,7 @@ describe.skipIf(sql === null)("runShipFromCommand", () => {
   afterAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;
       DROP TABLE IF EXISTS chat_proposals CASCADE;

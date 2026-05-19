@@ -143,6 +143,19 @@ cap, so there is nothing else to tune.
 | `FIX_ATTEMPTS_PER_SIGNATURE_CAP`  | `3`                | Max attempts per failure signature within a single intent. Cap firing terminates with `terminal_blocker_category='flake-cap'`.                  |
 | `SHIP_FORBIDDEN_TARGET_BRANCHES`  | empty              | Comma-separated branches the bot refuses to shepherd PRs against.                                                                               |
 
+## Scheduled actions
+
+Controls the internal scheduler that runs prompt-based actions declared in a
+repo's `.github-app.yaml`. See [Scheduled actions](../use/scheduled-actions.md)
+for the file schema. Server mode only; a daemon process ignores these.
+
+| Variable                     | Default            | Notes                                                                                                                                                                    |
+| ---------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SCHEDULER_ENABLED`          | `false`            | Master kill-switch. When false the scheduler never starts. It also will not start without `DATABASE_URL` and a non-empty `ALLOWED_OWNERS`.                               |
+| `SCHEDULER_SCAN_INTERVAL_MS` | `300000` (5 min)   | Cadence of the scan that enumerates installations, fetches each `.github-app.yaml`, and enqueues due actions. A value outside `[60000, 3600000]` is rejected at startup. |
+| `SCHEDULER_ALLOW_AUTO_MERGE` | `false`            | Hard kill-switch for unattended auto-merge. Effective auto-merge requires BOTH this AND a per-action `auto_merge: true`; otherwise no merge tool runs.                   |
+| `SCHEDULER_CONFIG_FILE`      | `.github-app.yaml` | Filename read from each installed repo's default-branch root.                                                                                                            |
+
 ## Prompt cache layout
 
 Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See `src/config.ts:562` for the Zod definition and `src/core/executor.ts:208` for the runtime guard.

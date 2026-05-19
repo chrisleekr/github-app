@@ -38,7 +38,13 @@ import {
   requireValkeyClient,
 } from "./orchestrator/valkey";
 import { sweepValkeyOrphans } from "./orchestrator/valkey-cleanup";
-import { startWebSocketServer, stopWebSocketServer } from "./orchestrator/ws-server";
+import {
+  buildAuthExpectations,
+  isAuthHeaderValid,
+  startWebSocketServer,
+  stopWebSocketServer,
+} from "./orchestrator/ws-server";
+import { createScheduler, type SchedulerHandle } from "./scheduler";
 import type { BotContext } from "./types";
 import { handleCheckRun } from "./webhook/events/check-run";
 import { handleCheckSuite } from "./webhook/events/check-suite";
@@ -216,6 +222,14 @@ const server = http.createServer((req, res) => {
       return;
     }
     void handleTestWebhook(req, res);
+    return;
+  }
+
+  // Operator endpoint: force one scheduled action to run now (the
+  // `workflow_dispatch` analogue). Authenticated with the daemon auth token
+  // since it triggers an agent run; 404 when the scheduler is disabled.
+  if (req.url === "/api/scheduler/run" && req.method === "POST") {
+    void handleSchedulerRun(req, res);
     return;
   }
 
@@ -477,17 +491,139 @@ async function runStartupChecks(): Promise<void> {
     },
   });
 
+  // Scheduled-actions scheduler (.github-app.yaml). `start()` is a no-op
+  // when SCHEDULER_ENABLED is false, no DB is configured, or ALLOWED_OWNERS
+  // is unset, so it is safe to construct unconditionally.
+  scheduledActionScheduler = createScheduler({ app });
+  await scheduledActionScheduler.start();
+
   isReady = true;
   logger.info({ valkeyHealthy: isValkeyHealthy() }, "Startup checks passed, server is ready");
 }
 
 let shipTickleScheduler: TickleScheduler | null = null;
 let proposalPoller: ProposalPollerHandle | null = null;
+let scheduledActionScheduler: SchedulerHandle | null = null;
 
 void runStartupChecks().catch((err: unknown) => {
   logger.error({ err }, "Startup checks failed unexpectedly");
   process.exit(1);
 });
+
+/**
+ * Precomputed expected `Authorization` values for the operator scheduler
+ * endpoint. `null` when no daemon auth token is configured, in which case
+ * the endpoint rejects every request. Reuses the WS server's comparator so
+ * operator auth honours the same `DAEMON_AUTH_TOKEN_PREVIOUS` rotation
+ * window as the daemon handshake.
+ */
+const schedulerAuthExpectations =
+  config.daemonAuthToken !== undefined
+    ? buildAuthExpectations(config.daemonAuthToken, config.daemonAuthTokenPrevious)
+    : null;
+
+/** Max accepted body size for `POST /api/scheduler/run`; the payload is tiny. */
+const MAX_SCHEDULER_BODY_BYTES = 4096;
+
+/**
+ * Constant-time bearer-token check for the operator scheduler endpoint.
+ * The endpoint triggers an agent run, so it is gated on the daemon auth
+ * token (an existing operator secret) rather than left unauthenticated.
+ */
+function schedulerBearerOk(header: string | undefined): boolean {
+  if (schedulerAuthExpectations === null) return false;
+  return isAuthHeaderValid(header, schedulerAuthExpectations);
+}
+
+/**
+ * Operator endpoint handler: `POST /api/scheduler/run` with a JSON body
+ * `{ owner, repo, action }`. Forces one scheduled action to run now,
+ * bypassing the cron check. 404 when the scheduler is disabled, 401 on a
+ * bad token.
+ */
+async function handleSchedulerRun(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<void> {
+  if (!config.schedulerEnabled || scheduledActionScheduler === null) {
+    res.writeHead(404, { "Content-Type": "text/plain" }).end("not found");
+    return;
+  }
+  if (!schedulerBearerOk(req.headers.authorization)) {
+    res.writeHead(401, { "Content-Type": "text/plain" }).end("unauthorized");
+    return;
+  }
+  try {
+    // The payload is a tiny `{ owner, repo, action }` object. Cap the body
+    // so a slowloris-style or oversized upload cannot pressure memory before
+    // the parse/validation below even runs. On overflow the 413 is written
+    // from the data handler; the post-await `headersSent` guard then bails.
+    const body = await new Promise<string>((resolve, reject) => {
+      let data = "";
+      let size = 0;
+      req.on("data", (chunk: Buffer) => {
+        if (res.headersSent) return;
+        size += chunk.length;
+        if (size > MAX_SCHEDULER_BODY_BYTES) {
+          res
+            .writeHead(413, { "Content-Type": "application/json" })
+            .end(JSON.stringify({ error: "request body too large" }));
+          req.destroy();
+          resolve("");
+          return;
+        }
+        data += chunk.toString();
+      });
+      req.on("end", () => {
+        resolve(data);
+      });
+      req.on("error", reject);
+    });
+    if (res.headersSent) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      // Malformed client input is a 400, not a 500.
+      res
+        .writeHead(400, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ error: "request body is not valid JSON" }));
+      return;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      // A valid JSON literal that is not an object (null, number, string) is
+      // still malformed input for this endpoint: 400, not 500.
+      res
+        .writeHead(400, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ error: "request body must be a JSON object" }));
+      return;
+    }
+    const payload = parsed as { owner?: unknown; repo?: unknown; action?: unknown };
+    if (
+      typeof payload.owner !== "string" ||
+      typeof payload.repo !== "string" ||
+      typeof payload.action !== "string"
+    ) {
+      res
+        .writeHead(400, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ error: "owner, repo, and action are required" }));
+      return;
+    }
+    const result = await scheduledActionScheduler.runAction({
+      owner: payload.owner,
+      repo: payload.repo,
+      actionName: payload.action,
+    });
+    res
+      .writeHead(result.enqueued ? 202 : 409, { "Content-Type": "application/json" })
+      .end(JSON.stringify(result));
+  } catch (err) {
+    logger.error({ err }, "scheduler: manual run endpoint failed");
+    res
+      .writeHead(500, { "Content-Type": "application/json" })
+      .end(JSON.stringify({ error: "internal error" }));
+  }
+}
 
 /**
  * Graceful shutdown handler.
@@ -511,6 +647,10 @@ function shutdown(signal: string): void {
         if (shipTickleScheduler !== null) {
           shipTickleScheduler.stop();
           shipTickleScheduler = null;
+        }
+        if (scheduledActionScheduler !== null) {
+          scheduledActionScheduler.stop();
+          scheduledActionScheduler = null;
         }
         if (proposalPoller !== null) {
           proposalPoller.stop();

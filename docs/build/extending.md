@@ -181,6 +181,18 @@ if (config.myApiKey) {
 
 Add the env var to `src/config.ts` following the existing `context7ApiKey` pattern, document it in [`../operate/configuration.md`](../operate/configuration.md), and you're done.
 
+### Conditionally-registered servers
+
+A server need not be registered on every run. `github-state` is registered
+only when `enableGithubState` is set, and `merge_readiness` (the scheduled-
+actions auto-merge gate) only when `enableMergeReadiness` is set: the daemon
+passes that flag only for a scheduled action whose effective `auto_merge` is
+on. Add an `enableX?: boolean` to `ResolveMcpServersOptions` and gate the
+`servers["x"] = …` line on it. MCP servers in `src/mcp/servers/` must not
+import the daemon `config`; pass everything they need via env (see
+`merge-readiness.ts`, which takes `BOT_APP_LOGIN` from env rather than
+importing `config`).
+
 ## The webhook → workflow boundary
 
 If your extension reacts to a GitHub event the bot does not yet handle (e.g. `push`, `pull_request_target`), the work splits in two:

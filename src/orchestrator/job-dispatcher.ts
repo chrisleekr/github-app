@@ -315,6 +315,26 @@ function buildScopedJobOfferEnvelope(
           verdictSummary: job.verdictSummary,
         },
       };
+    case "scheduled-action":
+      return {
+        ...base,
+        payload: {
+          jobKind: job.kind,
+          deliveryId: job.deliveryId,
+          installationId: job.installationId,
+          owner: job.repoOwner,
+          repo: job.repoName,
+          actionName: job.actionName,
+          cronSlotIso: job.cronSlotIso,
+          promptText: job.promptText,
+          ...(job.model !== undefined ? { model: job.model } : {}),
+          ...(job.maxTurns !== undefined ? { maxTurns: job.maxTurns } : {}),
+          ...(job.timeoutMs !== undefined ? { timeoutMs: job.timeoutMs } : {}),
+          ...(job.allowedTools !== undefined ? { allowedTools: job.allowedTools } : {}),
+          autoMerge: job.autoMerge,
+          enqueuedAt: job.enqueuedAt,
+        },
+      };
   }
 }
 

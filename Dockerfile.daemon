@@ -11,7 +11,7 @@
 # scripts/check-dockerfile-base-sync.ts in CI.
 
 # --- SHARED-BASE-BEGIN ---
-FROM oven/bun:1.3.13 AS base
+FROM oven/bun:1.3.14 AS base
 WORKDIR /app
 
 # Node.js required by Claude Code CLI; git required for repo checkout.
@@ -194,8 +194,23 @@ RUN set -eux; \
   -o /tmp/awscliv2.zip && unzip -q /tmp/awscliv2.zip -d /tmp && \
   /tmp/aws/install && rm -rf /tmp/awscliv2.zip /tmp/aws
 
+# 5b. mermaid-cli (`mmdc`) for the scheduled research action's diagram-
+#     validation gate (the `.github-app.yaml` scheduled-actions feature).
+#     Uses the system Chromium so puppeteer skips its own ~170 MB download.
+#     /etc/mmdc-puppeteer.json enables --no-sandbox because Chromium cannot
+#     sandbox as the unprivileged `bun` UID; the research skill invokes
+#     `mmdc -p /etc/mmdc-puppeteer.json`. Daemon-image only: the agent runs
+#     on the daemon, not the orchestrator.
+ENV PUPPETEER_SKIP_DOWNLOAD=true \
+  PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+RUN apt-get update && apt-get install -y --no-install-recommends chromium && \
+  rm -rf /var/lib/apt/lists/* && \
+  npm install -g @mermaid-js/mermaid-cli@11.14.0 && \
+  printf '{"args":["--no-sandbox"]}\n' > /etc/mmdc-puppeteer.json && \
+  chmod 0444 /etc/mmdc-puppeteer.json
+
 # 6. uv (astral-sh) + poetry via pipx. Redirect installer output to /usr/local
-#   : /root is mode 700 in oven/bun:1.3.13, unreadable to the final USER bun
+#   : /root is mode 700 in oven/bun:1.3.14, unreadable to the final USER bun
 #    (UID 1000), so default $HOME/.local/bin targets would land dead-on-arrival.
 ENV PIPX_HOME=/usr/local/pipx \
   PIPX_BIN_DIR=/usr/local/bin \

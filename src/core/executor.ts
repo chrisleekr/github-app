@@ -185,6 +185,12 @@ export interface ExecuteAgentParams {
    * string path using `prompt` and the bare preset systemPrompt.
    */
   promptParts?: { append: string; userMessage: string };
+  /**
+   * Per-call model override. Falls back to `config.model` when omitted.
+   * Used by the scheduled-actions executor to honour a per-action `model:`
+   * declared in `.github-app.yaml`.
+   */
+  model?: string;
 }
 
 export async function executeAgent({
@@ -198,6 +204,7 @@ export async function executeAgent({
   installationToken,
   signal,
   promptParts,
+  model,
 }: ExecuteAgentParams): Promise<ExecutionResult> {
   const { log } = ctx;
 
@@ -301,7 +308,7 @@ export async function executeAgent({
   if (resolvedMaxTurns !== undefined) {
     queryOptions.maxTurns = resolvedMaxTurns;
   }
-  queryOptions.model = config.model;
+  queryOptions.model = model ?? config.model;
   if (config.claudeCodePath !== undefined) {
     queryOptions.pathToClaudeCodeExecutable = config.claudeCodePath;
   }

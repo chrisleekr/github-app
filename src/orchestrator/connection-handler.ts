@@ -3,6 +3,7 @@ import { App, Octokit } from "octokit";
 
 import { config } from "../config";
 import { resolveGithubToken } from "../core/github-token";
+import { clearInFlightByJobId } from "../db/queries/scheduled-actions-store";
 import { logger } from "../logger";
 import { addReaction } from "../utils/reactions";
 import { findById, findInflightByOwner, type WorkflowRunRow } from "../workflows/runs-store";
@@ -144,6 +145,8 @@ async function cleanupAfterDisconnect(daemonId: string): Promise<void> {
       try {
         // eslint-disable-next-line no-await-in-loop
         await markExecutionFailed(orphan.deliveryId, "daemon disconnected during execution");
+        // eslint-disable-next-line no-await-in-loop
+        await releaseScheduledActionLock(orphan.deliveryId);
       } catch (err) {
         logger.error(
           { err, deliveryId: orphan.deliveryId },
@@ -570,6 +573,23 @@ function handleUpdateAcknowledged(
   );
 }
 
+/**
+ * Best-effort release of the scheduled-action single-flight lock on a
+ * terminal path. `clearInFlightByJobId` updates WHERE in_flight_job_id =
+ * deliveryId, so it is a no-op for any deliveryId that is not a
+ * scheduled-action in-flight job, safe to call unconditionally. Without
+ * this the lock would persist until the stale window, skipping every cron
+ * slot of a sub-stale-window action whose run died on a non-completion
+ * path (cancelled, orphaned, or failed before dispatch).
+ */
+async function releaseScheduledActionLock(deliveryId: string): Promise<void> {
+  try {
+    await clearInFlightByJobId(deliveryId);
+  } catch (err) {
+    logger.warn({ err, deliveryId }, "failed to release scheduled-action lock on terminal path");
+  }
+}
+
 // Job message handling (T032-T033)
 
 /**
@@ -638,6 +658,13 @@ async function handleScopedJobCompletion(
   // durable guard so a forged completion cannot tamper with capacity.
   decrementActiveCount();
   await decrementDaemonActiveJobs(daemonId);
+
+  // Release the scheduled-action single-flight lock now the run is terminal
+  // (success or failure). Best-effort: a lock-release DB failure must not
+  // throw past this point and skip `finalizeScopedExecution` below.
+  if (jobKind === "scheduled-action") {
+    await releaseScheduledActionLock(deliveryId);
+  }
 
   // Per-kind event keys match the FR-018 canonical names documented in
   // `docs/OBSERVABILITY.md` (e.g. `ship.scoped.rebase.daemon.completed`).
@@ -915,6 +942,7 @@ async function handleScopedAccept(
       "Scoped accept: offer.scoped failed re-validation",
     );
     await markExecutionFailed(offer.deliveryId, "Scoped offer payload malformed");
+    await releaseScheduledActionLock(offer.deliveryId);
     await decrementDaemonActiveJobs(daemonId);
     decrementActiveCount();
     return;
@@ -952,6 +980,7 @@ async function handleScopedAccept(
       "Scoped accept: failed to mint installation token",
     );
     await markExecutionFailed(offer.deliveryId, "Failed to mint installation token (scoped)");
+    await releaseScheduledActionLock(offer.deliveryId);
     await decrementDaemonActiveJobs(daemonId);
     decrementActiveCount();
   }
@@ -1008,6 +1037,23 @@ function scopedJobToContext(job: ScopedQueuedJob): ScopedJobContext {
         triggerCommentId: job.triggerCommentId,
         enqueuedAt: job.enqueuedAt,
         verdictSummary: job.verdictSummary,
+      };
+    case "scheduled-action":
+      return {
+        jobKind: "scheduled-action",
+        deliveryId: job.deliveryId,
+        installationId: job.installationId,
+        owner: job.repoOwner,
+        repo: job.repoName,
+        actionName: job.actionName,
+        cronSlotIso: job.cronSlotIso,
+        promptText: job.promptText,
+        ...(job.model !== undefined ? { model: job.model } : {}),
+        ...(job.maxTurns !== undefined ? { maxTurns: job.maxTurns } : {}),
+        ...(job.timeoutMs !== undefined ? { timeoutMs: job.timeoutMs } : {}),
+        ...(job.allowedTools !== undefined ? { allowedTools: job.allowedTools } : {}),
+        autoMerge: job.autoMerge,
+        enqueuedAt: job.enqueuedAt,
       };
   }
 }
@@ -1113,6 +1159,10 @@ async function finalizeExecution(
     await markExecutionCompleted(deliveryId, result);
   } else {
     await markExecutionFailed(deliveryId, payload.errorMessage ?? "Execution failed on daemon");
+    // A scoped run cancelled or failed via job:result terminates here, not
+    // through handleScopedJobCompletion: release the lock so later cron
+    // slots are not skipped while the dead run holds it.
+    await releaseScheduledActionLock(deliveryId);
   }
 }
 

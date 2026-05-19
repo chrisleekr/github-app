@@ -9,7 +9,7 @@ the development workflow, and the conventions enforced by the tooling.
 
 | Tool                          | Version  | Purpose                                    |
 | ----------------------------- | -------- | ------------------------------------------ |
-| [Bun](https://bun.sh)         | ≥ 1.3.13 | Runtime and package manager                |
+| [Bun](https://bun.sh)         | ≥ 1.3.14 | Runtime and package manager                |
 | [Git](https://git-scm.com)    | any      | Version control                            |
 | [Node.js](https://nodejs.org) | ≥ 20     | Required by the Claude Code CLI subprocess |
 

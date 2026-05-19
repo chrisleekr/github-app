@@ -75,6 +75,13 @@ export interface ResolveMcpServersOptions {
    * reach for fresh GitHub state.
    */
   enableGithubState?: boolean;
+  /**
+   * Opt-in for the read-only `merge-readiness` MCP server (scheduled-actions
+   * auto-merge gate). Set `true` only when a scheduled action's effective
+   * `auto_merge` is on, so the deterministic merge-readiness tool is exposed
+   * exclusively to runs allowed to merge.
+   */
+  enableMergeReadiness?: boolean;
 }
 
 export function resolveMcpServers(
@@ -108,6 +115,10 @@ export function resolveMcpServers(
 
   if (opts?.enableGithubState === true) {
     servers["github_state"] = githubStateServerDef(sharedEnv);
+  }
+
+  if (opts?.enableMergeReadiness === true) {
+    servers["merge_readiness"] = mergeReadinessServerDef(sharedEnv);
   }
 
   // Tier 3, R-011, daemon capabilities MCP server
@@ -196,6 +207,21 @@ function githubStateServerDef(sharedEnv: Record<string, string>): McpServerDef {
     command: "bun",
     args: ["run", serverPath],
     env: { ...sharedEnv },
+  };
+}
+
+/**
+ * Read-only merge-readiness server definition (stdio transport, opt-in via
+ * `enableMergeReadiness`). Repo-pinned via env; `BOT_APP_LOGIN` lets
+ * `computeVerdict` distinguish bot- from human-authored head commits.
+ */
+function mergeReadinessServerDef(sharedEnv: Record<string, string>): McpServerDef {
+  const serverPath = resolveServerPath("merge-readiness");
+  return {
+    type: "stdio",
+    command: "bun",
+    args: ["run", serverPath],
+    env: { ...sharedEnv, BOT_APP_LOGIN: config.botAppLogin },
   };
 }
 

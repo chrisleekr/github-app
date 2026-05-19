@@ -89,6 +89,22 @@ Canonical source: `src/shared/dispatch-types.ts`. Four values; all land on `disp
 | `ephemeral-daemon-overflow` | Queue length ≥ `EPHEMERAL_DAEMON_SPAWN_QUEUE_THRESHOLD` **and** the persistent pool has zero free slots; a spawn drains the overflow.                       |
 | `ephemeral-spawn-failed`    | A spawn was required but the K8s API call failed. The job is rejected with a tracking-comment infra error.                                                  |
 
+## Scheduled action log fields
+
+Emitted by the scheduler (`src/scheduler/`, component `scheduler`) and the
+daemon executor.
+
+| Event                               | Meaning                                                                 |
+| ----------------------------------- | ----------------------------------------------------------------------- |
+| `scheduler.action.claimed`          | A due cron slot was claimed and a `scheduled-action` job enqueued.      |
+| `scheduler.action.skipped_missed`   | A slot fired while the server was down; advanced over, not run.         |
+| `scheduler.action.daemon.started`   | The daemon began running a scheduled action.                            |
+| `scheduler.action.daemon.completed` | The action's agent session finished (`success`, `costUsd`, `numTurns`). |
+| `scheduler.action.daemon.failed`    | The action failed before the agent ran (e.g. repo lookup).              |
+
+The scheduler logs action metadata (`name`, `cron`, `owner`, `repo`,
+`deliveryId`) only, never the resolved prompt text.
+
 ## Aggregate reporting
 
 When `DATABASE_URL` is set, helpers in `src/db/queries/dispatch-stats.ts` expose the most operator-relevant aggregates:

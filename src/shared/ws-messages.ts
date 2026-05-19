@@ -116,6 +116,24 @@ const scopedJobContextSchema = z.discriminatedUnion("jobKind", [
     enqueuedAt: z.number(),
     verdictSummary: z.string(),
   }),
+  z.object({
+    // Entity-free, cron-fired prompt run (`.github-app.yaml` feature).
+    // Carries no PR/issue and no trigger comment, see job-queue.ts.
+    jobKind: z.literal("scheduled-action"),
+    deliveryId: z.string().min(1),
+    installationId: z.number().int().positive(),
+    owner: z.string().min(1),
+    repo: z.string().min(1),
+    actionName: z.string().min(1),
+    cronSlotIso: z.string().min(1),
+    promptText: z.string().min(1),
+    model: z.string().min(1).optional(),
+    maxTurns: z.number().int().positive().optional(),
+    timeoutMs: z.number().int().positive().optional(),
+    allowedTools: z.array(z.string().min(1)).optional(),
+    autoMerge: z.boolean(),
+    enqueuedAt: z.number(),
+  }),
 ]);
 
 export type ScopedJobContext = z.infer<typeof scopedJobContextSchema>;
@@ -187,6 +205,17 @@ const scopedJobResultSchema = z.discriminatedUnion("jobKind", [
     status: z.enum(["succeeded", "failed", "halted"]),
     pushedCommitSha: z.string().optional(),
     newPrNumber: z.number().int().positive().optional(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    jobKind: z.literal("scheduled-action"),
+    status: z.enum(["succeeded", "failed", "halted"]),
+    /** A PR the action opened, if any (free-form prompt, best effort). */
+    prNumber: z.number().int().positive().optional(),
+    /** True when the action merged a PR. */
+    merged: z.boolean().optional(),
+    /** Short structured outcome for operator logs (e.g. "issue_created"). */
+    outcome: z.string().optional(),
     reason: z.string().optional(),
   }),
 ]);

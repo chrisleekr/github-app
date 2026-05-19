@@ -34,6 +34,7 @@ describe.skipIf(sql === null)("runMigrations", () => {
   beforeAll(async () => {
     await requireDb().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;
       DROP TABLE IF EXISTS chat_proposals CASCADE;
@@ -52,6 +53,7 @@ describe.skipIf(sql === null)("runMigrations", () => {
   afterAll(async () => {
     await requireDb().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;
       DROP TABLE IF EXISTS chat_proposals CASCADE;
@@ -76,7 +78,7 @@ describe.skipIf(sql === null)("runMigrations", () => {
     const versions: { version: string }[] = await requireDb()`
       SELECT version FROM _migrations ORDER BY version
     `;
-    expect(versions.length).toBe(12);
+    expect(versions.length).toBe(13);
     expect(versions[0]?.version).toBe("001_initial");
     expect(versions[1]?.version).toBe("002_repo_knowledge");
     expect(versions[2]?.version).toBe("003_dispatch_decisions");
@@ -89,6 +91,7 @@ describe.skipIf(sql === null)("runMigrations", () => {
     expect(versions[9]?.version).toBe("010_chat_proposals");
     expect(versions[10]?.version).toBe("011_conversation_cache");
     expect(versions[11]?.version).toBe("012_repo_memory_sanitize_backfill");
+    expect(versions[12]?.version).toBe("013_scheduled_actions");
   });
 
   it("is idempotent: second run is a no-op", async () => {
@@ -98,7 +101,7 @@ describe.skipIf(sql === null)("runMigrations", () => {
     const versions: { version: string }[] = await requireDb()`
       SELECT version FROM _migrations ORDER BY version
     `;
-    expect(versions.length).toBe(12);
+    expect(versions.length).toBe(13);
   });
 
   it("creates the executions table with expected columns", async () => {

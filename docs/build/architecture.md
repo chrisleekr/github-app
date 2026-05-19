@@ -199,6 +199,20 @@ The per-call nonce on `<untrusted_*>` tags lives only in the user message; the a
 
 Three handlers ship the split today: the main pipeline (`src/core/pipeline.ts`) reads `config.promptCacheLayout` and conditionally threads `buildPromptParts()` output through; `src/workflows/handlers/triage.ts` and `src/workflows/handlers/plan.ts` do the same with their handler-specific builders. The executor's completion log surfaces `cacheReadInputTokens`, `cacheCreationInputTokens`, and `promptCacheLayout` so operators can verify hits before deciding to roll out further. See [`../operate/configuration.md`](../operate/configuration.md#prompt-cache-layout) for the rollout playbook.
 
+## Scheduled actions
+
+A GitHub App receives no native cron event, so scheduled automation runs on an
+internal timer inside the webhook server (`src/scheduler/`), alongside the
+ship-tickle scheduler and proposal poller. Each scan enumerates installed
+repos (owner-allowlist filtered), reads a `.github-app.yaml` from each,
+evaluates every action's cron against a per-action `last_run_at` row, and
+claims a due slot with a compare-and-swap UPDATE so multi-replica deployments
+never double-fire. A claimed slot enqueues a `scheduled-action` job: a job
+kind on the scoped-job rail, which the daemon runs as one agent session
+(`src/daemon/scheduled-action-executor.ts`), entity-free and with no tracking
+comment. Missed slots are skipped, not backfilled. See
+[Scheduled actions](../use/scheduled-actions.md).
+
 ## Directory layout
 
 | Directory           | Responsibility                                                                                                                         |

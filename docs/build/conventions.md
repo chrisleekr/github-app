@@ -5,7 +5,7 @@ The repo enforces conventions through tooling, not docs, every rule below is che
 ## Runtime and language
 
 - **Runtime.** Bun for the application; Node.js 20 for the Claude Code CLI subprocess. Both are installed in the Docker `base` stage.
-- **Bun version.** Pinned in `.tool-versions` (`bun 1.3.13`). All workflows use `oven-sh/setup-bun` with `bun-version-file: .tool-versions`.
+- **Bun version.** Pinned in `.tool-versions` (`bun 1.3.14`). All workflows use `oven-sh/setup-bun` with `bun-version-file: .tool-versions`.
 - **TypeScript.** Strict mode plus the strictest flags: `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `useUnknownInCatchVariables`, `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`. Module resolution is `bundler`, imports do not need `.js` extensions.
 
 ## ESLint

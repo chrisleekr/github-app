@@ -102,6 +102,7 @@ nav:
           - bot:implement: use/workflows/implement.md
           - bot:review: use/workflows/review.md
           - bot:resolve: use/workflows/resolve.md
+      - Scheduled actions: use/scheduled-actions.md
       - Safety: use/safety.md
   - Run the service:
       - Local development: operate/setup.md
@@ -113,6 +114,7 @@ nav:
           - Daemon fleet: operate/runbooks/daemon-fleet.md
           - Triage: operate/runbooks/triage.md
           - Stuck bot:ship session: operate/runbooks/stuck-ship-intent.md
+          - Scheduled actions: operate/runbooks/scheduled-actions.md
   - Build on it:
       - Architecture: build/architecture.md
       - Extending: build/extending.md

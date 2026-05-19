@@ -568,6 +568,37 @@ async function runScopedJob(
         });
         return;
       }
+      case "scheduled-action": {
+        const { executeScheduledAction } = await import("./scheduled-action-executor");
+        const outcome = await executeScheduledAction({
+          installationToken,
+          owner: scoped.owner,
+          repo: scoped.repo,
+          actionName: scoped.actionName,
+          deliveryId: scoped.deliveryId,
+          promptText: scoped.promptText,
+          autoMerge: scoped.autoMerge,
+          signal,
+          ...(scoped.model !== undefined ? { model: scoped.model } : {}),
+          ...(scoped.maxTurns !== undefined ? { maxTurns: scoped.maxTurns } : {}),
+          ...(scoped.timeoutMs !== undefined ? { timeoutMs: scoped.timeoutMs } : {}),
+          ...(scoped.allowedTools !== undefined ? { allowedTools: scoped.allowedTools } : {}),
+        });
+        sendIfNotAborted({
+          type: "scoped-job-completion",
+          ...createMessageEnvelope(offerId),
+          payload: {
+            offerId,
+            deliveryId: scoped.deliveryId,
+            jobKind: "scheduled-action",
+            status: outcome.status,
+            durationMs: Date.now() - startedAt,
+            ...(outcome.outcome !== undefined ? { outcome: outcome.outcome } : {}),
+            ...(outcome.reason !== undefined ? { reason: outcome.reason } : {}),
+          },
+        });
+        return;
+      }
       default: {
         // Exhaustiveness check: a future jobKind addition with an older
         // daemon image lands here. Surface a structured failed completion

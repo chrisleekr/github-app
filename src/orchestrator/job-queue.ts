@@ -85,6 +85,33 @@ const scopedOpenPrJobSchema = z.object({
 });
 
 /**
+ * Scheduled-action job: an entity-free, cron-fired run of a skill-like
+ * prompt (the `.github-app.yaml` feature). It rides the scoped-job rail
+ * (offer/accept transport) but carries no PR/issue and no trigger comment;
+ * the base fields are filled with sentinels (`entityNumber: 0`,
+ * `isPR: false`, `triggerUsername: "scheduler"`, empty `labels` and
+ * `triggerBodyPreview`).
+ */
+const scheduledActionJobSchema = z.object({
+  kind: z.literal("scheduled-action"),
+  ...baseQueuedJobShape,
+  installationId: z.number().int().positive(),
+  /** Action name from `.github-app.yaml`; unique per (repo). */
+  actionName: z.string().min(1),
+  /** ISO timestamp of the cron slot this job is for (observability). */
+  cronSlotIso: z.string().min(1),
+  /** Fully-resolved prompt (inline / file / folder concatenated). */
+  promptText: z.string().min(1),
+  /** Agent model override; daemon defaults to `config.model` when absent. */
+  model: z.string().min(1).optional(),
+  maxTurns: z.number().int().positive().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+  allowedTools: z.array(z.string().min(1)).optional(),
+  /** Effective auto-merge: per-action flag already AND-ed with the env kill-switch. */
+  autoMerge: z.boolean(),
+});
+
+/**
  * Discriminated union of every job that can appear on `queue:jobs`. Producers
  * MUST set `kind` explicitly; the daemon-side router and the orchestrator
  * dispatcher both switch on `kind` to choose the execution path.
@@ -95,6 +122,7 @@ export const QueuedJobSchema = z.discriminatedUnion("kind", [
   scopedRebaseJobSchema,
   scopedFixThreadJobSchema,
   scopedOpenPrJobSchema,
+  scheduledActionJobSchema,
 ]);
 
 export type QueuedJob = z.infer<typeof QueuedJobSchema>;
@@ -103,12 +131,19 @@ export type WorkflowRunQueuedJob = z.infer<typeof workflowRunJobSchema>;
 export type ScopedRebaseQueuedJob = z.infer<typeof scopedRebaseJobSchema>;
 export type ScopedFixThreadQueuedJob = z.infer<typeof scopedFixThreadJobSchema>;
 export type ScopedOpenPrQueuedJob = z.infer<typeof scopedOpenPrJobSchema>;
+export type ScheduledActionQueuedJob = z.infer<typeof scheduledActionJobSchema>;
 export type ScopedQueuedJob =
   | ScopedRebaseQueuedJob
   | ScopedFixThreadQueuedJob
-  | ScopedOpenPrQueuedJob;
+  | ScopedOpenPrQueuedJob
+  | ScheduledActionQueuedJob;
 
-export const SCOPED_JOB_KINDS = ["scoped-rebase", "scoped-fix-thread", "scoped-open-pr"] as const;
+export const SCOPED_JOB_KINDS = [
+  "scoped-rebase",
+  "scoped-fix-thread",
+  "scoped-open-pr",
+  "scheduled-action",
+] as const;
 
 export type ScopedJobKind = (typeof SCOPED_JOB_KINDS)[number];
 

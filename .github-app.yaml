@@ -1,0 +1,44 @@
+# github-app-playground scheduled actions.
+#
+# Read by the bot's internal scheduler (src/scheduler/) when SCHEDULER_ENABLED
+# is true. See docs/use/scheduled-actions.md for the full schema.
+#
+# The `research` action below is the in-App replacement for the
+# `.github/workflows/research.yml` GitHub Actions workflow. It runs 2h AFTER
+# research.yml's slot so the two do not collide while both are live; the
+# cutover is to verify the action, then delete research.yml.
+
+version: 1
+
+config:
+  # UTC so the gap below research.yml is a fixed 2h year-round; a local
+  # timezone would shrink the gap to 1h under daylight saving.
+  timezone: "UTC"
+
+scheduled_actions:
+  - name: research
+    # research.yml runs `0 17 * * *` UTC. This runs at 19:00 UTC, a fixed
+    # 2h later, so the in-App and Actions runs never overlap.
+    cron: "0 19 * * *"
+    enabled: true
+    model: "opus"
+    max_turns: 200
+    timeout: 60m
+    auto_merge: false
+    allowed_tools:
+      - WebSearch
+      - WebFetch
+      - Read
+      - Glob
+      - Grep
+      - "Bash(gh issue create:*)"
+      - "Bash(gh issue list:*)"
+      - "Bash(gh label create:*)"
+      - "Bash(git log:*)"
+      - "Bash(cat:*)"
+      - "Bash(date:*)"
+      - "Bash(mmdc:*)"
+      - "Bash(awk:*)"
+      - "Bash(grep:*)"
+    prompt:
+      ref: ".github/skills/research.md"

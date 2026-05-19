@@ -31,6 +31,7 @@ const SUPPORTED_SCOPED_KINDS: readonly ScopedJobKind[] = [
   "scoped-rebase",
   "scoped-fix-thread",
   "scoped-open-pr",
+  "scheduled-action",
 ] as const;
 
 const daemonId = getDaemonId();
