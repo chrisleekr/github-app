@@ -49,7 +49,7 @@ You have a limited turn budget. Do NOT read every file.
 Run:
 
 ```bash
-gh issue list --label research --state all --limit 100 --json title,state,labels,body
+gh issue list --label research --state all --limit 1000 --json title,state,labels,body
 ```
 
 If your candidate finding overlaps with any existing one, find a DIFFERENT

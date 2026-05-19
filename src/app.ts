@@ -580,9 +580,9 @@ async function handleSchedulerRun(
       req.on("error", reject);
     });
     if (res.headersSent) return;
-    let payload: { owner?: unknown; repo?: unknown; action?: unknown };
+    let parsed: unknown;
     try {
-      payload = JSON.parse(body) as typeof payload;
+      parsed = JSON.parse(body);
     } catch {
       // Malformed client input is a 400, not a 500.
       res
@@ -590,6 +590,15 @@ async function handleSchedulerRun(
         .end(JSON.stringify({ error: "request body is not valid JSON" }));
       return;
     }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      // A valid JSON literal that is not an object (null, number, string) is
+      // still malformed input for this endpoint: 400, not 500.
+      res
+        .writeHead(400, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ error: "request body must be a JSON object" }));
+      return;
+    }
+    const payload = parsed as { owner?: unknown; repo?: unknown; action?: unknown };
     if (
       typeof payload.owner !== "string" ||
       typeof payload.repo !== "string" ||

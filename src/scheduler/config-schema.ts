@@ -86,11 +86,16 @@ export const promptRefSchema = z.preprocess(
       return raw;
     }
     if (typeof obj["inline"] === "string") {
+      // An unknown sibling key is a misspelling: return raw so the
+      // discriminated union rejects it instead of dropping the typo here.
+      if (Object.keys(obj).some((k) => k !== "inline")) return raw;
       return { form: "inline", text: obj["inline"] };
     }
     if (typeof obj["ref"] === "string") {
       const ref = obj["ref"];
       const isFolder = ref.endsWith("/") || typeof obj["entrypoint"] === "string";
+      const allowed = new Set(isFolder ? ["ref", "entrypoint", "repo"] : ["ref", "repo"]);
+      if (Object.keys(obj).some((k) => !allowed.has(k))) return raw;
       const repo = typeof obj["repo"] === "string" ? { repo: obj["repo"] } : {};
       return isFolder
         ? {
