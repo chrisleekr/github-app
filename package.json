@@ -122,7 +122,7 @@
     ]
   },
   "overrides": {
-    "@anthropic-ai/sdk": "0.95.1",
+    "@anthropic-ai/sdk": "0.95.2",
     "@hono/node-server": "2.0.2",
     "express-rate-limit": "8.5.1",
     "fast-uri": "3.1.2",
@@ -131,6 +131,6 @@
     "hono": "4.12.18",
     "path-to-regexp": "8.4.2",
     "picomatch": "4.0.4",
-    "yaml": "2.8.4"
+    "yaml": "2.9.0"
   }
 }
