@@ -309,6 +309,19 @@ export async function runPipeline(
       // erase the property entirely so downstream `!== undefined` checks
       // remain accurate.
       delete enrichedCtx.reviewLearnings;
+    } else if (enrichedCtx.reviewLearnings !== undefined) {
+      // Narrow the orchestrator-loaded universe to directives applicable to
+      // this PR's changed files BEFORE downstream consumers see it. Without
+      // this, the prompt block (glob-filtered + byte-capped) and the MCP
+      // `get_review_learnings` tool (orchestrator-loaded set) disagreed: the
+      // prompt's "… N older learnings omitted …" marker promised the tool
+      // would return "every active directive (including the omitted ones)"
+      // but the tool also returned glob-non-matching rows. Filtering here
+      // makes both surfaces enumerate the same applicable universe.
+      enrichedCtx.reviewLearnings = pickApplicableLearnings(
+        enrichedCtx.reviewLearnings,
+        enrichedCtx.isPR ? data.changedFiles.map((f) => f.filename) : [],
+      );
     }
 
     // Build both prompt shapes: the legacy single-string `prompt` keeps the
