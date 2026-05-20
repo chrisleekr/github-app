@@ -825,6 +825,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#review-learnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review learnings
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -885,6 +896,34 @@
     
   
     Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../review-learnings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review learnings
   
 
     
@@ -1594,6 +1633,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#review-learnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review learnings
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1760,6 +1810,8 @@
 <li><strong>Public tracking comment</strong>: a safe constant: <code>"review pipeline execution failed, see server logs for details."</code> Never carries the raw error string, since octokit error stacks include the request URL with the installation token (<code>https://x-access-token:GHS_xxx@…</code>).</li>
 <li><strong>Operator surfaces (DB + logs)</strong>: <code>state.failedReason</code> on the <code>workflow_runs</code> row, <code>pino</code> log line on the daemon, and <code>ExecutionResult.errorMessage</code> returned to the caller. These carry the full SDK message so an operator can diagnose without tailing daemon stderr.</li>
 </ul>
+<h2 id="review-learnings">Review learnings<a class="headerlink" href="#review-learnings" title="Permanent link">&para;</a></h2>
+<p><code>review</code> is one of two workflows (with <code>resolve</code>) that loads persisted review-policy directives from the <code>review_learnings</code> table and renders them into the prompt. Loaded directives whose <code>file_glob</code> matches at least one changed file are surfaced verbatim in a <code>&lt;review_learnings_…&gt;</code> block ahead of the diff, and their IDs flow back through <code>appliedReviewLearningIds</code> on the handler result so the orchestrator can bump <code>use_count</code> precisely. The tracking comment ends with a <code>🧠 Learnings used</code> collapsible footer when at least one directive applied. See <code>docs/use/review-learnings.md</code> for the full feature, gating (<code>REVIEW_LEARNINGS_ENABLED</code>, per-repo <code>.github-app.yaml</code> opt-out), and operator notes.</p>
 
 
 

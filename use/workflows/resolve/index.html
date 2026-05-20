@@ -876,6 +876,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#review-learnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review learnings
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -908,6 +919,34 @@
     
   
     Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../review-learnings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review learnings
   
 
     
@@ -1640,6 +1679,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#review-learnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review learnings
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1832,6 +1882,8 @@
 <li><strong>Public tracking comment</strong>: a safe constant: <code>"resolve pipeline execution failed, see server logs for details."</code> The actual error string remains internal because octokit error stacks include <code>https://x-access-token:GHS_xxx@…</code> in the request URL.</li>
 <li><strong>Operator surfaces</strong>: <code>state.failedReason</code> on the <code>workflow_runs</code> row, <code>pino</code> log lines on the daemon, and <code>ExecutionResult.errorMessage</code> returned to the orchestrator. The orchestrator's transient-quota detector reads <code>state.failedReason</code> and auto-defers the ship loop's next iteration when the SDK reports <code>"You've hit your limit · resets … UTC"</code>.</li>
 </ul>
+<h2 id="review-learnings">Review learnings<a class="headerlink" href="#review-learnings" title="Permanent link">&para;</a></h2>
+<p><code>resolve</code> loads persisted review-policy directives from the <code>review_learnings</code> table the same way <code>review</code> does, but additionally exposes the <code>save_review_learning</code> / <code>delete_review_learning</code> MCP tools to the agent. The agent self-initiates a save when a maintainer rebuts one of its prior findings with a rationale that reads as durable repo policy. Applied directive IDs flow back via <code>appliedReviewLearningIds</code>, the orchestrator bumps <code>use_count</code>, and the tracking comment ends with a <code>🧠 Learnings used</code> collapsible footer when at least one directive applied. See <code>docs/use/review-learnings.md</code> for the full feature surface, the per-repo <code>.github-app.yaml</code> opt-out, and the gating envs.</p>
 
 
 

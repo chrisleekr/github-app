@@ -782,6 +782,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/review-learnings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review learnings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/safety/" class="md-nav__link">
         
   
@@ -1132,6 +1160,17 @@
     <span class="md-ellipsis">
       
         Scheduled actions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-learnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review learnings
       
     </span>
   </a>
@@ -1762,6 +1801,17 @@
     <span class="md-ellipsis">
       
         Scheduled actions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#review-learnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review learnings
       
     </span>
   </a>
@@ -2410,6 +2460,49 @@ for the file schema. Server mode only; a daemon process ignores these.</p>
 </tr>
 </tbody>
 </table>
+<h2 id="review-learnings">Review learnings<a class="headerlink" href="#review-learnings" title="Permanent link">&para;</a></h2>
+<p>Controls the <strong>review-learnings</strong> feature: persistent review-policy directives
+extracted from past PR review pushback and injected into future <code>review</code> /
+<code>resolve</code> runs as repo policy. See <a href="../../use/review-learnings/">Review learnings</a>
+for the user-facing model.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>REVIEW_LEARNINGS_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Master kill-switch. When false the orchestrator does not load learnings into job payloads and drops any agent-initiated <code>save_review_learning</code> / <code>delete_review_learning</code> actions in the result path.</td>
+</tr>
+<tr>
+<td><code>REVIEW_LEARNINGS_RAG_ENABLED</code></td>
+<td><code>false</code></td>
+<td>Semantic retrieval via pgvector. When true the orchestrator embeds each directive at save time and each PR's changed-file paths at handleAccept, then runs cosine-distance top-K against <code>review_learnings.embedding</code>. Requires migration 015 (the <code>pgvector</code> extension). Adds ~80 MB to the orchestrator image (<code>@huggingface/transformers</code> + ONNX runtime); the model loads lazily on first embedding call (one-time cold start).</td>
+</tr>
+</tbody>
+</table>
+<p>The feature also requires <code>DATABASE_URL</code> (no DB, no learnings table). It is
+otherwise additive: an empty <code>review_learnings</code> table means no block is
+rendered, no footer is posted, and no behaviour changes. The first directive
+to surface in a tracking comment is the first one an agent has saved.</p>
+<p><strong>RAG rollout</strong> (Phase 1.5.H) is staged so you can verify K8s feasibility
+before committing:</p>
+<ol>
+<li>Deploy with migration 015 applied + <code>REVIEW_LEARNINGS_RAG_ENABLED=false</code>.
+   The vector column exists but stays NULL; runtime cost is unchanged.</li>
+<li>Confirm <code>pgvector</code> is available (<code>SELECT * FROM pg_extension WHERE extname='vector';</code>).</li>
+<li>Flip <code>REVIEW_LEARNINGS_RAG_ENABLED=true</code> on one orchestrator pod. The
+   embedding pipeline loads on first save/search. Watch <code>kubectl top pod</code> for
+   ~150-250 MB RSS growth and per-embedding latency in the pino logs (look
+   for <code>Embedding pipeline loaded</code>).</li>
+<li>Flip across the fleet once satisfied. To roll back, flip the flag off;
+   no schema change needed.</li>
+</ol>
 <h2 id="prompt-cache-layout">Prompt cache layout<a class="headerlink" href="#prompt-cache-layout" title="Permanent link">&para;</a></h2>
 <p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:562</code> for the Zod definition and <code>src/core/executor.ts:208</code> for the runtime guard.</p>
 <table>
