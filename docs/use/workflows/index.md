@@ -1,15 +1,16 @@
 # Workflows
 
-Six workflows are registered today (`src/workflows/registry.ts`). Each has a single label, a single comment-mention verb, and produces one Markdown artifact that becomes the body of the tracking comment.
+Seven workflows are registered today (`src/workflows/registry.ts`). Each has a single label, a single comment-mention verb, and produces one Markdown artifact that becomes the body of the tracking comment.
 
-| Workflow                    | Label           | Surfaces                                       | What it does                                                                 | Detail           |
-| --------------------------- | --------------- | ---------------------------------------------- | ---------------------------------------------------------------------------- | ---------------- |
-| [`triage`](triage.md)       | `bot:triage`    | Issue label or comment                         | Decides whether an issue is actionable, with structural or runtime evidence  | `TRIAGE.md`      |
-| [`plan`](plan.md)           | `bot:plan`      | Issue label or comment, after `triage`         | Writes an implementation plan                                                | `PLAN.md`        |
-| [`implement`](implement.md) | `bot:implement` | Issue label or comment, after `plan`           | Opens a PR with code, tests, and a filled-out PR template                    | `IMPLEMENT.md`   |
-| [`review`](review.md)       | `bot:review`    | PR label or comment                            | Reads the diff in full, posts findings as inline comments                    | `REVIEW.md`      |
-| [`resolve`](resolve.md)     | `bot:resolve`   | PR label or comment                            | Fixes failing CI, replies to review threads, pushes new commits              | `RESOLVE.md`     |
-| [`ship`](ship.md)           | `bot:ship`      | PR comment, label, or natural-language mention | Shepherds an open PR to merge-ready: probe → fix → reply → wait, until clean | tracking comment |
+| Workflow                    | Label           | Surfaces                                       | What it does                                                                             | Detail           |
+| --------------------------- | --------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------- |
+| [`triage`](triage.md)       | `bot:triage`    | Issue label or comment                         | Decides whether an issue is actionable, with structural or runtime evidence              | `TRIAGE.md`      |
+| [`plan`](plan.md)           | `bot:plan`      | Issue label or comment, after `triage`         | Writes an implementation plan                                                            | `PLAN.md`        |
+| [`implement`](implement.md) | `bot:implement` | Issue label or comment, after `plan`           | Opens a PR with code, tests, and a filled-out PR template                                | `IMPLEMENT.md`   |
+| [`review`](review.md)       | `bot:review`    | PR label or comment                            | Reads the diff in full, posts findings as inline comments                                | `REVIEW.md`      |
+| [`resolve`](resolve.md)     | `bot:resolve`   | PR label or comment                            | Fixes failing CI, replies to review threads, pushes new commits                          | `RESOLVE.md`     |
+| [`ship`](ship.md)           | `bot:ship`      | PR comment, label, or natural-language mention | Shepherds an open PR to merge-ready: probe → fix → reply → wait, until clean             | tracking comment |
+| [`remember`](remember.md)   | `bot:remember`  | Issue or PR (any comment)                      | Captures a maintainer review-policy directive into `review_learnings` for future reviews | `REMEMBER.md`    |
 
 ## How they relate
 

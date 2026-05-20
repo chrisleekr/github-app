@@ -33,24 +33,58 @@ agent-initiated saves.
 
 ## When a learning gets created
 
-`v1` is **agent-initiated only**: the `review` and `resolve` workflow prompts
-expose three MCP tools on the existing `repo_memory` server.
+Three capture paths exist today; the `review` and `resolve` workflow
+prompts expose three MCP tools on the existing `repo_memory` server that
+all three paths share:
 
 - `mcp__repo_memory__save_review_learning({ directive, rationale, file_glob, scope, source_pr, source_thread, source_author })`
 - `mcp__repo_memory__delete_review_learning({ id })`
-- `mcp__repo_memory__get_review_learnings()`: returns the same set already
-  rendered into the prompt; useful when the agent needs the IDs to call
+- `mcp__repo_memory__get_review_learnings()`: returns the full applicable
+  set for this run, including any rows the prompt's 24KB byte budget
+  omitted from the `<review_learnings_…>` block (the truncation marker
+  points here as its escape hatch). Useful for dedup before
+  `save_review_learning`, and for fetching IDs before
   `delete_review_learning`.
 
-The recommended trigger inside the `resolve` workflow is: when a maintainer
-pushes back on an inline finding with a clear "this is intentional because…"
-rationale and the agent's reply classifies the finding as `Invalid`, the
-agent saves a learning capturing the rationale, the file scope, and the
-source PR. The next `review` run on the same repo (or any repo under the
-same owner, if `scope: global`) sees the directive as policy.
+### Path 1: autonomous capture in `resolve`
 
-There is **no extraction LLM**: capture is the agent's responsibility. There
-is also no `@chrisleekr-bot remember <…>` command; that is a follow-up.
+When a maintainer pushes back on an inline finding with a clear "this is
+intentional because…" rationale and the resolve agent's reply classifies
+the finding as `Invalid`, the agent decides autonomously whether the
+rationale represents durable repo policy. If yes, it calls
+`save_review_learning` with the directive, the maintainer's rationale,
+the file glob, and full provenance. No propose step, no confirmation.
+
+### Path 2: autonomous capture in `review`
+
+When the discussion digest's maintainer-authoritative directives section
+contains a rule the bot would otherwise have flagged AND that rule is
+not already in the `<review_learnings_…>` block, the review agent
+captures the digest's directive verbatim. Same autonomous decision rule
+as the resolve path; same MCP save.
+
+### Path 3: explicit `@chrisleekr-bot remember` (issue #160 Option A)
+
+The dedicated [`bot:remember`](workflows/remember.md) workflow handles
+explicit directive capture from any comment surface: issue comments, PR
+comments, and PR review comments. Two trigger forms:
+
+- **Inline:** `@chrisleekr-bot remember: do not flag fixture duplication
+in test/**/*.test.ts`
+- **Referential:** `@chrisleekr-bot remember this`, the agent walks the
+  discussion digest to locate the upstream maintainer policy statement
+  the trigger refers to.
+
+The handler runs a focused agent session with a narrowed tool surface
+(`save_review_learning`, `get_review_learnings`,
+`update_claude_comment` only, no Bash, no Edit, no code mutation).
+Dedup against existing entries happens before the save. The tracking
+comment is the audit log: directive, scope, rationale, provenance, and
+the outcome (`saved as <id>` / `deduped against <existing_id>` /
+`refused (reason)`).
+
+The next `review` or `resolve` run on the same repo (or any repo under
+the same owner, when `scope: 'global'`) sees the directive as policy.
 
 ## How a learning is surfaced in the prompt
 

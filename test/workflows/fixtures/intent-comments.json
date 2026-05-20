@@ -3,7 +3,7 @@
     "comment_body": "@chrisleekr-bot please triage this issue and tell me if it looks like a real bug.",
     "expected_workflow": "triage",
     "confidence_band": "high",
-    "author_note": "direct ask to triage \u2014 explicit verb"
+    "author_note": "direct ask to triage — explicit verb"
   },
   {
     "comment_body": "Hey bot, can you classify this one? I want to know if it's a bug or a feature request before I spend time on it.",
@@ -21,7 +21,7 @@
     "comment_body": "@chrisleekr-bot please draft an implementation plan for this issue.",
     "expected_workflow": "plan",
     "confidence_band": "high",
-    "author_note": "explicit 'implementation plan' \u2014 canonical plan ask"
+    "author_note": "explicit 'implementation plan' — canonical plan ask"
   },
   {
     "comment_body": "Can you put together a step-by-step plan before we start coding? I want to know the approach.",
@@ -30,10 +30,10 @@
     "author_note": "step-by-step plan, explicitly pre-coding"
   },
   {
-    "comment_body": "@chrisleekr-bot write up the design and break it into tasks \u2014 don't write the code yet.",
+    "comment_body": "@chrisleekr-bot write up the design and break it into tasks — don't write the code yet.",
     "expected_workflow": "plan",
     "confidence_band": "high",
-    "author_note": "design+tasks but explicitly not coding yet \u2014 plan scope"
+    "author_note": "design+tasks but explicitly not coding yet — plan scope"
   },
   {
     "comment_body": "@chrisleekr-bot go ahead and implement the fix. Plan looks good.",
@@ -54,10 +54,10 @@
     "author_note": "code this up = implement; past plan referenced"
   },
   {
-    "comment_body": "@chrisleekr-bot please review this PR \u2014 CI is green, I want a second pair of eyes.",
+    "comment_body": "@chrisleekr-bot please review this PR — CI is green, I want a second pair of eyes.",
     "expected_workflow": "review",
     "confidence_band": "high",
-    "author_note": "code review on a green PR \u2014 canonical review ask"
+    "author_note": "code review on a green PR — canonical review ask"
   },
   {
     "comment_body": "Can you check this PR for issues and let me know if it's merge-ready?",
@@ -72,7 +72,7 @@
     "author_note": "explicit code review request"
   },
   {
-    "comment_body": "@chrisleekr-bot CI is failing on this PR \u2014 can you fix it?",
+    "comment_body": "@chrisleekr-bot CI is failing on this PR — can you fix it?",
     "expected_workflow": "resolve",
     "confidence_band": "high",
     "author_note": "fix-CI ask = resolve, not review"
@@ -90,7 +90,7 @@
     "author_note": "respond to comments = resolve"
   },
   {
-    "comment_body": "@chrisleekr-bot ship it end-to-end \u2014 triage, plan, implement, and review.",
+    "comment_body": "@chrisleekr-bot ship it end-to-end — triage, plan, implement, and review.",
     "expected_workflow": "ship",
     "confidence_band": "high",
     "author_note": "explicit end-to-end; enumerates all ship steps"
@@ -111,19 +111,19 @@
     "comment_body": "@chrisleekr-bot what do you think?",
     "expected_workflow": "clarify",
     "confidence_band": "low",
-    "author_note": "generic opinion ask \u2014 no workflow intent"
+    "author_note": "generic opinion ask — no workflow intent"
   },
   {
     "comment_body": "hey",
     "expected_workflow": "clarify",
     "confidence_band": "low",
-    "author_note": "greeting only \u2014 insufficient signal"
+    "author_note": "greeting only — insufficient signal"
   },
   {
-    "comment_body": "@chrisleekr-bot not sure what to do here \u2014 halp?",
+    "comment_body": "@chrisleekr-bot not sure what to do here — halp?",
     "expected_workflow": "clarify",
     "confidence_band": "low",
-    "author_note": "user themselves is unsure \u2014 classifier must not guess a workflow"
+    "author_note": "user themselves is unsure — classifier must not guess a workflow"
   },
   {
     "comment_body": "@chrisleekr-bot thoughts on this?",
@@ -159,7 +159,7 @@
     "comment_body": "@chrisleekr-bot can you open a follow-up issue to track migrating the remaining LLM call sites to use Anthropic tool_use blocks?",
     "expected_workflow": "chat-thread",
     "confidence_band": "high",
-    "author_note": "propose-action create-issue \u2014 was misclassified as unsupported pre-#114"
+    "author_note": "propose-action create-issue — was misclassified as unsupported pre-#114"
   },
   {
     "comment_body": "@chrisleekr-bot please resolve this conversation, the comment is no longer relevant.",
@@ -172,5 +172,23 @@
     "expected_workflow": "chat-thread",
     "confidence_band": "high",
     "author_note": "answer-mode question / code explanation"
+  },
+  {
+    "comment_body": "@chrisleekr-bot remember: do not flag fixture duplication in test/**/*.test.ts. We deliberately keep test data inline so failures are self-contained.",
+    "expected_workflow": "remember",
+    "confidence_band": "high",
+    "author_note": "inline directive with explicit rule + rationale + file glob"
+  },
+  {
+    "comment_body": "@chrisleekr-bot remember this",
+    "expected_workflow": "remember",
+    "confidence_band": "high",
+    "author_note": "referential form — directive lives in the prior thread (handler walks the digest)"
+  },
+  {
+    "comment_body": "@chrisleekr-bot remember the rule above about export-by-default in src/utils/**",
+    "expected_workflow": "remember",
+    "confidence_band": "high",
+    "author_note": "referential form with explicit anchor (the rule above + path scope)"
   }
 ]

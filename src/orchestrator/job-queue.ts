@@ -14,7 +14,12 @@ import { requireValkeyClient } from "./valkey";
 
 const workflowRunRefSchema = z.object({
   runId: z.string().min(1),
-  workflowName: z.enum(["triage", "plan", "implement", "review", "resolve", "ship"]),
+  // Mirror of registry.ts WorkflowNameSchema. Hardcoded rather than imported
+  // to avoid the registry → handlers → job-queue cycle (handlers/ship.ts
+  // and ship/iteration.ts call enqueueJob, so importing the schema back
+  // here would init-deadlock). When adding a new workflow, extend both
+  // lists; TypeScript will surface the gap at every enqueueJob call site.
+  workflowName: z.enum(["triage", "plan", "implement", "review", "resolve", "ship", "remember"]),
   parentRunId: z.string().min(1).optional(),
   parentStepIndex: z.number().int().nonnegative().optional(),
 });

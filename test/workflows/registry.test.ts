@@ -35,9 +35,18 @@ function makeEntry(overrides: Partial<RegistryEntryInput>): RegistryEntryInput {
 }
 
 describe("registry parsed at module load", () => {
-  it("exposes the six canonical workflow names", () => {
+  it("exposes the seven canonical workflow names", () => {
     const names = registry.map((e) => e.name).sort();
-    expect(names).toEqual(["implement", "plan", "resolve", "review", "ship", "triage"]);
+    expect(names).toEqual(["implement", "plan", "remember", "resolve", "review", "ship", "triage"]);
+  });
+
+  it("registers remember with bot:remember label, both-context, no prior, no steps", () => {
+    const remember = registry.find((e) => e.name === "remember");
+    expect(remember).toBeDefined();
+    expect(remember?.label).toBe("bot:remember");
+    expect(remember?.context).toBe("both");
+    expect(remember?.requiresPrior).toBeNull();
+    expect(remember?.steps).toEqual([]);
   });
 
   it("has exactly one composite workflow with ship's five-step chain", () => {
@@ -124,8 +133,16 @@ describe("RegistrySchema invariants", () => {
 });
 
 describe("WorkflowNameSchema", () => {
-  it("accepts the six canonical names", () => {
-    for (const name of ["triage", "plan", "implement", "review", "resolve", "ship"] as const) {
+  it("accepts the seven canonical names", () => {
+    for (const name of [
+      "triage",
+      "plan",
+      "implement",
+      "review",
+      "resolve",
+      "ship",
+      "remember",
+    ] as const) {
       expect(WorkflowNameSchema.parse(name)).toBe(name);
     }
   });

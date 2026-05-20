@@ -102,6 +102,7 @@ nav:
           - bot:implement: use/workflows/implement.md
           - bot:review: use/workflows/review.md
           - bot:resolve: use/workflows/resolve.md
+          - bot:remember: use/workflows/remember.md
       - Scheduled actions: use/scheduled-actions.md
       - Review learnings: use/review-learnings.md
       - Safety: use/safety.md

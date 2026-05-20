@@ -279,6 +279,8 @@ function buildReviewPrompt(input: {
     `   - **Performance**, N+1 queries, accidentally O(n²), unbounded growth`,
     `   - **Readability/maintainability**, only flag if it would genuinely confuse a future reader`,
     ``,
+    `   **Before posting any finding**, cross-check it against (a) the \`<review_learnings_...>\` block (already-persisted repo policy, suppress findings it overrides) and (b) the discussion digest's maintainer-authoritative directives. **When a digest directive suppresses a finding you would otherwise have posted AND it is NOT already represented in the review_learnings block**, decide autonomously whether the directive reads as durable repo policy. If yes, call \`mcp__repo_memory__save_review_learning\` to persist it (with concise \`directive\`, the maintainer's \`rationale\`, a tight \`file_glob\` when path-scoped, and \`source_pr\` / \`source_author\` from the digest's source comment). No propose step, no confirmation, you own the call. Skip when the directive is one-off ("for this specific test only") rather than policy.`,
+    ``,
     `9. **[update tracking comment]** Post: "🔍 Reviewing, posting K inline findings." (replace K with the finding count, or "no findings" if none)`,
     ``,
     `10. **Post each finding as an inline comment.** For every issue, call \`mcp__github_inline_comment__create_inline_comment\` with:`,

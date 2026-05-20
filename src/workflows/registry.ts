@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { ReviewLearningPayload } from "../mcp/registry";
 import { handler as implementHandler } from "./handlers/implement";
 import { handler as planHandler } from "./handlers/plan";
+import { handler as rememberHandler } from "./handlers/remember";
 import { handler as resolveHandler } from "./handlers/resolve";
 import { handler as reviewHandler } from "./handlers/review";
 import { handler as shipHandler } from "./handlers/ship";
@@ -17,6 +18,7 @@ export const WorkflowNameSchema = z.enum([
   "review",
   "resolve",
   "ship",
+  "remember",
 ]);
 export type WorkflowName = z.infer<typeof WorkflowNameSchema>;
 
@@ -206,6 +208,14 @@ const rawRegistry: RegistryEntry[] = [
     requiresPrior: null,
     steps: ["triage", "plan", "implement", "review", "resolve"],
     handler: shipHandler,
+  },
+  {
+    name: "remember",
+    label: "bot:remember",
+    context: "both",
+    requiresPrior: null,
+    steps: [],
+    handler: rememberHandler,
   },
 ];
 
