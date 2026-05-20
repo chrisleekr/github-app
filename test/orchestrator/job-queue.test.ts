@@ -44,7 +44,7 @@ void mock.module("../../src/orchestrator/valkey", () => ({
 }));
 
 const mockConfig = {
-  valkeyUrl: "redis://localhost:6379",
+  valkeyUrl: "redis://localhost:56379",
   logLevel: "silent",
   nodeEnv: "test",
   jobMaxRetries: 3,

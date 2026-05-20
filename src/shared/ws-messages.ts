@@ -51,6 +51,44 @@ const repoMemoryEntrySchema = z.object({
   pinned: z.boolean(),
 });
 
+// Length caps mirror the MCP server's zod definitions
+// (src/mcp/servers/repo-memory.ts). The wire boundary is the second line
+// of defense: a corrupt DB row, a future agent revision, or a bug in the
+// orchestrator-side fanout could send unbounded strings, and an unbounded
+// `directive` would land in the prompt verbatim. Caps here are defense in
+// depth, not a substitute for the MCP-side caps.
+const REVIEW_LEARNING_DIRECTIVE_MAX = 2000;
+const REVIEW_LEARNING_RATIONALE_MAX = 2000;
+const REVIEW_LEARNING_FILE_GLOB_MAX = 500;
+const REVIEW_LEARNING_SOURCE_THREAD_MAX = 200;
+const REVIEW_LEARNING_SOURCE_AUTHOR_MAX = 100;
+
+const reviewLearningPayloadSchema = z.object({
+  // UUID; conservatively capped to leave room for tagged formats.
+  id: z.string().max(64),
+  scope: z.enum(["local", "global"]),
+  fileGlob: z.string().max(REVIEW_LEARNING_FILE_GLOB_MAX).nullable(),
+  directive: z.string().max(REVIEW_LEARNING_DIRECTIVE_MAX),
+  rationale: z.string().max(REVIEW_LEARNING_RATIONALE_MAX).nullable(),
+  sourcePr: z.number().int().positive().nullable(),
+  sourceThread: z.string().max(REVIEW_LEARNING_SOURCE_THREAD_MAX).nullable(),
+  sourceAuthor: z.string().max(REVIEW_LEARNING_SOURCE_AUTHOR_MAX).nullable(),
+  // ISO timestamp from the DB. Carried over the wire so the daemon's
+  // `🧠 Learnings used` footer can render the "Recorded:" line without
+  // requiring a daemon-side DB connection.
+  createdAt: z.string().max(40).optional(),
+});
+
+const reviewLearningSaveSchema = z.object({
+  directive: z.string().min(1).max(REVIEW_LEARNING_DIRECTIVE_MAX),
+  rationale: z.string().max(REVIEW_LEARNING_RATIONALE_MAX).optional(),
+  fileGlob: z.string().max(REVIEW_LEARNING_FILE_GLOB_MAX).optional(),
+  scope: z.enum(["local", "global"]).optional(),
+  sourcePr: z.number().int().positive().optional(),
+  sourceThread: z.string().max(REVIEW_LEARNING_SOURCE_THREAD_MAX).optional(),
+  sourceAuthor: z.string().max(REVIEW_LEARNING_SOURCE_AUTHOR_MAX).optional(),
+});
+
 /**
  * Workflow run reference piggybacking on the existing job payload. Presence
  * of this field signals the daemon to route the job through
@@ -149,6 +187,10 @@ const jobPayloadSchema = z.object({
     allowedTools: z.array(z.string()),
     envVars: z.record(z.string(), z.string()).optional(),
     memory: z.array(repoMemoryEntrySchema).optional(),
+    /** Pre-loaded review learnings (all rows for owner+repo plus global rows
+     * for the owner). Daemon-side review/resolve handlers filter by changed
+     * files before injecting into the prompt; other workflows ignore. */
+    reviewLearnings: z.array(reviewLearningPayloadSchema).optional(),
     workflowRun: workflowRunRefSchema.optional(),
     /** Present only when the originating offer was a `scoped-job-offer`.
      * The daemon's job-executor routes on this field's presence and on the
@@ -340,6 +382,18 @@ const jobResultSchema = z.object({
     dryRun: z.boolean().optional(),
     learnings: z.array(z.object({ category: z.string(), content: z.string() })).optional(),
     deletions: z.array(z.string()).optional(),
+    /** Review-learning saves produced by the `save_review_learning` MCP tool. */
+    reviewLearningSaves: z.array(reviewLearningSaveSchema).optional(),
+    /** Review-learning IDs to delete via `delete_review_learning`. */
+    reviewLearningDeletes: z.array(z.string()).optional(),
+    /**
+     * Review-learning IDs actually applied (post file-glob filter) in this
+     * job's prompt. The orchestrator bumps `use_count` for each id so the
+     * counter reflects directives that informed real review work, not just
+     * directives loaded into the job:payload (1.5.E). Older daemons omit
+     * this field; the orchestrator just skips the bump.
+     */
+    appliedReviewLearningIds: z.array(z.string().max(64)).optional(),
   }),
 });
 

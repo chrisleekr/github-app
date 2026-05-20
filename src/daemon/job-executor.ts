@@ -274,7 +274,8 @@ export async function executeJob(
     return;
   }
 
-  const { installationToken, maxTurns, allowedTools, envVars, memory } = payload.payload;
+  const { installationToken, maxTurns, allowedTools, envVars, memory, reviewLearnings } =
+    payload.payload;
 
   // Abort controller for cancel/execute race prevention (C1)
   const abortController = new AbortController();
@@ -329,6 +330,7 @@ export async function executeJob(
       baseBranch,
       daemonCapabilities: capabilities,
       ...(memory !== undefined ? { repoMemory: memory } : {}),
+      ...(reviewLearnings !== undefined ? { reviewLearnings } : {}),
       ...(envVars !== undefined && Object.keys(envVars).length > 0 ? { envVars } : {}),
     };
 
@@ -365,13 +367,26 @@ export async function executeJob(
     });
     const learnings = result.daemonActions?.learnings ?? [];
     const deletions = result.daemonActions?.deletions ?? [];
+    const reviewLearningSaves = result.daemonActions?.reviewLearningSaves ?? [];
+    const reviewLearningDeletes = result.daemonActions?.reviewLearningDeletes ?? [];
+    // 1.5.E: IDs the prompt-builder's file-glob filter actually selected.
+    // Reported back so the orchestrator can bump use_count on apply, not
+    // load.
+    const appliedReviewLearningIds = (result.appliedReviewLearnings ?? []).map((l) => l.id);
 
+    // Log counts + applied IDs only. Full directive / rationale text is free-form
+    // and can include sensitive review-policy detail; surfacing the bodies here
+    // would inflate log retention and leak content the orchestrator already
+    // persists exactly once via the structured write path.
     childLog.info(
       {
         learningsCount: learnings.length,
         deletionsCount: deletions.length,
-        learnings,
-        deletions,
+        reviewLearningSavesCount: reviewLearningSaves.length,
+        reviewLearningDeletesCount: reviewLearningDeletes.length,
+        reviewLearningDeleteIds: reviewLearningDeletes,
+        appliedReviewLearningIds,
+        appliedReviewLearningIdsCount: appliedReviewLearningIds.length,
       },
       "Daemon actions collected from execution",
     );
@@ -390,6 +405,9 @@ export async function executeJob(
           ...(result.success ? {} : { errorMessage: "Pipeline completed with failure" }),
           ...(learnings.length > 0 ? { learnings } : {}),
           ...(deletions.length > 0 ? { deletions } : {}),
+          ...(reviewLearningSaves.length > 0 ? { reviewLearningSaves } : {}),
+          ...(reviewLearningDeletes.length > 0 ? { reviewLearningDeletes } : {}),
+          ...(appliedReviewLearningIds.length > 0 ? { appliedReviewLearningIds } : {}),
         },
       });
     }

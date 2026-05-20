@@ -63,3 +63,7 @@ Every failure path (`runPipeline` failure, the outer handler catch, or any sync/
 
 - **Public tracking comment**: a safe constant: `"review pipeline execution failed, see server logs for details."` Never carries the raw error string, since octokit error stacks include the request URL with the installation token (`https://x-access-token:GHS_xxx@…`).
 - **Operator surfaces (DB + logs)**: `state.failedReason` on the `workflow_runs` row, `pino` log line on the daemon, and `ExecutionResult.errorMessage` returned to the caller. These carry the full SDK message so an operator can diagnose without tailing daemon stderr.
+
+## Review learnings
+
+`review` is one of two workflows (with `resolve`) that loads persisted review-policy directives from the `review_learnings` table and renders them into the prompt. Loaded directives whose `file_glob` matches at least one changed file are surfaced verbatim in a `<review_learnings_…>` block ahead of the diff, and their IDs flow back through `appliedReviewLearningIds` on the handler result so the orchestrator can bump `use_count` precisely. The tracking comment ends with a `🧠 Learnings used` collapsible footer when at least one directive applied. See `docs/use/review-learnings.md` for the full feature, gating (`REVIEW_LEARNINGS_ENABLED`, per-repo `.github-app.yaml` opt-out), and operator notes.

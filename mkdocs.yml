@@ -103,6 +103,7 @@ nav:
           - bot:review: use/workflows/review.md
           - bot:resolve: use/workflows/resolve.md
       - Scheduled actions: use/scheduled-actions.md
+      - Review learnings: use/review-learnings.md
       - Safety: use/safety.md
   - Run the service:
       - Local development: operate/setup.md

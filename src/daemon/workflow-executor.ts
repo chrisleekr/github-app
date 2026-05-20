@@ -41,6 +41,7 @@ export async function executeWorkflowRun(
   const workflowRun = payload.payload.workflowRun;
   const context = payload.payload.context as unknown as SerializableBotContext;
   const installationToken = payload.payload.installationToken;
+  const reviewLearnings = payload.payload.reviewLearnings;
 
   if (workflowRun === undefined) {
     // Defensive, `executeJob` already branches on this; if we get here the
@@ -98,6 +99,11 @@ export async function executeWorkflowRun(
       octokit,
       deliveryId: context.deliveryId,
       daemonId,
+      // The review and resolve handlers pull this off ctx and forward into
+      // botCtx so runPipeline's prompt-builder + MCP server see the data.
+      // Other handlers ignore. Without this thread, the orchestrator's load
+      // is wired through the wire and discarded here: silent feature breakage.
+      ...(reviewLearnings !== undefined ? { reviewLearnings } : {}),
       setState: async (state, humanMessage) => {
         const patch =
           typeof state === "object" && state !== null
@@ -190,6 +196,12 @@ export async function executeWorkflowRun(
 
       completion = { status: "succeeded" };
 
+      // Forward applied review-learning IDs (when the handler is review or
+      // resolve and the pipeline actually rendered any) so the orchestrator
+      // bumps `use_count`. Direct-pipeline path forwards the same field in
+      // job-executor.ts; without it here, workflow-dispatched review/resolve
+      // jobs silently skip the bump even when the prompt block fired.
+      const appliedReviewLearningIds = result.appliedReviewLearningIds;
       send({
         type: "job:result",
         ...createMessageEnvelope(offerId),
@@ -197,6 +209,9 @@ export async function executeWorkflowRun(
           success: true,
           deliveryId: context.deliveryId,
           durationMs: Date.now() - startedAt,
+          ...(appliedReviewLearningIds !== undefined && appliedReviewLearningIds.length > 0
+            ? { appliedReviewLearningIds }
+            : {}),
         },
       });
     } else if (result.status === "incomplete") {
@@ -242,6 +257,10 @@ export async function executeWorkflowRun(
 
       completion = { status: "failed", reason: `incomplete: ${result.reason}` };
 
+      // Same bump rationale as the succeeded branch above: even when the
+      // handler reports `incomplete`, the pipeline did render the directives,
+      // so the orchestrator should still credit the use_count.
+      const appliedReviewLearningIds = result.appliedReviewLearningIds;
       send({
         type: "job:result",
         ...createMessageEnvelope(offerId),
@@ -250,6 +269,9 @@ export async function executeWorkflowRun(
           deliveryId: context.deliveryId,
           durationMs: Date.now() - startedAt,
           errorMessage: `incomplete: ${result.reason}`,
+          ...(appliedReviewLearningIds !== undefined && appliedReviewLearningIds.length > 0
+            ? { appliedReviewLearningIds }
+            : {}),
         },
       });
     } else {

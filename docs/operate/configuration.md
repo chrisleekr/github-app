@@ -156,6 +156,36 @@ for the file schema. Server mode only; a daemon process ignores these.
 | `SCHEDULER_ALLOW_AUTO_MERGE` | `false`            | Hard kill-switch for unattended auto-merge. Effective auto-merge requires BOTH this AND a per-action `auto_merge: true`; otherwise no merge tool runs.                   |
 | `SCHEDULER_CONFIG_FILE`      | `.github-app.yaml` | Filename read from each installed repo's default-branch root.                                                                                                            |
 
+## Review learnings
+
+Controls the **review-learnings** feature: persistent review-policy directives
+extracted from past PR review pushback and injected into future `review` /
+`resolve` runs as repo policy. See [Review learnings](../use/review-learnings.md)
+for the user-facing model.
+
+| Variable                       | Default | Notes                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REVIEW_LEARNINGS_ENABLED`     | `true`  | Master kill-switch. When false the orchestrator does not load learnings into job payloads and drops any agent-initiated `save_review_learning` / `delete_review_learning` actions in the result path.                                                                                                                                                                                                                               |
+| `REVIEW_LEARNINGS_RAG_ENABLED` | `false` | Semantic retrieval via pgvector. When true the orchestrator embeds each directive at save time and each PR's changed-file paths at handleAccept, then runs cosine-distance top-K against `review_learnings.embedding`. Requires migration 015 (the `pgvector` extension). Adds ~80 MB to the orchestrator image (`@huggingface/transformers` + ONNX runtime); the model loads lazily on first embedding call (one-time cold start). |
+
+The feature also requires `DATABASE_URL` (no DB, no learnings table). It is
+otherwise additive: an empty `review_learnings` table means no block is
+rendered, no footer is posted, and no behaviour changes. The first directive
+to surface in a tracking comment is the first one an agent has saved.
+
+**RAG rollout** (Phase 1.5.H) is staged so you can verify K8s feasibility
+before committing:
+
+1. Deploy with migration 015 applied + `REVIEW_LEARNINGS_RAG_ENABLED=false`.
+   The vector column exists but stays NULL; runtime cost is unchanged.
+2. Confirm `pgvector` is available (`SELECT * FROM pg_extension WHERE extname='vector';`).
+3. Flip `REVIEW_LEARNINGS_RAG_ENABLED=true` on one orchestrator pod. The
+   embedding pipeline loads on first save/search. Watch `kubectl top pod` for
+   ~150-250 MB RSS growth and per-embedding latency in the pino logs (look
+   for `Embedding pipeline loaded`).
+4. Flip across the fleet once satisfied. To roll back, flip the flag off;
+   no schema change needed.
+
 ## Prompt cache layout
 
 Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See `src/config.ts:562` for the Zod definition and `src/core/executor.ts:208` for the runtime guard.

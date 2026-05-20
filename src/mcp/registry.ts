@@ -56,10 +56,37 @@ export interface RepoMemoryEntry {
   pinned: boolean;
 }
 
+/**
+ * Subset of a review-learning entry the MCP server cares about. Mirrors the
+ * BotContext.reviewLearnings shape so the registry doesn't import from
+ * `src/orchestrator/review-learnings.ts` (which transitively pulls in the DB
+ * client). Only the review/resolve handlers populate this; other workflows
+ * leave it undefined and the get_review_learnings tool returns `[]`.
+ */
+export interface ReviewLearningPayload {
+  id: string;
+  scope: "local" | "global";
+  fileGlob: string | null;
+  directive: string;
+  rationale: string | null;
+  sourcePr: number | null;
+  sourceThread: string | null;
+  sourceAuthor: string | null;
+  createdAt?: string | undefined;
+}
+
 export interface ResolveMcpServersOptions {
   daemonCapabilities?: DaemonCapabilities;
   workDir?: string;
   repoMemory?: RepoMemoryEntry[];
+  /**
+   * Pre-filtered review learnings for this run (review/resolve only). Empty
+   * or undefined leaves REVIEW_LEARNINGS=[] in the MCP env, so the agent's
+   * get_review_learnings call returns nothing and save_review_learning /
+   * delete_review_learning still write to .daemon-actions.json (the
+   * orchestrator just persists zero rows).
+   */
+  reviewLearnings?: ReviewLearningPayload[];
   /**
    * Opt-in for the resolve-review-thread MCP server (T029/T030). Set
    * `true` when the agent is running the `resolve` step and the PR has
@@ -126,9 +153,15 @@ export function resolveMcpServers(
     servers["daemon_capabilities"] = daemonCapabilitiesServerDef(opts.daemonCapabilities);
   }
 
-  // Repo memory MCP server, persistent learnings across executions
+  // Repo memory MCP server, persistent learnings across executions. Carries
+  // both general repo_memory entries and (when populated by review/resolve
+  // handlers) review_learnings entries via separate env vars.
   if (opts?.workDir !== undefined) {
-    servers["repo_memory"] = repoMemoryServerDef(opts.workDir, opts.repoMemory ?? []);
+    servers["repo_memory"] = repoMemoryServerDef(
+      opts.workDir,
+      opts.repoMemory ?? [],
+      opts.reviewLearnings ?? [],
+    );
   }
 
   return servers;
@@ -246,7 +279,11 @@ function daemonCapabilitiesServerDef(capabilities: DaemonCapabilities): McpServe
  * Repo memory MCP server definition (stdio transport).
  * Passes the workDir and pre-loaded memory via env vars.
  */
-function repoMemoryServerDef(workDir: string, memory: RepoMemoryEntry[]): McpServerDef {
+function repoMemoryServerDef(
+  workDir: string,
+  memory: RepoMemoryEntry[],
+  reviewLearnings: ReviewLearningPayload[],
+): McpServerDef {
   const serverPath = resolveServerPath("repo-memory");
 
   return {
@@ -256,6 +293,7 @@ function repoMemoryServerDef(workDir: string, memory: RepoMemoryEntry[]): McpSer
     env: {
       WORK_DIR: workDir,
       REPO_MEMORY: JSON.stringify(memory),
+      REVIEW_LEARNINGS: JSON.stringify(reviewLearnings),
     },
   };
 }

@@ -4,6 +4,7 @@ import { fetchAndBuildDigest, renderDigestSection } from "../discussion-digest";
 import type { WorkflowHandler } from "../registry";
 import { findById } from "../runs-store";
 import { type BranchStaleness, formatRefreshDirective, getBranchStaleness } from "./branch-refresh";
+import { renderReviewLearningsFooter } from "./review-learnings-footer";
 
 /**
  * `review` handler: proactive senior-developer code review on an open PR.
@@ -119,6 +120,11 @@ export const handler: WorkflowHandler = async (ctx) => {
       headBranch: pr.head.ref,
       baseBranch: pr.base.ref,
       labels: [],
+      // Forward orchestrator pre-loaded learnings so runPipeline's prompt-
+      // builder and MCP server see them. Without this, the workflow-dispatch
+      // path silently drops the feature even though the direct-pipeline path
+      // works. Wire upstream: src/daemon/workflow-executor.ts.
+      ...(ctx.reviewLearnings !== undefined ? { reviewLearnings: ctx.reviewLearnings } : {}),
       octokit,
       log,
     };
@@ -129,6 +135,11 @@ export const handler: WorkflowHandler = async (ctx) => {
         ? { trackingCommentId }
         : {}),
       ...(digestSection.length > 0 ? { discussionDigest: digestSection } : {}),
+      // Review handler is one of only two workflows authorised to consume
+      // review_learnings as repo policy (resolve is the other). The orch-
+      // estrator pre-loads them onto ctx for every job; this flag is what
+      // lets the pipeline forward them into the prompt + MCP server.
+      enableReviewLearnings: true,
     });
     if (!result.success) {
       // `reason` is internal (DB state.failedReason → orchestrator quota
@@ -172,7 +183,8 @@ export const handler: WorkflowHandler = async (ctx) => {
     const headline = `🔍 **Code review complete**, ${String(pr.changed_files)} files, +${String(pr.additions)}/-${String(pr.deletions)}.`;
     const reportSection =
       report.length > 0 ? `\n\n${report}` : `\n\n_(no REVIEW.md report, agent did not write one)_`;
-    const humanMessage = `${headline}${reportSection}${metaLine}`;
+    const learningsFooter = renderReviewLearningsFooter(result.appliedReviewLearnings);
+    const humanMessage = `${headline}${reportSection}${metaLine}${learningsFooter}`;
 
     await ctx.setState(state, humanMessage);
     log.info(
@@ -184,7 +196,19 @@ export const handler: WorkflowHandler = async (ctx) => {
       },
       "review handler succeeded",
     );
-    return { status: "succeeded", state, humanMessage };
+    // Forward the IDs of learnings actually applied to the prompt so the
+    // orchestrator can bump `use_count` + `last_used_at`. Without this,
+    // the workflow-dispatch path silently drops the bump even though the
+    // direct-pipeline path forwards it via `appliedReviewLearningIds` in
+    // job-executor.ts. workflow-executor.ts reads this field off the
+    // HandlerResult and writes it into `job:result`.
+    const appliedReviewLearningIds = (result.appliedReviewLearnings ?? []).map((l) => l.id);
+    return {
+      status: "succeeded",
+      state,
+      humanMessage,
+      ...(appliedReviewLearningIds.length > 0 ? { appliedReviewLearningIds } : {}),
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log.warn({ err }, "review handler caught error");

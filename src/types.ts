@@ -42,6 +42,25 @@ export interface BotContext {
   dryRun?: boolean;
   /** Pre-loaded repo memory from orchestrator (daemon mode only) */
   repoMemory?: { id: string; category: string; content: string; pinned: boolean }[];
+  /**
+   * Pre-loaded review learnings from orchestrator (daemon mode only).
+   * Populated by handleAccept for every dispatched job; only the `review` and
+   * `resolve` handlers actually render these into the prompt (gated at the
+   * handler / runPipeline-override level). Carries directives extracted from
+   * past PR review pushback that can suppress findings in future reviews.
+   * See src/orchestrator/review-learnings.ts.
+   */
+  reviewLearnings?: {
+    id: string;
+    scope: "local" | "global";
+    fileGlob: string | null;
+    directive: string;
+    rationale: string | null;
+    sourcePr: number | null;
+    sourceThread: string | null;
+    sourceAuthor: string | null;
+    createdAt?: string | undefined;
+  }[];
   /** Daemon capabilities, set when running in daemon mode to enable capability-based tools */
   daemonCapabilities?: DaemonCapabilities;
   /**
@@ -82,6 +101,23 @@ export interface ExecutionResult {
   daemonActions?: {
     learnings: { category: string; content: string }[];
     deletions: string[];
+    /**
+     * Review-learning saves from the `save_review_learning` MCP tool. Empty
+     * unless the agent invoked the tool (which only the review/resolve
+     * prompts encourage). Orchestrator persists these via
+     * `saveReviewLearnings` in connection-handler's result path.
+     */
+    reviewLearningSaves?: {
+      directive: string;
+      rationale?: string;
+      fileGlob?: string;
+      scope?: "local" | "global";
+      sourcePr?: number;
+      sourceThread?: string;
+      sourceAuthor?: string;
+    }[];
+    /** Review-learning deletes by id; symmetrical with deletions. */
+    reviewLearningDeletes?: string[];
   };
   /**
    * Contents of files the caller asked the pipeline to capture from the
@@ -90,6 +126,26 @@ export interface ExecutionResult {
    * undefined, since an agent may legitimately decline to write a report.
    */
   capturedFiles?: Record<string, string>;
+  /**
+   * Review learnings actually rendered into the prompt this run (after the
+   * file-glob filter against PR changed files). Populated only when the
+   * caller passed `enableReviewLearnings: true`. The review/resolve handler
+   * reads this to render the `🧠 Learnings used` footer on the tracking
+   * comment with the same set the agent saw.
+   */
+  appliedReviewLearnings?: {
+    id: string;
+    scope: "local" | "global";
+    fileGlob: string | null;
+    directive: string;
+    rationale: string | null;
+    sourcePr: number | null;
+    sourceThread: string | null;
+    sourceAuthor: string | null;
+    /** ISO timestamp of when this directive was first recorded. Rendered in
+     * the `🧠 Learnings used` footer so a maintainer can spot stale rules. */
+    createdAt?: string | undefined;
+  }[];
 }
 
 /**

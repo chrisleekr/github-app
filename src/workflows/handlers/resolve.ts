@@ -6,6 +6,7 @@ import { findById } from "../runs-store";
 import { type BranchStaleness, formatRefreshDirective, getBranchStaleness } from "./branch-refresh";
 import { evaluateChecks } from "./checks";
 import { parseOutstandingSection } from "./resolve-report";
+import { renderReviewLearningsFooter } from "./review-learnings-footer";
 
 /**
  * `resolve` handler: runs a resolution pass on an open pull request:
@@ -151,6 +152,9 @@ export const handler: WorkflowHandler = async (ctx) => {
       headBranch: pr.head.ref,
       baseBranch: pr.base.ref,
       labels: [],
+      // Mirrors review.ts: workflow-dispatch path needs this thread or the
+      // pipeline sees ctx.reviewLearnings=undefined and the feature no-ops.
+      ...(ctx.reviewLearnings !== undefined ? { reviewLearnings: ctx.reviewLearnings } : {}),
       octokit,
       log,
     };
@@ -162,6 +166,10 @@ export const handler: WorkflowHandler = async (ctx) => {
         : {}),
       ...(topLevelComments.length > 0 ? { enableResolveReviewThread: true } : {}),
       ...(digestSection.length > 0 ? { discussionDigest: digestSection } : {}),
+      // Resolve handler may persist new review_learnings when a maintainer
+      // pushback resolves with "intentional, don't flag next time". See
+      // review.ts for the gate's contract.
+      enableReviewLearnings: true,
     });
     if (!result.success) {
       // `reason` is internal (DB state.failedReason → orchestrator quota
@@ -264,7 +272,8 @@ export const handler: WorkflowHandler = async (ctx) => {
             ? `\n\n## Outstanding\n\n${ciOutstandingLines.join("\n")}`
             : "";
       const reportSection = report.length > 0 && outstandingBody === null ? `\n\n${report}` : "";
-      const humanMessage = `${headline}${outstandingSection}${reportSection}${metaLine}`;
+      const learningsFooter = renderReviewLearningsFooter(result.appliedReviewLearnings);
+      const humanMessage = `${headline}${outstandingSection}${reportSection}${metaLine}${learningsFooter}`;
 
       const state = { ...baseState, ci_verified: false };
       await ctx.setState(state, humanMessage);
@@ -287,7 +296,8 @@ export const handler: WorkflowHandler = async (ctx) => {
         : `🔎 **Resolve iteration complete**, CI is now green; started with ${String(failingChecks.length)} failing checks and ${String(topLevelComments.length)} open comment threads (some may already be resolved).`;
     const reportSection =
       report.length > 0 ? `\n\n${report}` : `\n\n_(no RESOLVE.md report, agent did not write one)_`;
-    const humanMessage = `${headline}${reportSection}${metaLine}`;
+    const learningsFooter = renderReviewLearningsFooter(result.appliedReviewLearnings);
+    const humanMessage = `${headline}${reportSection}${metaLine}${learningsFooter}`;
 
     await ctx.setState(state, humanMessage);
     log.info(
@@ -298,7 +308,15 @@ export const handler: WorkflowHandler = async (ctx) => {
       },
       "resolve handler succeeded",
     );
-    return { status: "succeeded", state, humanMessage };
+    // Mirrors review.ts: forward applied-learning IDs so orchestrator can
+    // bump use_count. See workflow-executor.ts for the downstream wire.
+    const appliedReviewLearningIds = (result.appliedReviewLearnings ?? []).map((l) => l.id);
+    return {
+      status: "succeeded",
+      state,
+      humanMessage,
+      ...(appliedReviewLearningIds.length > 0 ? { appliedReviewLearningIds } : {}),
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log.warn({ err }, "resolve handler caught error");

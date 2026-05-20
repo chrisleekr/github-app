@@ -628,6 +628,25 @@ const configSchema = z
     // Server mode only; a daemon process ignores it.
     schedulerEnabled: z.boolean().default(false),
 
+    // Master kill-switch for the review-learnings feature
+    // (src/orchestrator/review-learnings.ts). When false the orchestrator
+    // never loads learnings into job:payload, the prompt block stays empty,
+    // and `save_review_learning` / `delete_review_learning` MCP calls are
+    // dropped on the orchestrator side. Defaults to true: the feature is
+    // additive (nothing surfaces until the agent saves the first directive)
+    // so it's safe to leave on out of the box. Set false to opt out
+    // operationally without removing the DB rows.
+    reviewLearningsEnabled: z.boolean().default(true),
+
+    // Stage 2 of the RAG rollout (Phase 1.5.H). When true, the orchestrator
+    // embeds each new directive at save time + each PR's changed-file paths
+    // at handleAccept time, then runs pgvector top-K against the
+    // review_learnings.embedding column. When false (default), saves leave
+    // the column NULL and the load path uses the legacy file-glob filter.
+    // Migration 015 must have applied successfully (pgvector extension
+    // available) for the flag to do anything useful.
+    reviewLearningsRagEnabled: z.boolean().default(false),
+
     // Cadence of the scheduler scan. On each tick the scheduler
     // enumerates installations, fetches each repo's `.github-app.yaml`,
     // and enqueues any action whose cron slot is due. A value outside
@@ -988,6 +1007,14 @@ function loadConfig(): Config {
 
     // Group 14, Scheduled actions
     schedulerEnabled: parseBooleanEnv("SCHEDULER_ENABLED", process.env["SCHEDULER_ENABLED"]),
+    reviewLearningsEnabled: parseBooleanEnv(
+      "REVIEW_LEARNINGS_ENABLED",
+      process.env["REVIEW_LEARNINGS_ENABLED"],
+    ),
+    reviewLearningsRagEnabled: parseBooleanEnv(
+      "REVIEW_LEARNINGS_RAG_ENABLED",
+      process.env["REVIEW_LEARNINGS_RAG_ENABLED"],
+    ),
     schedulerScanIntervalMs: process.env["SCHEDULER_SCAN_INTERVAL_MS"],
     schedulerAllowAutoMerge: parseBooleanEnv(
       "SCHEDULER_ALLOW_AUTO_MERGE",

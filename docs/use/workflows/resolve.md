@@ -90,3 +90,7 @@ Public-comment and operator surfaces are separated so a raw SDK or octokit error
 
 - **Public tracking comment**: a safe constant: `"resolve pipeline execution failed, see server logs for details."` The actual error string remains internal because octokit error stacks include `https://x-access-token:GHS_xxx@…` in the request URL.
 - **Operator surfaces**: `state.failedReason` on the `workflow_runs` row, `pino` log lines on the daemon, and `ExecutionResult.errorMessage` returned to the orchestrator. The orchestrator's transient-quota detector reads `state.failedReason` and auto-defers the ship loop's next iteration when the SDK reports `"You've hit your limit · resets … UTC"`.
+
+## Review learnings
+
+`resolve` loads persisted review-policy directives from the `review_learnings` table the same way `review` does, but additionally exposes the `save_review_learning` / `delete_review_learning` MCP tools to the agent. The agent self-initiates a save when a maintainer rebuts one of its prior findings with a rationale that reads as durable repo policy. Applied directive IDs flow back via `appliedReviewLearningIds`, the orchestrator bumps `use_count`, and the tracking comment ends with a `🧠 Learnings used` collapsible footer when at least one directive applied. See `docs/use/review-learnings.md` for the full feature surface, the per-repo `.github-app.yaml` opt-out, and the gating envs.

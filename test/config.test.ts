@@ -13,8 +13,8 @@ const BASE = {
   privateKey: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
   webhookSecret: "secret",
   daemonAuthToken: "daemon-token",
-  databaseUrl: "postgres://user:pass@localhost:5432/db",
-  valkeyUrl: "redis://localhost:6379",
+  databaseUrl: "postgres://user:pass@localhost:55432/db",
+  valkeyUrl: "redis://localhost:56379",
 };
 
 const ANTHROPIC_BASE = {

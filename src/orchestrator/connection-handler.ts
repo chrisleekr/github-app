@@ -8,6 +8,16 @@ import { logger } from "../logger";
 import { addReaction } from "../utils/reactions";
 import { findById, findInflightByOwner, type WorkflowRunRow } from "../workflows/runs-store";
 import { setState } from "../workflows/tracking-mirror";
+import type {
+  loadReviewLearnings as LoadReviewLearningsFn,
+  ReviewLearning,
+  searchReviewLearningsByEmbedding as SearchReviewLearningsByEmbeddingFn,
+} from "./review-learnings";
+
+interface ReviewLearningsModule {
+  loadReviewLearnings: typeof LoadReviewLearningsFn;
+  searchReviewLearningsByEmbedding: typeof SearchReviewLearningsByEmbeddingFn;
+}
 
 // Read orchestrator app version at module load so we can detect daemon drift
 // in handleRegister and request an update via daemon:update-required.
@@ -855,17 +865,21 @@ async function handleAccept(
     // octokit construction entirely. Both App calls hit the GitHub API and
     // count against rate limits even though their result is discarded when
     // GITHUB_PERSONAL_ACCESS_TOKEN is set.
+    // We keep an Octokit handle around in either mode so subsequent steps
+    // (per-repo config fetch, 1.5.F) can reuse it without re-minting.
     let token: string;
+    let acceptOctokit: Octokit;
     if (config.githubPersonalAccessToken !== undefined) {
       token = config.githubPersonalAccessToken;
+      acceptOctokit = new Octokit({ auth: token });
     } else {
       const app = getOrCreateApp();
       const { data: installation } = await app.octokit.rest.apps.getRepoInstallation({
         owner,
         repo,
       });
-      const octokit = await app.getInstallationOctokit(installation.id);
-      token = await resolveGithubToken(octokit);
+      acceptOctokit = await app.getInstallationOctokit(installation.id);
+      token = await resolveGithubToken(acceptOctokit);
     }
 
     // No turn cap by default: workflows must run end-to-end without losing
@@ -890,6 +904,20 @@ async function handleAccept(
     const envVars = await getRepoEnvVars(owner, repo);
     const memory = await getRepoMemory(owner, repo);
 
+    // Load review learnings (full owner+repo+global set). Daemon-side
+    // review/resolve handlers filter by changed files before injecting into
+    // the prompt. Fail-open: if the DB query throws for this single field,
+    // dispatch without learnings rather than failing the whole job.
+    // Master kill-switch via REVIEW_LEARNINGS_ENABLED env (default true).
+    // Per-repo policy (1.5.F) from .github-app.yaml's `review_learnings`
+    // block layers on top: if a repo opts out via `enabled: false`, we skip
+    // the load entirely. `scope` and `max_age_days` are applied at query
+    // time. Cache reuse: the existing scheduler ETag cache (per process)
+    // means subsequent dispatches against the same repo are body-free.
+    const reviewLearnings: ReviewLearning[] = config.reviewLearningsEnabled
+      ? await loadReviewLearningsForJob(acceptOctokit, owner, repo, contextJson)
+      : [];
+
     handleJobAccept({
       offerId,
       daemonId,
@@ -903,6 +931,21 @@ async function handleAccept(
       ),
       envVars,
       memory,
+      ...(reviewLearnings.length > 0
+        ? {
+            reviewLearnings: reviewLearnings.map((l) => ({
+              id: l.id,
+              scope: l.scope,
+              fileGlob: l.fileGlob,
+              directive: l.directive,
+              rationale: l.rationale,
+              sourcePr: l.sourcePr,
+              sourceThread: l.sourceThread,
+              sourceAuthor: l.sourceAuthor,
+              createdAt: l.createdAt.toISOString(),
+            })),
+          }
+        : {}),
       ...(offer.workflowRun !== undefined ? { workflowRun: offer.workflowRun } : {}),
     });
   } catch (err) {
@@ -1105,13 +1148,116 @@ async function resolveDeliveryId(
 }
 
 /**
- * Persist learnings and deletions from a daemon execution to repo_memory.
- * Extracted to reduce nesting depth in handleResult.
+ * Resolve the review-learnings universe to ship in this job's payload.
+ * Wraps three layers (per-repo `.github-app.yaml` opt-out from 1.5.F,
+ * RAG-vs-deterministic split from 1.5.H, fail-open dispatch) into one
+ * helper so `handleAccept` stays under the max-depth lint cap.
+ *
+ * Returns `[]` on any failure: the dispatch proceeds without learnings
+ * rather than dropping the whole job.
+ */
+async function loadReviewLearningsForJob(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  contextJson: Record<string, unknown>,
+): Promise<ReviewLearning[]> {
+  try {
+    const [configFetcherModule, configSchemaModule] = await Promise.all([
+      import("../scheduler/config-fetcher"),
+      import("../scheduler/config-schema"),
+    ]);
+    const repoConfig = await configFetcherModule.fetchRepoConfig({
+      octokit,
+      owner,
+      repo,
+      path: config.schedulerConfigFile,
+      log: logger,
+    });
+    const rlConfig =
+      repoConfig?.config.review_learnings ?? configSchemaModule.DEFAULT_REVIEW_LEARNINGS_CONFIG;
+    if (!rlConfig.enabled) return [];
+
+    const reviewLearningsModule = await import("./review-learnings");
+    const loadFilter = { scope: rlConfig.scope, maxAgeDays: rlConfig.max_age_days };
+
+    // RAG mode (1.5.H): only meaningful for PR-shaped jobs since we use the
+    // changed-file paths as the embedding query. Falls back to the
+    // deterministic load on any failure inside searchReviewLearningsByEmbedding.
+    const isPRJob = contextJson["isPR"] === true;
+    const entityNumber = contextJson["entityNumber"];
+    if (config.reviewLearningsRagEnabled && isPRJob && typeof entityNumber === "number") {
+      return await loadReviewLearningsRag(
+        octokit,
+        owner,
+        repo,
+        entityNumber,
+        loadFilter,
+        reviewLearningsModule,
+      );
+    }
+    return await reviewLearningsModule.loadReviewLearnings(owner, repo, loadFilter);
+  } catch (err) {
+    logger.warn({ err, owner, repo }, "Failed to load review learnings; dispatching without");
+    return [];
+  }
+}
+
+/**
+ * RAG branch (1.5.H): fetch the PR's changed-file list, embed each path,
+ * and run the pgvector top-K search. Falls back to the deterministic load
+ * if the file-list fetch fails.
+ */
+async function loadReviewLearningsRag(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  loadFilter: { scope: "local" | "global"; maxAgeDays: number | null },
+  reviewLearningsModule: ReviewLearningsModule,
+): Promise<ReviewLearning[]> {
+  try {
+    const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 100,
+    });
+    const fileNames = files.map((f) => f.filename);
+    return await reviewLearningsModule.searchReviewLearningsByEmbedding(owner, repo, fileNames, {
+      filter: loadFilter,
+    });
+  } catch (err) {
+    logger.warn(
+      { err, owner, repo, prNumber },
+      "RAG file-list fetch failed; falling back to non-RAG load",
+    );
+    return reviewLearningsModule.loadReviewLearnings(owner, repo, loadFilter);
+  }
+}
+
+/**
+ * Persist learnings and deletions from a daemon execution to repo_memory
+ * and (for review/resolve workflows) review_learnings. Extracted to reduce
+ * nesting depth in handleResult.
  */
 async function persistRepoKnowledge(
   deliveryId: string,
   learnings: { category: string; content: string }[] | undefined,
   deletions: string[] | undefined,
+  reviewLearningSaves:
+    | {
+        directive: string;
+        rationale?: string | undefined;
+        fileGlob?: string | undefined;
+        scope?: "local" | "global" | undefined;
+        sourcePr?: number | undefined;
+        sourceThread?: string | undefined;
+        sourceAuthor?: string | undefined;
+      }[]
+    | undefined,
+  reviewLearningDeletes: string[] | undefined,
+  appliedReviewLearningIds: string[] | undefined,
 ): Promise<void> {
   try {
     const { saveRepoLearnings, deleteRepoMemories } = await import("./repo-knowledge");
@@ -1134,6 +1280,70 @@ async function persistRepoKnowledge(
       if (deleted > 0) {
         logger.info({ deliveryId, deleted }, "Deleted outdated repo memories per daemon request");
       }
+    }
+    // Kill-switch: when disabled, drop any review-learning actions an agent
+    // managed to emit (e.g. because the operator flipped the flag mid-run
+    // or a daemon was started before the flag flipped). Log so the drop is
+    // visible in audits.
+    if (
+      config.reviewLearningsEnabled &&
+      reviewLearningSaves !== undefined &&
+      reviewLearningSaves.length > 0
+    ) {
+      const { saveReviewLearnings } = await import("./review-learnings");
+      const saved = await saveReviewLearnings(exec.repo_owner, exec.repo_name, reviewLearningSaves);
+      if (saved > 0) {
+        logger.info({ deliveryId, saved }, "Persisted review learnings from execution");
+      }
+    } else if (reviewLearningSaves !== undefined && reviewLearningSaves.length > 0) {
+      logger.warn(
+        { deliveryId, dropped: reviewLearningSaves.length },
+        "Dropped review-learning saves: REVIEW_LEARNINGS_ENABLED=false",
+      );
+    }
+    if (
+      config.reviewLearningsEnabled &&
+      reviewLearningDeletes !== undefined &&
+      reviewLearningDeletes.length > 0
+    ) {
+      const { deleteReviewLearnings } = await import("./review-learnings");
+      // Owner/repo-scoped delete: an id that doesn't belong to this job's
+      // (owner, repo) is silently no-opped (1.5.D). The caller-supplied
+      // exec.repo_owner / exec.repo_name come from the executions row we
+      // already SELECTed above.
+      const deleted = await deleteReviewLearnings(
+        exec.repo_owner,
+        exec.repo_name,
+        reviewLearningDeletes,
+      );
+      if (deleted > 0) {
+        logger.info(
+          { deliveryId, deleted },
+          "Deleted outdated review learnings per daemon request",
+        );
+      }
+    } else if (reviewLearningDeletes !== undefined && reviewLearningDeletes.length > 0) {
+      // Symmetric audit log: when the kill-switch is off and the daemon sent
+      // deletes anyway (e.g. flag flipped mid-run), record the drop just like
+      // we do for save actions above.
+      logger.warn(
+        { deliveryId, dropped: reviewLearningDeletes.length },
+        "Dropped review-learning deletes: REVIEW_LEARNINGS_ENABLED=false",
+      );
+    }
+    // 1.5.E: bump use_count for the IDs the daemon actually applied to a
+    // prompt this run. Behind the same kill-switch.
+    if (
+      config.reviewLearningsEnabled &&
+      appliedReviewLearningIds !== undefined &&
+      appliedReviewLearningIds.length > 0
+    ) {
+      const { bumpReviewLearningUsage } = await import("./review-learnings");
+      await bumpReviewLearningUsage(appliedReviewLearningIds);
+      logger.info(
+        { deliveryId, applied: appliedReviewLearningIds.length },
+        "Bumped use_count for applied review learnings",
+      );
     }
   } catch (err) {
     logger.error({ err, deliveryId }, "Failed to persist repo knowledge");
@@ -1207,15 +1417,30 @@ async function handleResult(
   // Finalize execution
   await finalizeExecution(actualDeliveryId, msg.payload);
 
-  // Persist learnings and process deletions from daemon execution
+  // Persist learnings and process deletions from daemon execution. Covers
+  // both repo_memory (general learnings) and review_learnings (review-policy
+  // directives) since both ride the same .daemon-actions.json round-trip.
   const learnings = msg.payload.learnings;
   const deletions = msg.payload.deletions;
+  const reviewLearningSaves = msg.payload.reviewLearningSaves;
+  const reviewLearningDeletes = msg.payload.reviewLearningDeletes;
+  const appliedReviewLearningIds = msg.payload.appliedReviewLearningIds;
 
   if (
     (learnings !== undefined && learnings.length > 0) ||
-    (deletions !== undefined && deletions.length > 0)
+    (deletions !== undefined && deletions.length > 0) ||
+    (reviewLearningSaves !== undefined && reviewLearningSaves.length > 0) ||
+    (reviewLearningDeletes !== undefined && reviewLearningDeletes.length > 0) ||
+    (appliedReviewLearningIds !== undefined && appliedReviewLearningIds.length > 0)
   ) {
-    await persistRepoKnowledge(actualDeliveryId, learnings, deletions);
+    await persistRepoKnowledge(
+      actualDeliveryId,
+      learnings,
+      deletions,
+      reviewLearningSaves,
+      reviewLearningDeletes,
+      appliedReviewLearningIds,
+    );
   }
 
   logger.info(

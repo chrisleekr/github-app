@@ -9,7 +9,7 @@ import { SQL } from "bun";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 
 const TEST_DATABASE_URL =
-  process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:5432/github_app_test";
+  process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:55432/github_app_test";
 
 let sql: SQL | null = null;
 try {

@@ -452,6 +452,22 @@ export interface JobAcceptParams {
   allowedTools: string[];
   envVars: Record<string, string>;
   memory: { id: string; category: string; content: string; pinned: boolean }[];
+  /**
+   * Pre-loaded review learnings (full owner+repo+global set). Only the
+   * review/resolve workflow handlers actually render these into the prompt;
+   * for other jobs the daemon just keeps them on the context as a no-op.
+   */
+  reviewLearnings?: {
+    id: string;
+    scope: "local" | "global";
+    fileGlob: string | null;
+    directive: string;
+    rationale: string | null;
+    sourcePr: number | null;
+    sourceThread: string | null;
+    sourceAuthor: string | null;
+    createdAt?: string | undefined;
+  }[];
   /** Present for workflow-run jobs, forwarded verbatim into `job:payload`. */
   workflowRun?: WorkflowRunRef;
   /** Present for scoped jobs, forwarded verbatim into `job:payload` so the
@@ -469,6 +485,7 @@ export function handleJobAccept({
   allowedTools,
   envVars,
   memory,
+  reviewLearnings,
   workflowRun,
   scoped,
 }: JobAcceptParams): void {
@@ -493,6 +510,7 @@ export function handleJobAccept({
         allowedTools,
         ...(Object.keys(envVars).length > 0 ? { envVars } : {}),
         ...(memory.length > 0 ? { memory } : {}),
+        ...(reviewLearnings !== undefined && reviewLearnings.length > 0 ? { reviewLearnings } : {}),
         ...(workflowRun !== undefined ? { workflowRun } : {}),
         ...(scoped !== undefined ? { scoped } : {}),
       },

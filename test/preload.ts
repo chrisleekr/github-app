@@ -59,5 +59,5 @@ setIfEmpty("ANTHROPIC_API_KEY", "test-anthropic-key");
 // Post-dispatch-collapse, validateDataLayerConfig requires DATABASE_URL and
 // VALKEY_URL in server mode (ORCHESTRATOR_URL unset). Without these, config
 // load aborts before any test can run in CI, where no .env is present.
-setIfEmpty("DATABASE_URL", "postgres://test:test@localhost:5432/test");
-setIfEmpty("VALKEY_URL", "redis://localhost:6379");
+setIfEmpty("DATABASE_URL", "postgres://test:test@localhost:55432/test");
+setIfEmpty("VALKEY_URL", "redis://localhost:56379");

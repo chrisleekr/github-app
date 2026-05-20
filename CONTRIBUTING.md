@@ -120,8 +120,8 @@ bun test
 
 The defaults baked into the test files are:
 
-- `TEST_DATABASE_URL=postgres://bot:bot@localhost:5432/github_app_test`
-- `VALKEY_URL=redis://localhost:6379` (default applied by `test/preload.ts`)
+- `TEST_DATABASE_URL=postgres://bot:bot@localhost:55432/github_app_test`
+- `VALKEY_URL=redis://localhost:56379` (default applied by `test/preload.ts`)
 
 Override either env var if you point the suites at a different host.
 

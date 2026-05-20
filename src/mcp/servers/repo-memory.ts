@@ -1,27 +1,45 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-import { sanitizeRepoMemoryContent } from "../../utils/sanitize";
+import {
+  appendActionToPath,
+  buildSaveAction,
+  buildSaveReviewLearningAction,
+  type DaemonAction,
+} from "./repo-memory-actions";
 
 /**
  * MCP server for persistent repo memory.
  * Provides tools for Claude to save, delete, and read learnings about a repository.
  *
- * Learnings are accumulated in a JSON file (.daemon-actions.json) in the workDir.
- * After execution, the daemon reads this file and sends actions to the orchestrator
- * via job:result, which persists them to Postgres.
+ * Two concept families share this server because they share the same scratch-
+ * file / orchestrator-persist plumbing:
+ *
+ *   - repo_memory: setup / architecture / conventions / env / gotchas. Loaded
+ *     into every job's prompt as untrusted hints.
+ *   - review_learnings: review-policy directives (file-glob-scoped) extracted
+ *     from past PR review pushback. Only the `review` and `resolve` workflow
+ *     handlers populate the env var, so the save_review_learning /
+ *     delete_review_learning / get_review_learnings tools are no-ops for
+ *     other workflows (the agent has no learnings to enumerate or update).
+ *
+ * Actions are accumulated in a JSON file (.daemon-actions.json) in the
+ * workDir. After execution, the daemon reads this file and sends actions to
+ * the orchestrator via job:result, which persists them to Postgres.
  *
  * Environment variables (passed by the executor):
  * - WORK_DIR: Path to the cloned repo working directory
  * - REPO_MEMORY: JSON string of pre-loaded memory entries from orchestrator
+ * - REVIEW_LEARNINGS: JSON string of pre-loaded review-learning entries
+ *   (subset filtered by the review/resolve handler to the PR's changed files).
  */
 
 const WORK_DIR = process.env["WORK_DIR"];
 const REPO_MEMORY = process.env["REPO_MEMORY"];
+const REVIEW_LEARNINGS = process.env["REVIEW_LEARNINGS"];
 
 if (WORK_DIR === undefined || WORK_DIR === "") {
   console.error("Error: WORK_DIR env var is required");
@@ -32,38 +50,8 @@ const ACTIONS_FILE = join(WORK_DIR, ".daemon-actions.json");
 
 const VALID_CATEGORIES = ["setup", "architecture", "conventions", "env", "gotchas"] as const;
 
-// Action file helpers
-
-interface SaveAction {
-  type: "save";
-  category: string;
-  content: string;
-}
-
-interface DeleteAction {
-  type: "delete";
-  id: string;
-}
-
-type DaemonAction = SaveAction | DeleteAction;
-
-function readActions(): DaemonAction[] {
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    if (existsSync(ACTIONS_FILE)) {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      return JSON.parse(readFileSync(ACTIONS_FILE, "utf-8")) as DaemonAction[];
-    }
-  } catch {
-    // Corrupted file, start fresh
-  }
-  return [];
-}
-
 function appendAction(action: DaemonAction): void {
-  const actions = readActions();
-  actions.push(action);
-  writeFileSync(ACTIONS_FILE, JSON.stringify(actions, null, 2)); // eslint-disable-line security/detect-non-literal-fs-filename
+  appendActionToPath(ACTIONS_FILE, action);
 }
 
 // MCP Server
@@ -95,32 +83,29 @@ server.registerTool(
     // Untrusted-input boundary: memory rows are surfaced as data on every
     // future run, so strip injection vectors before they reach the daemon
     // scratch file. See issue #112 for the cross-session indirect-injection
-    // chain that motivates this guard.
-    const safeContent = sanitizeRepoMemoryContent(content);
-    if (safeContent === "") {
-      // Content collapsed to empty (entirely an HTML comment, invisibles, or
-      // similar). Don't append an action: saveRepoLearnings would skip it on
-      // the orchestrator side anyway, and signalling success here would
-      // leave the agent thinking it wrote something it did not.
+    // chain that motivates this guard. The build function does the
+    // sanitisation; we just append and reply.
+    const result = buildSaveAction({ category, content });
+    if (!result.ok) {
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({
-              saved: false,
-              category,
-              reason: "empty_after_sanitize",
-            }),
+            text: JSON.stringify({ saved: false, category, reason: result.reason }),
           },
         ],
       };
     }
-    appendAction({ type: "save", category, content: safeContent });
+    appendAction(result.action);
     return {
       content: [
         {
           type: "text" as const,
-          text: JSON.stringify({ saved: true, category, content: safeContent }),
+          text: JSON.stringify({
+            saved: true,
+            category: result.action.category,
+            content: result.action.content,
+          }),
         },
       ],
     };
@@ -159,6 +144,126 @@ server.registerTool(
     const memory = REPO_MEMORY ?? "[]";
     return {
       content: [{ type: "text" as const, text: memory }],
+    };
+  },
+);
+
+// Review-learning tools (only meaningful for review / resolve workflows).
+// The orchestrator pre-loads matching learnings into REVIEW_LEARNINGS; saves
+// go through the same .daemon-actions.json round-trip as repo_memory.
+
+const REVIEW_LEARNING_SCOPES = ["local", "global"] as const;
+
+server.registerTool(
+  "save_review_learning",
+  {
+    description:
+      "Save a review-policy directive derived from PR review pushback so future reviews of this repo respect it. Use ONLY when a maintainer explicitly accepted your acknowledgement that a flagged pattern was intentional, or when a thread resolves with a clear 'don't flag this next time' rationale. Be specific about the file pattern and explain WHY. Future review prompts will see this as repo policy.",
+    inputSchema: {
+      directive: z
+        .string()
+        .min(1)
+        .max(2000)
+        .describe(
+          "The directive in one or two sentences. Lead with what NOT to do or what to require, e.g. 'Do not flag duplication of SCOPED_JOB_KINDS in mock.module factories.'",
+        ),
+      rationale: z
+        .string()
+        .max(2000)
+        .optional()
+        .describe("The WHY: short rationale explaining the policy. Strongly recommended."),
+      file_glob: z
+        .string()
+        .max(500)
+        .optional()
+        .describe(
+          "Optional picomatch glob limiting the directive to specific files (e.g. 'test/**/*.test.ts'). Omit for repo-wide directives.",
+        ),
+      scope: z
+        .enum(REVIEW_LEARNING_SCOPES)
+        .optional()
+        .describe(
+          "Scope: 'local' (this repo only, default) or 'global' (every repo under this owner). Global is silently downgraded to local in multi-owner deployments.",
+        ),
+      source_pr: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("PR number the directive was extracted from (provenance)."),
+      source_thread: z
+        .string()
+        .max(200)
+        .optional()
+        .describe(
+          "Source thread identifier, e.g. 'review_comment:12345' or '#issuecomment-67890'.",
+        ),
+      source_author: z
+        .string()
+        .max(100)
+        .optional()
+        .describe("Maintainer login who authored the directive (for provenance)."),
+    },
+  },
+  (input) => {
+    const result = buildSaveReviewLearningAction(input);
+    if (!result.ok) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ saved: false, reason: result.reason }),
+          },
+        ],
+      };
+    }
+    appendAction(result.action);
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({ saved: true, directive: result.action.directive }),
+        },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "delete_review_learning",
+  {
+    description:
+      "Remove an outdated or incorrect review-policy directive. Use the ID shown in the <review_learnings> section. Call when a previous directive no longer reflects how this repo should be reviewed.",
+    inputSchema: {
+      id: z
+        .string()
+        .min(1)
+        .describe("The review-learning ID to delete (UUID from <review_learnings>)."),
+    },
+  },
+  ({ id }) => {
+    appendAction({ type: "delete_learning", id });
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({ deleted: true, id }),
+        },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "get_review_learnings",
+  {
+    description:
+      "Retrieve review-policy directives applicable to the current review. Returns the full set the orchestrator loaded for this run, including any rows omitted from the prompt block by the 24KB byte budget (the truncation marker in <review_learnings> points here as its escape hatch). Use it to enumerate every active directive before calling delete_review_learning.",
+  },
+  () => {
+    const payload = REVIEW_LEARNINGS ?? "[]";
+    return {
+      content: [{ type: "text" as const, text: payload }],
     };
   },
 );

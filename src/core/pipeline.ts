@@ -6,6 +6,10 @@ import { config } from "../config";
 import { resolveMcpServers } from "../mcp/registry";
 import type { BotContext, EnrichedBotContext, ExecutionResult } from "../types";
 import { retryWithBackoff } from "../utils/retry";
+import {
+  pickApplicableLearnings,
+  renderReviewLearningsBlock,
+} from "../utils/review-learnings-filter";
 import { checkoutRepo } from "./checkout";
 import { executeAgent } from "./executor";
 import { fetchGitHubData } from "./fetcher";
@@ -13,41 +17,80 @@ import { resolveGithubToken } from "./github-token";
 import { buildPrompt, buildPromptParts, resolveAllowedTools } from "./prompt-builder";
 import { createTrackingComment, finalizeTrackingComment } from "./tracking-comment";
 
+type DaemonActionsResult = NonNullable<ExecutionResult["daemonActions"]>;
+
 /** Read .daemon-actions.json written by the repo-memory MCP server during execution. */
 function readDaemonActionsFile(
   workDir: string,
   log: { info: (obj: object, msg: string) => void; warn: (obj: object, msg: string) => void },
-): { learnings: { category: string; content: string }[]; deletions: string[] } {
+): DaemonActionsResult {
   try {
     const actionsPath = join(workDir, ".daemon-actions.json");
     const exists = existsSync(actionsPath); // eslint-disable-line security/detect-non-literal-fs-filename
     log.info({ actionsPath, exists }, "Checking for daemon actions file");
     if (exists) {
-      const actions = JSON.parse(readFileSync(actionsPath, "utf-8")) as {
-        type: string;
-        category?: string;
-        content?: string;
-        id?: string;
-      }[];
-      const learnings = actions
+      const raw = JSON.parse(readFileSync(actionsPath, "utf-8")) as Record<string, unknown>[];
+      const learnings = raw
         .filter(
           (a): a is { type: "save"; category: string; content: string } =>
-            a.type === "save" && typeof a.category === "string" && typeof a.content === "string",
+            a["type"] === "save" &&
+            typeof a["category"] === "string" &&
+            typeof a["content"] === "string",
         )
         .map(({ category, content }) => ({ category, content }));
-      const deletions = actions
+      const deletions = raw
         .filter(
           (a): a is { type: "delete"; id: string } =>
-            a.type === "delete" && typeof a.id === "string",
+            a["type"] === "delete" && typeof a["id"] === "string",
         )
         .map((a) => a.id);
-      log.info({ learnings: learnings.length, deletions: deletions.length }, "Read daemon actions");
-      return { learnings, deletions };
+      const reviewLearningSaves = raw
+        .filter((a) => a["type"] === "save_learning" && typeof a["directive"] === "string")
+        .map((a) => extractReviewLearningSave(a));
+      const reviewLearningDeletes = raw
+        .filter(
+          (a): a is { type: "delete_learning"; id: string } =>
+            a["type"] === "delete_learning" && typeof a["id"] === "string",
+        )
+        .map((a) => a.id);
+      log.info(
+        {
+          learnings: learnings.length,
+          deletions: deletions.length,
+          reviewLearningSaves: reviewLearningSaves.length,
+          reviewLearningDeletes: reviewLearningDeletes.length,
+        },
+        "Read daemon actions",
+      );
+      const result: DaemonActionsResult = { learnings, deletions };
+      if (reviewLearningSaves.length > 0) result.reviewLearningSaves = reviewLearningSaves;
+      if (reviewLearningDeletes.length > 0) result.reviewLearningDeletes = reviewLearningDeletes;
+      return result;
     }
   } catch (err) {
     log.warn({ err }, "Failed to read daemon actions file");
   }
   return { learnings: [], deletions: [] };
+}
+
+/**
+ * Narrow a raw `save_learning` action into the orchestrator-facing payload
+ * shape. `exactOptionalPropertyTypes` requires omitting keys whose value
+ * would be undefined, so build the object key-by-key.
+ */
+function extractReviewLearningSave(
+  a: Record<string, unknown>,
+): NonNullable<DaemonActionsResult["reviewLearningSaves"]>[number] {
+  const out: NonNullable<DaemonActionsResult["reviewLearningSaves"]>[number] = {
+    directive: a["directive"] as string,
+  };
+  if (typeof a["rationale"] === "string") out.rationale = a["rationale"];
+  if (typeof a["fileGlob"] === "string") out.fileGlob = a["fileGlob"];
+  if (a["scope"] === "local" || a["scope"] === "global") out.scope = a["scope"];
+  if (typeof a["sourcePr"] === "number") out.sourcePr = a["sourcePr"];
+  if (typeof a["sourceThread"] === "string") out.sourceThread = a["sourceThread"];
+  if (typeof a["sourceAuthor"] === "string") out.sourceAuthor = a["sourceAuthor"];
+  return out;
 }
 
 /**
@@ -168,6 +211,16 @@ export interface RunPipelineOverrides {
    * back to the legacy raw `formatComments` rendering.
    */
   discussionDigest?: string;
+  /**
+   * Opt-in for review-learnings prompt injection and MCP tools. Only the
+   * `review` and `resolve` handlers set this to `true`. When `false`/omitted,
+   * `runPipeline` strips `ctx.reviewLearnings` so the prompt-builder block
+   * stays empty and the MCP server receives `REVIEW_LEARNINGS=[]`, even
+   * though the orchestrator pre-loads learnings uniformly for every job.
+   * The gate lives here (handler-level) so non-review workflows cannot
+   * inadvertently suppress findings or persist review-policy directives.
+   */
+  enableReviewLearnings?: boolean;
 }
 
 /**
@@ -246,6 +299,30 @@ export async function runPipeline(
       headBranch: data.headBranch ?? ctx.headBranch ?? ctx.defaultBranch,
       baseBranch: data.baseBranch ?? ctx.baseBranch ?? ctx.defaultBranch,
     };
+    // Handler-level gate: review_learnings are owner-loaded into every
+    // job's ctx for uniform dispatch, but only the review/resolve handlers
+    // are authorised to inject them as repo policy. Strip here for
+    // everything else so the prompt block stays empty and the MCP server
+    // sees REVIEW_LEARNINGS=[].
+    if (overrides.enableReviewLearnings !== true) {
+      // `exactOptionalPropertyTypes` forbids assigning undefined; delete to
+      // erase the property entirely so downstream `!== undefined` checks
+      // remain accurate.
+      delete enrichedCtx.reviewLearnings;
+    } else if (enrichedCtx.reviewLearnings !== undefined) {
+      // Narrow the orchestrator-loaded universe to directives applicable to
+      // this PR's changed files BEFORE downstream consumers see it. Without
+      // this, the prompt block (glob-filtered + byte-capped) and the MCP
+      // `get_review_learnings` tool (orchestrator-loaded set) disagreed: the
+      // prompt's "… N older learnings omitted …" marker promised the tool
+      // would return "every active directive (including the omitted ones)"
+      // but the tool also returned glob-non-matching rows. Filtering here
+      // makes both surfaces enumerate the same applicable universe.
+      enrichedCtx.reviewLearnings = pickApplicableLearnings(
+        enrichedCtx.reviewLearnings,
+        enrichedCtx.isPR ? data.changedFiles.map((f) => f.filename) : [],
+      );
+    }
 
     // Build both prompt shapes: the legacy single-string `prompt` keeps the
     // dry-run length log + executor fallback working byte-identical, and
@@ -303,6 +380,9 @@ export async function runPipeline(
         {
           workDir,
           ...(enrichedCtx.repoMemory !== undefined ? { repoMemory: enrichedCtx.repoMemory } : {}),
+          ...(enrichedCtx.reviewLearnings !== undefined
+            ? { reviewLearnings: enrichedCtx.reviewLearnings }
+            : {}),
           ...(overrides.enableResolveReviewThread === true
             ? { enableResolveReviewThread: true }
             : {}),
@@ -378,12 +458,51 @@ export async function runPipeline(
         enrichedCtx.log,
       );
 
+      const hasDaemonActions =
+        daemonActions.learnings.length > 0 ||
+        daemonActions.deletions.length > 0 ||
+        (daemonActions.reviewLearningSaves?.length ?? 0) > 0 ||
+        (daemonActions.reviewLearningDeletes?.length ?? 0) > 0;
+
+      // The same filter the prompt-builder ran. Reported back so the
+      // workflow handler can render the `🧠 Learnings used` footer over
+      // exactly the set the agent saw, without re-running the filter
+      // (which would need the PR's changed-file list independently).
+      const appliedReviewLearnings =
+        enrichedCtx.reviewLearnings !== undefined
+          ? pickApplicableLearnings(
+              enrichedCtx.reviewLearnings,
+              enrichedCtx.isPR ? data.changedFiles.map((f) => f.filename) : [],
+            )
+          : [];
+
+      // Telemetry for the 1.5.G byte cap. Re-renders against a placeholder
+      // tag name to get accurate count/byte stats; the prompt-builder
+      // already rendered its own copy with the per-call nonce. The renderer
+      // is pure and bounded by LOAD_CAP rows, so the duplicate work is in
+      // the microsecond range.
+      if (appliedReviewLearnings.length > 0) {
+        const renderStats = renderReviewLearningsBlock(
+          "review_learnings_telemetry",
+          appliedReviewLearnings,
+        );
+        enrichedCtx.log.info(
+          {
+            review_learnings_loaded_count: enrichedCtx.reviewLearnings?.length ?? 0,
+            review_learnings_applied_count: appliedReviewLearnings.length,
+            review_learnings_rendered_count: renderStats.renderedCount,
+            review_learnings_omitted_count: renderStats.omittedCount,
+            review_learnings_rendered_bytes: renderStats.bytes,
+          },
+          "Review learnings rendered into prompt",
+        );
+      }
+
       return {
         ...result,
-        ...(daemonActions.learnings.length > 0 || daemonActions.deletions.length > 0
-          ? { daemonActions }
-          : {}),
+        ...(hasDaemonActions ? { daemonActions } : {}),
         ...(capturedFiles !== undefined ? { capturedFiles } : {}),
+        ...(appliedReviewLearnings.length > 0 ? { appliedReviewLearnings } : {}),
       };
     } finally {
       try {

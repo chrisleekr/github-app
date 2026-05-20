@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 import type { Octokit } from "octokit";
 
 const TEST_DATABASE_URL =
-  process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:5432/github_app_test";
+  process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:55432/github_app_test";
 
 let sql: SQL | null = null;
 try {
@@ -62,6 +62,7 @@ describe.skipIf(skipSuite)("integration: ship-iteration loop end-to-end", () => 
     const db = requireSql();
     await db.unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;
@@ -91,6 +92,7 @@ describe.skipIf(skipSuite)("integration: ship-iteration loop end-to-end", () => 
     if (sql !== null) {
       await sql.unsafe(`
         DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS review_learnings CASCADE;
         DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;

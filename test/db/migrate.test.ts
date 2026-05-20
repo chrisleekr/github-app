@@ -13,7 +13,7 @@ import { SQL } from "bun";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
 const TEST_DATABASE_URL =
-  process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:5432/github_app_test";
+  process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:55432/github_app_test";
 
 // Attempt to connect, skip all tests if Postgres is unreachable.
 let sql: SQL | null = null;
@@ -34,6 +34,7 @@ describe.skipIf(sql === null)("runMigrations", () => {
   beforeAll(async () => {
     await requireDb().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;
@@ -53,6 +54,7 @@ describe.skipIf(sql === null)("runMigrations", () => {
   afterAll(async () => {
     await requireDb().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;
@@ -78,7 +80,7 @@ describe.skipIf(sql === null)("runMigrations", () => {
     const versions: { version: string }[] = await requireDb()`
       SELECT version FROM _migrations ORDER BY version
     `;
-    expect(versions.length).toBe(13);
+    expect(versions.length).toBe(15);
     expect(versions[0]?.version).toBe("001_initial");
     expect(versions[1]?.version).toBe("002_repo_knowledge");
     expect(versions[2]?.version).toBe("003_dispatch_decisions");
@@ -92,6 +94,8 @@ describe.skipIf(sql === null)("runMigrations", () => {
     expect(versions[10]?.version).toBe("011_conversation_cache");
     expect(versions[11]?.version).toBe("012_repo_memory_sanitize_backfill");
     expect(versions[12]?.version).toBe("013_scheduled_actions");
+    expect(versions[13]?.version).toBe("014_review_learnings");
+    expect(versions[14]?.version).toBe("015_review_learnings_embedding");
   });
 
   it("is idempotent: second run is a no-op", async () => {
@@ -101,7 +105,7 @@ describe.skipIf(sql === null)("runMigrations", () => {
     const versions: { version: string }[] = await requireDb()`
       SELECT version FROM _migrations ORDER BY version
     `;
-    expect(versions.length).toBe(13);
+    expect(versions.length).toBe(15);
   });
 
   it("creates the executions table with expected columns", async () => {

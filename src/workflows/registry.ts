@@ -2,6 +2,7 @@ import type { Octokit } from "octokit";
 import type pino from "pino";
 import { z } from "zod";
 
+import type { ReviewLearningPayload } from "../mcp/registry";
 import { handler as implementHandler } from "./handlers/implement";
 import { handler as planHandler } from "./handlers/plan";
 import { handler as resolveHandler } from "./handlers/resolve";
@@ -43,11 +44,21 @@ export type WorkflowContext = z.infer<typeof WorkflowContextSchema>;
  * with red CI. Distinct from `failed` so downstream surfaces can tell a
  * clean-run-but-blocked outcome from a true pipeline error.
  */
+/**
+ * Review-learning IDs the review/resolve handler's runPipeline actually
+ * applied to the prompt (post file-glob filter). Forwarded by workflow-
+ * executor.ts into the `job:result` payload's `appliedReviewLearningIds`
+ * field so the orchestrator can bump `use_count` + `last_used_at`. Only
+ * `review` and `resolve` populate this; other handlers leave it omitted.
+ */
+const appliedReviewLearningIdsField = z.array(z.string().max(64)).max(50).optional();
+
 export const HandlerResultSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("succeeded"),
     state: z.unknown(),
     humanMessage: z.string().min(1).optional(),
+    appliedReviewLearningIds: appliedReviewLearningIdsField,
   }),
   z.object({
     status: z.literal("failed"),
@@ -60,6 +71,7 @@ export const HandlerResultSchema = z.discriminatedUnion("status", [
     reason: z.string().min(1),
     state: z.unknown().optional(),
     humanMessage: z.string().min(1).optional(),
+    appliedReviewLearningIds: appliedReviewLearningIdsField,
   }),
   z.object({
     status: z.literal("handed-off"),
@@ -94,6 +106,15 @@ export interface WorkflowRunContext {
    * before the row reaches a downstream handler.
    */
   readonly daemonId: string;
+  /**
+   * Orchestrator pre-loaded review learnings for this job, when any. Only the
+   * `review` and `resolve` handlers read this and forward to `runPipeline`
+   * via `enableReviewLearnings: true`. Other workflows ignore. Mirrors the
+   * `BotContext.reviewLearnings` shape so the workflow-dispatch path threads
+   * through the same data the direct-pipeline path receives. Undefined when
+   * the orchestrator's load returned zero rows.
+   */
+  readonly reviewLearnings?: ReviewLearningPayload[];
   readonly setState: (state: unknown, humanMessage: string) => Promise<void>;
 }
 

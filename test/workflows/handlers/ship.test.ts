@@ -26,7 +26,7 @@ import type { Octokit } from "octokit";
 import type pino from "pino";
 
 const TEST_DATABASE_URL =
-  process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:5432/github_app_test";
+  process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:55432/github_app_test";
 
 let sql: SQL | null = null;
 try {
@@ -138,6 +138,7 @@ describe.skipIf(sql === null)("ship handler", () => {
   beforeAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;
@@ -159,6 +160,7 @@ describe.skipIf(sql === null)("ship handler", () => {
   afterAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
       DROP TABLE IF EXISTS target_cache CASCADE;

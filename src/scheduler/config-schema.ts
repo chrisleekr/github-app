@@ -143,12 +143,40 @@ export const scheduledActionSchema = z.strictObject({
 });
 export type ScheduledAction = z.infer<typeof scheduledActionSchema>;
 
+/**
+ * Per-repo review-learnings policy (1.5.F).
+ *
+ * - `enabled: false` skips loading any directives for this repo. The
+ *   server-side `REVIEW_LEARNINGS_ENABLED` env is the master gate; this is
+ *   a finer per-repo opt-out.
+ * - `scope: 'local'` keeps the `WHERE … scope='global'` branch out of the
+ *   query, so cross-repo owner-wide directives never reach this repo's
+ *   reviews. `'global'` lets them through.
+ * - `max_age_days` (null = no cap) excludes rows older than the threshold
+ *   at load time. Tightens noise on long-lived repos.
+ */
+export const reviewLearningsConfigSchema = z.strictObject({
+  enabled: z.boolean().default(true),
+  scope: z.enum(["local", "global"]).default("local"),
+  max_age_days: z.coerce.number().int().positive().nullable().default(null),
+});
+export type ReviewLearningsConfig = z.infer<typeof reviewLearningsConfigSchema>;
+
+/** Default review-learnings policy when the repo's .github-app.yaml omits
+ * the block (or the file is missing entirely). */
+export const DEFAULT_REVIEW_LEARNINGS_CONFIG: ReviewLearningsConfig = {
+  enabled: true,
+  scope: "local",
+  max_age_days: null,
+};
+
 /** The whole `.github-app.yaml` document. */
 export const githubAppConfigSchema = z
   .strictObject({
     version: z.literal(1),
     config: z.strictObject({ timezone: ianaTimezone.default("UTC") }).default({ timezone: "UTC" }),
     scheduled_actions: z.array(scheduledActionSchema).max(50).default([]),
+    review_learnings: reviewLearningsConfigSchema.default(DEFAULT_REVIEW_LEARNINGS_CONFIG),
   })
   .superRefine((doc, ctx) => {
     // Reject duplicate action names: the (repo, action_name) identity must

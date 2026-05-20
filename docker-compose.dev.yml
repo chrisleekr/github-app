@@ -7,8 +7,11 @@
 services:
   postgres:
     image: pgvector/pgvector:pg17
+    # Host port 55432 chosen to avoid colliding with a default Postgres install
+    # (or another project's compose stack) already bound to 5432. Container-side
+    # port stays 5432, so DATABASE_URL inside any sibling container is unchanged.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:55432:5432"
     environment:
       POSTGRES_USER: bot
       POSTGRES_PASSWORD: bot
@@ -24,8 +27,9 @@ services:
 
   valkey:
     image: valkey/valkey:9
+    # Host port 56379 chosen for the same reason as postgres above.
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:56379:6379"
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
