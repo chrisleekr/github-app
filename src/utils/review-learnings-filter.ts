@@ -197,8 +197,10 @@ function renderOneEntry(l: AppliedReviewLearning): string {
 
   // Over the row budget: truncate rationale first (often the longest), then
   // directive if still over. Keep the header line intact so id + provenance
-  // stays addressable for delete_review_learning.
-  const fixedOverhead = byteLength(`${header}\nDirective: \nWhy: …`);
+  // stays addressable for delete_review_learning. The row cap is character-
+  // based end-to-end (matches the `_MAX_CHARS` name); the block-level cap
+  // separately enforces a byte budget when the assembled prompt is checked.
+  const fixedOverhead = `${header}\nDirective: \nWhy: …`.length;
   const remaining = REVIEW_LEARNINGS_ROW_MAX_CHARS - fixedOverhead;
   if (remaining <= 0) {
     // Pathological: even the header doesn't fit. Return a stub so the id is

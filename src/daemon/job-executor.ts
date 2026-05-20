@@ -374,16 +374,18 @@ export async function executeJob(
     // load.
     const appliedReviewLearningIds = (result.appliedReviewLearnings ?? []).map((l) => l.id);
 
+    // Log counts + applied IDs only. Full directive / rationale text is free-form
+    // and can include sensitive review-policy detail; surfacing the bodies here
+    // would inflate log retention and leak content the orchestrator already
+    // persists exactly once via the structured write path.
     childLog.info(
       {
         learningsCount: learnings.length,
         deletionsCount: deletions.length,
-        learnings,
-        deletions,
         reviewLearningSavesCount: reviewLearningSaves.length,
         reviewLearningDeletesCount: reviewLearningDeletes.length,
-        reviewLearningSaves,
-        reviewLearningDeletes,
+        reviewLearningDeleteIds: reviewLearningDeletes,
+        appliedReviewLearningIds,
         appliedReviewLearningIdsCount: appliedReviewLearningIds.length,
       },
       "Daemon actions collected from execution",

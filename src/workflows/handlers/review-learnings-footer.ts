@@ -18,26 +18,62 @@ export function renderReviewLearningsFooter(
 ): string {
   if (applied === undefined || applied.length === 0) return "";
 
-  const entries = applied.map((l) => {
-    const source = formatSource(l.sourcePr);
-    const author = l.sourceAuthor ?? "(unknown)";
-    const glob = l.fileGlob ?? "*";
-    const rationale = l.rationale ?? "(not recorded)";
-    const recorded = formatRecorded(l.createdAt);
-    return [
-      "```",
-      `From:      ${author}`,
-      `Source:    ${source}`,
-      `Scope:     ${l.scope}`,
-      `File glob: ${glob}`,
-      `Recorded:  ${recorded}`,
-      `Directive: ${l.directive}`,
-      `Why:       ${rationale}`,
-      "```",
-    ].join("\n");
-  });
+  const entries: string[] = [];
+  let omitted = 0;
+  let runningChars = 0;
 
-  return `\n\n<details>\n<summary>🧠 Learnings used (${String(applied.length)})</summary>\n\n${entries.join("\n\n")}\n\n</details>`;
+  for (const l of applied) {
+    const entry = renderEntry(l);
+    if (runningChars + entry.length > FOOTER_BODY_BUDGET_CHARS && entries.length > 0) {
+      omitted = applied.length - entries.length;
+      break;
+    }
+    entries.push(entry);
+    runningChars += entry.length;
+  }
+
+  const truncationMarker =
+    omitted > 0
+      ? `\n\n… ${String(omitted)} more learning${omitted === 1 ? "" : "s"} omitted to keep the comment within GitHub's size limit.`
+      : "";
+
+  return `\n\n<details>\n<summary>🧠 Learnings used (${String(applied.length)})</summary>\n\n${entries.join("\n\n")}${truncationMarker}\n\n</details>`;
+}
+
+// GitHub caps comment bodies at ~65536 chars. The tracking comment carries
+// the agent's full reply ahead of this footer, so leave ample headroom and
+// budget the footer body at 12000 chars.
+const FOOTER_BODY_BUDGET_CHARS = 12_000;
+
+function renderEntry(l: AppliedReviewLearning): string {
+  const source = formatSource(l.sourcePr);
+  const author = l.sourceAuthor ?? "(unknown)";
+  const glob = l.fileGlob ?? "*";
+  const rationale = l.rationale ?? "(not recorded)";
+  const recorded = formatRecorded(l.createdAt);
+  // Escape any literal triple-backtick inside the directive / rationale so
+  // a stray fence in user-recorded text cannot break the surrounding fenced
+  // block. Author / glob / source / recorded are bounded shapes and don't
+  // need the escape.
+  const directive = escapeFence(l.directive);
+  const rationaleSafe = escapeFence(rationale);
+  return [
+    "```",
+    `From:      ${author}`,
+    `Source:    ${source}`,
+    `Scope:     ${l.scope}`,
+    `File glob: ${glob}`,
+    `Recorded:  ${recorded}`,
+    `Directive: ${directive}`,
+    `Why:       ${rationaleSafe}`,
+    "```",
+  ].join("\n");
+}
+
+// Replace triple-backticks with an escaped variant that renders verbatim
+// (zero-width breaker between the second and third backtick).
+function escapeFence(text: string): string {
+  return text.replace(/```/g, "``​`");
 }
 
 /**

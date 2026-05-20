@@ -269,7 +269,7 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
     const db = requireSql();
     const { loadReviewLearnings } = await import("../../src/orchestrator/review-learnings");
 
-    const loaded = await loadReviewLearnings(TEST_OWNER, "some-other-repo", [], db);
+    const loaded = await loadReviewLearnings(TEST_OWNER, "some-other-repo", {}, db);
     const directives = loaded.map((r) => r.directive);
     expect(directives).toContain("global-allowed directive");
   });

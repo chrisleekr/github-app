@@ -186,10 +186,13 @@ describe("renderReviewLearningsBlock (1.5.G byte cap)", () => {
       );
     }
     const r = renderReviewLearningsBlock("review_learnings", learnings);
+    // The seed deliberately overflows the byte budget; without an explicit
+    // floor this case can pass vacuously if a future tuning lifts the cap.
+    expect(r.omittedCount).toBeGreaterThan(0);
     if (r.omittedCount === 1) {
       expect(r.block).toContain("1 older learning omitted");
       expect(r.block).not.toContain("1 older learnings omitted");
-    } else if (r.omittedCount > 1) {
+    } else {
       expect(r.block).toContain(`${String(r.omittedCount)} older learnings omitted`);
     }
   });

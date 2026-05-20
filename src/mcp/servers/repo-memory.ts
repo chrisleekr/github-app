@@ -258,7 +258,7 @@ server.registerTool(
   "get_review_learnings",
   {
     description:
-      "Retrieve review-policy directives that apply to the current review. Returns the same set already rendered in the <review_learnings> section of your prompt: this tool is for re-checking the IDs before calling delete_review_learning.",
+      "Retrieve review-policy directives applicable to the current review. Returns the full set the orchestrator loaded for this run, including any rows omitted from the prompt block by the 24KB byte budget (the truncation marker in <review_learnings> points here as its escape hatch). Use it to enumerate every active directive before calling delete_review_learning.",
   },
   () => {
     const payload = REVIEW_LEARNINGS ?? "[]";
