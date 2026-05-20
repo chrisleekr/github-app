@@ -106,7 +106,7 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
     // via pickApplicableLearnings. Per 1.5.E, the use_count bump moved to
     // bumpReviewLearningUsage and fires only after the daemon reports the
     // applied ids in job:result.
-    const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, db);
+    const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, {}, db);
 
     expect(loaded.length).toBe(1);
     expect(loaded[0]!.fileGlob).toBe("test/**/*.test.ts");
@@ -124,7 +124,7 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
     const { loadReviewLearnings, bumpReviewLearningUsage } =
       await import("../../src/orchestrator/review-learnings");
 
-    const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, db);
+    const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, {}, db);
     const ids = loaded.map((l) => l.id);
     expect(ids.length).toBeGreaterThan(0);
 
@@ -151,7 +151,7 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
     const { loadReviewLearnings } = await import("../../src/orchestrator/review-learnings");
     const { pickApplicableLearnings } = await import("../../src/utils/review-learnings-filter");
 
-    const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, db);
+    const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, {}, db);
     const filtered = pickApplicableLearnings(
       loaded.map((l) => ({
         id: l.id,
@@ -173,7 +173,7 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
     const { loadReviewLearnings } = await import("../../src/orchestrator/review-learnings");
     const { pickApplicableLearnings } = await import("../../src/utils/review-learnings-filter");
 
-    const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, db);
+    const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, {}, db);
     const filtered = pickApplicableLearnings(
       loaded.map((l) => ({
         id: l.id,
