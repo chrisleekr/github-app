@@ -2069,7 +2069,7 @@
 <p>The agent executor (<code>src/core/executor.ts:208</code>) supports two prompt-layout strategies, selected by <code>PROMPT_CACHE_LAYOUT</code>. The legacy layout passes a single user-role string and the unmodified <code>claude_code</code> preset systemPrompt: simple, but the preset embeds dynamic sections (<code>cwd</code>, platform, shell, OS) that vary per delivery, so the prompt cache key churns and every job pays the 1-hour TTL cache-write surcharge with zero compensating reads.</p>
 <p>The <code>cacheable</code> layout splits the prompt by trust:</p>
 <ul>
-<li><strong>Trusted scaffolding</strong> (<code>security_directive</code>, <code>freshness_directive</code>, workflow steps, commit / CAPABILITIES boilerplate) → <code>systemPrompt.append</code>. Built by <code>buildPromptParts()</code> in <code>src/core/prompt-builder.ts:402</code>. Byte-identical across jobs of the same shape, so the system-prompt prefix becomes a stable cache key.</li>
+<li><strong>Trusted scaffolding</strong> (<code>security_directive</code>, <code>freshness_directive</code>, workflow steps, commit / CAPABILITIES boilerplate) → <code>systemPrompt.append</code>. Built by <code>buildPromptParts()</code> in <code>src/core/prompt-builder.ts:448#buildPromptParts</code>. Byte-identical across jobs of the same shape, so the system-prompt prefix becomes a stable cache key.</li>
 <li><strong>Attacker-influenceable data</strong> (<code>formatted_context</code> with title / body / comments, <code>&lt;untrusted_*&gt;</code> spotlight blocks with per-call nonce, per-call metadata like delivery ID) → user-role message.</li>
 <li><strong>Dynamic preset sections</strong> stripped via <code>excludeDynamicSections: true</code>.</li>
 </ul>
