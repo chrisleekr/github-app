@@ -84,7 +84,7 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.29.0",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.114",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.0",
     "@huggingface/transformers": "^4.2.0",
     "@kubernetes/client-node": "^1.4.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
