@@ -1818,7 +1818,7 @@
 
 
 <h1 id="observability">Observability<a class="headerlink" href="#observability" title="Permanent link">&para;</a></h1>
-<p>Structured JSON logs via <a href="https://getpino.io">pino</a> are the primary signal. Every dispatch decision and every pipeline step carries a <code>deliveryId</code> so you can reconstruct a request end-to-end from a single log query. When <code>DATABASE_URL</code> is configured, the same information is persisted to <code>executions</code> and <code>triage_results</code> for aggregate reporting.</p>
+<p>Structured JSON logs via <a href="https://getpino.io">pino</a> are the primary signal. Every dispatch decision and every pipeline step carries a <code>deliveryId</code> so you can reconstruct a request end-to-end from a single log query, and the webhook event handlers plus the daemon workflow executor additionally carry a canonical <code>entityNumber</code> (the issue or PR number) so a request can be reconstructed by entity as well. When <code>DATABASE_URL</code> is configured, the same information is persisted to <code>executions</code> and <code>triage_results</code> for aggregate reporting.</p>
 <h2 id="log-redaction">Log redaction<a class="headerlink" href="#log-redaction" title="Permanent link">&para;</a></h2>
 <p>The exported <code>logger</code> in <code>src/logger.ts</code> is the canonical chokepoint for secret scrubbing, every child logger inherits its <code>redact.paths</code> list and its custom <code>err</code> serializer, so individual call sites do not need to remember to scrub. Two layers run on every emitted line:</p>
 <ol>
@@ -1843,6 +1843,10 @@
 <tr>
 <td><code>deliveryId</code></td>
 <td><code>X-GitHub-Delivery</code> header, stable across every log line for a single webhook.</td>
+</tr>
+<tr>
+<td><code>entityNumber</code></td>
+<td>Canonical issue or PR number for the request. Emitted by <code>createChildLogger</code> (<code>src/logger.ts</code>) across the webhook event handlers and the workflow executor so a request is greppable by entity. Two adjacent layers keep their own names: the job-payload schema uses <code>prNumber</code> / <code>issueNumber</code>, and the scoped-rail executors use snake_case <code>pr_number</code> / <code>issue_number</code>.</td>
 </tr>
 <tr>
 <td><code>event</code></td>
