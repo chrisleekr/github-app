@@ -49,6 +49,18 @@ The crash path is covered too. `installFatalHandlers(processName)` in `src/logge
 | `pipeline.completed` | Success terminal line; carries `pipeline_wall_clock_ms` alongside the existing cost/turn fields.                                                                                                       |
 | `pipeline.failed`    | Failure terminal line; carries `pipeline_wall_clock_ms` + the redacted `err`.                                                                                                                          |
 
+## GitHub API rate-limit fields
+
+The `App` is constructed with `ObservableOctokit` (`src/utils/octokit-observability.ts`), an `Octokit.plugin` subclass shared by `app.octokit` and every installation octokit. It logs GitHub's per-installation rate-limit headers via `octokit.hook.after` / `hook.error`. The `pipeline.stage`-style strict Zod schema (`GithubApiLogFieldsSchema`) pins the field shape.
+
+Volume policy: the per-request line is `debug` (default `info` stays quiet on a fleet issuing thousands of calls/hour); a `warn` fires only when quota runs low or a rate-limit error lands. Set `LOG_LEVEL=debug` for full per-call visibility, no separate sampling knob.
+
+| `event`                         | Level | Fields                                                                                                        |
+| ------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------- |
+| `github.api.request`            | debug | `route`, `status`, `rate_limit_limit`, `rate_limit_remaining`, `rate_limit_reset_in_s`, `rate_limit_resource` |
+| `github.api.rate_limit_low`     | warn  | Same fields; emitted once `rate_limit_remaining` drops below `RATE_LIMIT_LOW_WATER` (500).                    |
+| `github.api.rate_limit_warning` | warn  | `route`, `status`, `retry_after_s`; on a 429 or 403 secondary-rate-limit response.                            |
+
 ## Ship workflow log fields
 
 The shepherding lifecycle emits structured pino lines validated against the canonical Zod schema in `src/workflows/ship/log-fields.ts`. Field names and types are pinned so emitters cannot drift.

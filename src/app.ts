@@ -46,6 +46,7 @@ import {
 } from "./orchestrator/ws-server";
 import { createScheduler, type SchedulerHandle } from "./scheduler";
 import type { BotContext } from "./types";
+import { ObservableOctokit } from "./utils/octokit-observability";
 import { handleCheckRun } from "./webhook/events/check-run";
 import { handleCheckSuite } from "./webhook/events/check-suite";
 import { handleIssueComment } from "./webhook/events/issue-comment";
@@ -81,6 +82,9 @@ const app = new App({
   appId: config.appId,
   privateKey: config.privateKey,
   webhooks: { secret: config.webhookSecret },
+  // Log GitHub rate-limit headers on every octokit response (issue #170);
+  // covers app.octokit + all installation octokits via the shared subclass.
+  Octokit: ObservableOctokit,
 });
 
 // All three actions are subscribed so the chat-thread cache write-through

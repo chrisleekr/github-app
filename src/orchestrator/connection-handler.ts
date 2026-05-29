@@ -5,6 +5,7 @@ import { config } from "../config";
 import { resolveGithubToken } from "../core/github-token";
 import { clearInFlightByJobId } from "../db/queries/scheduled-actions-store";
 import { logger } from "../logger";
+import { ObservableOctokit } from "../utils/octokit-observability";
 import { addReaction } from "../utils/reactions";
 import { findById, findInflightByOwner, type WorkflowRunRow } from "../workflows/runs-store";
 import { setState } from "../workflows/tracking-mirror";
@@ -93,7 +94,12 @@ function getOrCreateApp(): InstanceType<typeof App> {
   if (config.appId === undefined || config.privateKey === undefined) {
     throw new Error("getOrCreateApp requires GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY");
   }
-  cachedApp = new App({ appId: config.appId, privateKey: config.privateKey });
+  cachedApp = new App({
+    appId: config.appId,
+    privateKey: config.privateKey,
+    // Rate-limit observability on app.octokit + installation octokits (#170).
+    Octokit: ObservableOctokit,
+  });
   return cachedApp;
 }
 
