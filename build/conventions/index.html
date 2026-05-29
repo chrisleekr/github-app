@@ -1895,6 +1895,7 @@
 <p>Notes:</p>
 <ul>
 <li><strong>Multi-arch images.</strong> amd64 builds on <code>ubuntu-24.04</code>, arm64 builds natively on <code>ubuntu-24.04-arm</code> (free for public repos). Both runners are explicitly pinned (not <code>ubuntu-latest</code>) so the rolling alias cannot silently flip to a new major. Manifest assembled by <code>docker buildx imagetools create</code>. GHA cache scoped per arch.</li>
+<li><strong>Runners pinned repo-wide.</strong> Every <code>runs-on:</code> across <code>.github/workflows/</code> targets an explicit image (<code>ubuntu-24.04</code>), never a <code>*-latest</code> rolling alias. <code>ci.yml</code> runs <code>bun run check:runner-pins</code> (<code>scripts/check-runner-pins.ts</code>), which fails the build if any <code>runs-on:</code> is on a <code>*-latest</code> alias; matrix expressions are exempt. See issue #173.</li>
 <li><strong>Defense in depth.</strong> Every dynamic input flowing into a <code>run:</code> block is passed via <code>env:</code> first.</li>
 <li><strong>Prod releases are manual.</strong> Push to main triggers only <code>ci.yml</code>. Cut a release with <code>gh workflow run release.yml</code>.</li>
 </ul>
