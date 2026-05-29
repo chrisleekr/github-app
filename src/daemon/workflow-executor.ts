@@ -62,6 +62,9 @@ export async function executeWorkflowRun(
     workflowRunId: workflowRun.runId,
     workflowName: workflowRun.workflowName,
     deliveryId: context.deliveryId,
+    // Flat canonical field so per-entity grep aligns with the rest of the
+    // fleet; `target` stays as the workflow envelope (type + owner/repo).
+    entityNumber: context.entityNumber,
     target,
   });
 

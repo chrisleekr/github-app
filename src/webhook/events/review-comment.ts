@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 
 import { containsTrigger } from "../../core/trigger";
 import { softDeleteComment, upsertComment } from "../../db/queries/conversation-store";
-import { logger } from "../../logger";
+import { createChildLogger, logger } from "../../logger";
 import { runProposalPollOnce } from "../../orchestrator/proposal-poller";
 import { addReaction } from "../../utils/reactions";
 import { dispatchByIntent } from "../../workflows/dispatcher";
@@ -53,11 +53,11 @@ export function handleReviewComment(
   // structure used in `issues.ts` and `pull-request.ts` label handlers.
   const senderLogin = payload.comment.user.login;
   const ownerLogin = payload.repository.owner.login;
-  const log = logger.child({
+  const log = createChildLogger({
     deliveryId,
     owner: ownerLogin,
     repo: payload.repository.name,
-    prNumber: payload.pull_request.number,
+    entityNumber: payload.pull_request.number,
     senderLogin,
   });
 

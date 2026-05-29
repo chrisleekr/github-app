@@ -213,14 +213,24 @@ export const logger = pino({
 
 /**
  * Create a child logger scoped to a specific webhook delivery.
- * Consistent fields across all log lines for a single request.
+ * Consistent fields across all log lines for a single request: every
+ * caller emits the entity identifier under the canonical `entityNumber`
+ * so an operator can grep one field name to reconstruct a request
+ * end-to-end, regardless of whether it originated on an issue or a PR.
+ *
+ * The required four fields are the correlation contract; arbitrary extra
+ * bindings (event, label, senderLogin, ...) are allowed so handlers can
+ * route their per-handler context through this single helper instead of
+ * hand-rolling `logger.child` and drifting the entity field name.
  */
-export function createChildLogger(fields: {
-  deliveryId: string;
-  owner: string;
-  repo: string;
-  entityNumber: number;
-}): pino.Logger {
+export function createChildLogger(
+  fields: {
+    deliveryId: string;
+    owner: string;
+    repo: string;
+    entityNumber: number;
+  } & Record<string, unknown>,
+): pino.Logger {
   return logger.child(fields);
 }
 

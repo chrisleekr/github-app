@@ -2,7 +2,7 @@ import type { IssuesEvent } from "@octokit/webhooks-types";
 import type { Octokit } from "octokit";
 
 import { deleteTarget, upsertTarget } from "../../db/queries/conversation-store";
-import { logger } from "../../logger";
+import { createChildLogger, logger } from "../../logger";
 import { dispatchByLabel } from "../../workflows/dispatcher";
 import { dispatchCanonicalCommand } from "../../workflows/ship/command-dispatch";
 import { routeTrigger } from "../../workflows/ship/trigger-router";
@@ -66,14 +66,14 @@ export function handleIssues(octokit: Octokit, payload: IssuesEvent, deliveryId:
   if (labelName === undefined || !BOT_LABEL_PATTERN.test(labelName)) return;
 
   const senderLogin = payload.sender.login;
-  const log = logger.child({
+  const log = createChildLogger({
     deliveryId,
     event: "issues.labeled",
     label: labelName,
     senderLogin,
     owner: payload.repository.owner.login,
     repo: payload.repository.name,
-    issueNumber: payload.issue.number,
+    entityNumber: payload.issue.number,
   });
 
   const auth = isOwnerAllowed(senderLogin, log);

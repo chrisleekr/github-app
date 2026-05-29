@@ -2,7 +2,7 @@ import type { PullRequestEvent } from "@octokit/webhooks-types";
 import type { Octokit } from "octokit";
 
 import { upsertTarget } from "../../db/queries/conversation-store";
-import { logger } from "../../logger";
+import { createChildLogger, logger } from "../../logger";
 import { dispatchByLabel } from "../../workflows/dispatcher";
 import { dispatchCanonicalCommand } from "../../workflows/ship/command-dispatch";
 import { fireReactor } from "../../workflows/ship/reactor-bridge";
@@ -145,14 +145,14 @@ function handlePullRequestLabeled(
   if (labelName === undefined || !BOT_LABEL_PATTERN.test(labelName)) return;
 
   const senderLogin = payload.sender.login;
-  const log = logger.child({
+  const log = createChildLogger({
     deliveryId,
     event: "pull_request.labeled",
     label: labelName,
     senderLogin,
     owner: payload.repository.owner.login,
     repo: payload.repository.name,
-    prNumber: payload.pull_request.number,
+    entityNumber: payload.pull_request.number,
   });
 
   const auth = isOwnerAllowed(senderLogin, log);

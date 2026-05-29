@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 
 import { containsTrigger } from "../../core/trigger";
 import { softDeleteComment, upsertComment } from "../../db/queries/conversation-store";
-import { logger } from "../../logger";
+import { createChildLogger, logger } from "../../logger";
 import { runProposalPollOnce } from "../../orchestrator/proposal-poller";
 import { addReaction } from "../../utils/reactions";
 import { dispatchByIntent } from "../../workflows/dispatcher";
@@ -45,11 +45,13 @@ export function handleIssueComment(
   // structure used in `issues.ts`, `pull-request.ts`, and `review-comment.ts`.
   const senderLogin = payload.comment.user.login;
   const ownerLogin = payload.repository.owner.login;
-  const log = logger.child({
+  const log = createChildLogger({
     deliveryId,
     owner: ownerLogin,
     repo: payload.repository.name,
-    issueNumber: payload.issue.number,
+    // `issue_comment` fires on PR comments too (payload.issue.pull_request),
+    // so the canonical `entityNumber` covers both surfaces under one field.
+    entityNumber: payload.issue.number,
     senderLogin,
   });
 

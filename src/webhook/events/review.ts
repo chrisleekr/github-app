@@ -32,6 +32,7 @@ export function handleReview(
         action: payload.action,
         owner: payload.repository.owner.login,
         repo: payload.repository.name,
+        entityNumber: payload.pull_request.number,
       },
       "pull_request_review.submitted received → ship reactor fired",
     );

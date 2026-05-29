@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import pino from "pino";
 
-import { errSerializer, REDACT_PATHS } from "../../src/logger";
+import { createChildLogger, errSerializer, REDACT_PATHS } from "../../src/logger";
 
 /**
  * Build a logger with the same redact paths and err serializer as the
@@ -302,5 +302,43 @@ describe("logger redaction", () => {
     ).err.response.data;
     expect(data.daemonAuthTokenPrevious).toBe("[Redacted]");
     expect(data.message).toBe("Bad");
+  });
+});
+
+describe("createChildLogger correlation contract (#175)", () => {
+  it("binds the entity identifier under the canonical `entityNumber` field", () => {
+    // pino prepends a child logger's bindings to every line it emits, so
+    // asserting the bindings is asserting what an operator can grep on.
+    const log = createChildLogger({
+      deliveryId: "d-1",
+      owner: "octo",
+      repo: "demo",
+      entityNumber: 42,
+    });
+    const bindings = log.bindings();
+    expect(bindings["entityNumber"]).toBe(42);
+    expect(bindings["deliveryId"]).toBe("d-1");
+    expect(bindings["owner"]).toBe("octo");
+    expect(bindings["repo"]).toBe("demo");
+    // The drifted per-handler names must NOT leak back in.
+    expect(bindings["issueNumber"]).toBeUndefined();
+    expect(bindings["prNumber"]).toBeUndefined();
+  });
+
+  it("passes arbitrary per-handler extras through alongside the canonical fields", () => {
+    const log = createChildLogger({
+      deliveryId: "d-2",
+      owner: "octo",
+      repo: "demo",
+      entityNumber: 7,
+      event: "issues.labeled",
+      label: "type: fix",
+      senderLogin: "alice",
+    });
+    const bindings = log.bindings();
+    expect(bindings["entityNumber"]).toBe(7);
+    expect(bindings["event"]).toBe("issues.labeled");
+    expect(bindings["label"]).toBe("type: fix");
+    expect(bindings["senderLogin"]).toBe("alice");
   });
 });
