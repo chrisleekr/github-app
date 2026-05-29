@@ -1124,6 +1124,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#core-pipeline-log-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core pipeline log fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ship-workflow-log-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1677,6 +1688,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#core-pipeline-log-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core pipeline log fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ship-workflow-log-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1896,6 +1918,46 @@
 <tr>
 <td><code>baseBranch</code>, <code>headBranch</code></td>
 <td>PR base + head ref, emitted on <code>Fetching PR base branch</code> (info) and the matching warn on fetch fail.</td>
+</tr>
+<tr>
+<td><code>stage</code></td>
+<td>Pipeline stage name on a <code>pipeline.stage</code> event (e.g. <code>github.fetch</code>, <code>repo.clone</code>, <code>executor.invoke</code>).</td>
+</tr>
+<tr>
+<td><code>delta_ms</code></td>
+<td>Wall-clock of a single <code>pipeline.stage</code> (integer ms).</td>
+</tr>
+<tr>
+<td><code>pipeline_wall_clock_ms</code></td>
+<td>Cumulative pipeline duration, on the terminal <code>pipeline.completed</code> / <code>pipeline.failed</code> line (integer ms).</td>
+</tr>
+</tbody>
+</table>
+<h2 id="core-pipeline-log-fields">Core pipeline log fields<a class="headerlink" href="#core-pipeline-log-fields" title="Permanent link">&para;</a></h2>
+<p><code>runPipeline</code> (<code>src/core/pipeline.ts</code>) emits structured timing events whose <code>pipeline.stage</code> shape is pinned by the <code>.strict()</code> Zod schema in <code>src/core/log-fields.ts</code> (parallel to the ship schema below; the co-located test rejects field drift). Four event keys:</p>
+<table>
+<thead>
+<tr>
+<th><code>event</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pipeline.started</code></td>
+<td>Request entered <code>runPipeline</code>. Carries the child-logger bindings (deliveryId, entity).</td>
+</tr>
+<tr>
+<td><code>pipeline.stage</code></td>
+<td>One stage finished; carries <code>stage</code> + <code>delta_ms</code>. Stages: trackingComment.create, token.resolve, github.fetch, prompt.build, repo.clone, executor.invoke, trackingComment.finalize, workspace.cleanup.</td>
+</tr>
+<tr>
+<td><code>pipeline.completed</code></td>
+<td>Success terminal line; carries <code>pipeline_wall_clock_ms</code> alongside the existing cost/turn fields.</td>
+</tr>
+<tr>
+<td><code>pipeline.failed</code></td>
+<td>Failure terminal line; carries <code>pipeline_wall_clock_ms</code> + the redacted <code>err</code>.</td>
 </tr>
 </tbody>
 </table>
