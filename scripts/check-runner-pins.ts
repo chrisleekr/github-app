@@ -3,8 +3,8 @@
  * CI guard: every `runs-on:` in .github/workflows/ targets an explicitly
  * versioned runner image, not a `*-latest` rolling alias. GitHub force-moves
  * the `ubuntu-latest` / `windows-latest` / `macos-latest` aliases to a new
- * image major on its own schedule (ubuntu-latest moved 22.04 -> 24.04 in Jan
- * 2025; 24.04 -> 26.04 is on the runner-images roadmap), so a workflow pinned
+ * image major on its own schedule (the ubuntu-latest alias moved 22.04 -> 24.04
+ * in early 2025; 24.04 -> 26.04 is on the runner-images roadmap), so a workflow pinned
  * to the alias can change the OS, preinstalled tool versions, and Docker
  * daemon under it without any commit to this repo. Pinning to `ubuntu-24.04`
  * makes the runner an explicit, reviewable input. See issue #173.
