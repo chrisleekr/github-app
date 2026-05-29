@@ -4,6 +4,7 @@ import { Octokit } from "octokit";
 import { z } from "zod";
 
 import { redactSecrets, sanitizeContent } from "../../utils/sanitize";
+import { createMcpLogger } from "../mcp-logger";
 
 /**
  * MCP server for tracking comment updates.
@@ -30,6 +31,8 @@ const GITHUB_TOKEN = process.env["GITHUB_TOKEN"];
 const CLAUDE_COMMENT_ID = process.env["CLAUDE_COMMENT_ID"];
 const DELIVERY_ID = process.env["DELIVERY_ID"];
 
+const log = createMcpLogger("github-comment");
+
 if (
   REPO_OWNER === undefined ||
   REPO_OWNER === "" ||
@@ -42,9 +45,7 @@ if (
   DELIVERY_ID === undefined ||
   DELIVERY_ID === ""
 ) {
-  console.error(
-    "Error: REPO_OWNER, REPO_NAME, GITHUB_TOKEN, CLAUDE_COMMENT_ID, and DELIVERY_ID are required",
-  );
+  log.error("REPO_OWNER, REPO_NAME, GITHUB_TOKEN, CLAUDE_COMMENT_ID, and DELIVERY_ID are required");
   process.exit(1);
 }
 
@@ -54,7 +55,7 @@ const commentId = parseInt(CLAUDE_COMMENT_ID, 10);
 
 // Guard against non-numeric CLAUDE_COMMENT_ID (parseInt returns NaN for non-integer strings).
 if (isNaN(commentId)) {
-  console.error(`Error: CLAUDE_COMMENT_ID must be a valid integer, got: ${CLAUDE_COMMENT_ID}`);
+  log.error(`CLAUDE_COMMENT_ID must be a valid integer, got: ${CLAUDE_COMMENT_ID}`);
   process.exit(1);
 }
 
@@ -80,15 +81,16 @@ server.tool(
       // exactly what would otherwise reach the comment.
       const guarded = redactSecrets(sanitizedBody);
       if (guarded.matchCount > 0) {
-        console.error(
-          JSON.stringify({
+        log.warn(
+          {
             event: "secret_redacted",
             scanner: "regex",
             callsite: "mcp.comment.update_claude_comment",
             kinds: guarded.kinds,
             matchCount: guarded.matchCount,
             commentId,
-          }),
+          },
+          "secret redacted from comment body",
         );
       }
       // Re-prepend the delivery marker after sanitizeContent strips it (stripHtmlComments).
@@ -131,4 +133,7 @@ async function runServer(): Promise<void> {
   });
 }
 
-void runServer().catch(console.error);
+void runServer().catch((err: unknown) => {
+  log.error({ err }, "comment MCP server failed");
+  process.exit(1);
+});

@@ -12,6 +12,7 @@ import {
   getWorkflowRun,
   listPrComments,
 } from "../../github/state-fetchers";
+import { createMcpLogger } from "../mcp-logger";
 
 /**
  * Read-only GitHub state MCP server (issue #117).
@@ -29,6 +30,8 @@ const REPO_OWNER = process.env["REPO_OWNER"];
 const REPO_NAME = process.env["REPO_NAME"];
 const GITHUB_TOKEN = process.env["GITHUB_TOKEN"];
 
+const log = createMcpLogger("github-state");
+
 if (
   REPO_OWNER === undefined ||
   REPO_OWNER === "" ||
@@ -37,7 +40,7 @@ if (
   GITHUB_TOKEN === undefined ||
   GITHUB_TOKEN === ""
 ) {
-  console.error("Error: REPO_OWNER, REPO_NAME, and GITHUB_TOKEN are required");
+  log.error("REPO_OWNER, REPO_NAME, and GITHUB_TOKEN are required");
   process.exit(1);
 }
 
@@ -173,6 +176,8 @@ async function runServer(): Promise<void> {
 void runServer().catch((err: unknown) => {
   // Fail fast so the supervisor sees the dead sidecar instead of dispatching
   // tool calls against an unconnected server (mirrors resolve-review-thread.ts).
-  console.error(err);
+  // Route through the redacting logger: a raw Octokit RequestError here can
+  // carry a ghs_ token in its message/headers (#172).
+  log.error({ err }, "github-state MCP server failed");
   process.exit(1);
 });

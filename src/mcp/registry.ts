@@ -123,10 +123,13 @@ export function resolveMcpServers(
     GITHUB_TOKEN: installationToken,
     REPO_OWNER: ctx.owner,
     REPO_NAME: ctx.repo,
+    // Correlation id inherited by every MCP server so their structured logs
+    // (createMcpLogger, #172) join the parent request's deliveryId trail.
+    DELIVERY_ID: ctx.deliveryId,
   };
 
   if (trackingCommentId !== undefined) {
-    servers["github_comment"] = commentServerDef(sharedEnv, trackingCommentId, ctx.deliveryId);
+    servers["github_comment"] = commentServerDef(sharedEnv, trackingCommentId);
   }
 
   if (ctx.isPR) {
@@ -174,7 +177,6 @@ export function resolveMcpServers(
 function commentServerDef(
   sharedEnv: Record<string, string>,
   trackingCommentId: number,
-  deliveryId: string,
 ): McpServerDef {
   const serverPath = resolveServerPath("comment");
   return {
@@ -182,10 +184,10 @@ function commentServerDef(
     command: "bun",
     args: ["run", serverPath],
     env: {
+      // DELIVERY_ID arrives via sharedEnv; comment.ts reads it both for the
+      // delivery marker and for log correlation.
       ...sharedEnv,
       CLAUDE_COMMENT_ID: trackingCommentId.toString(),
-      // Passed so comment.ts can re-prepend the delivery marker after sanitizeContent strips it.
-      DELIVERY_ID: deliveryId,
     },
   };
 }

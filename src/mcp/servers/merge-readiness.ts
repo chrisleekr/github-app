@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { PROBE_QUERY } from "../../github/queries";
 import { computeVerdict, type ProbeResponseShape } from "../../workflows/ship/verdict";
+import { createMcpLogger } from "../mcp-logger";
 
 /**
  * Read-only merge-readiness MCP server (scheduled-actions auto-merge gate).
@@ -28,6 +29,8 @@ const REPO_NAME = process.env["REPO_NAME"];
 const GITHUB_TOKEN = process.env["GITHUB_TOKEN"];
 const BOT_APP_LOGIN = process.env["BOT_APP_LOGIN"];
 
+const log = createMcpLogger("merge-readiness");
+
 if (
   REPO_OWNER === undefined ||
   REPO_OWNER === "" ||
@@ -38,7 +41,7 @@ if (
   BOT_APP_LOGIN === undefined ||
   BOT_APP_LOGIN === ""
 ) {
-  console.error("Error: REPO_OWNER, REPO_NAME, GITHUB_TOKEN, and BOT_APP_LOGIN are required");
+  log.error("REPO_OWNER, REPO_NAME, GITHUB_TOKEN, and BOT_APP_LOGIN are required");
   process.exit(1);
 }
 
@@ -100,6 +103,6 @@ async function runServer(): Promise<void> {
 }
 
 void runServer().catch((err: unknown) => {
-  console.error(err);
+  log.error({ err }, "merge-readiness MCP server failed");
   process.exit(1);
 });

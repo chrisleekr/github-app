@@ -4,6 +4,7 @@ import { Octokit } from "octokit";
 import { z } from "zod";
 
 import { redactSecrets, sanitizeContent } from "../../utils/sanitize";
+import { createMcpLogger } from "../mcp-logger";
 
 /**
  * MCP server for creating inline PR review comments.
@@ -21,6 +22,8 @@ const REPO_NAME = process.env["REPO_NAME"];
 const PR_NUMBER = process.env["PR_NUMBER"];
 const GITHUB_TOKEN = process.env["GITHUB_TOKEN"];
 
+const log = createMcpLogger("inline-comment");
+
 if (
   REPO_OWNER === undefined ||
   REPO_OWNER === "" ||
@@ -31,7 +34,7 @@ if (
   GITHUB_TOKEN === undefined ||
   GITHUB_TOKEN === ""
 ) {
-  console.error("Error: REPO_OWNER, REPO_NAME, PR_NUMBER, and GITHUB_TOKEN are required");
+  log.error("REPO_OWNER, REPO_NAME, PR_NUMBER, and GITHUB_TOKEN are required");
   process.exit(1);
 }
 
@@ -85,8 +88,8 @@ server.tool(
       // leaves for GitHub.
       const guarded = redactSecrets(sanitizedBody);
       if (guarded.matchCount > 0) {
-        console.error(
-          JSON.stringify({
+        log.warn(
+          {
             event: "secret_redacted",
             scanner: "regex",
             callsite: "mcp.inline-comment.create_inline_comment",
@@ -94,7 +97,8 @@ server.tool(
             matchCount: guarded.matchCount,
             pull_number,
             path,
-          }),
+          },
+          "secret redacted from inline comment body",
         );
       }
 
@@ -178,4 +182,7 @@ async function runServer(): Promise<void> {
   });
 }
 
-void runServer().catch(console.error);
+void runServer().catch((err: unknown) => {
+  log.error({ err }, "inline-comment MCP server failed");
+  process.exit(1);
+});

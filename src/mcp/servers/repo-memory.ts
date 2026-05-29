@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+import { createMcpLogger } from "../mcp-logger";
 import {
   appendActionToPath,
   buildSaveAction,
@@ -41,8 +42,10 @@ const WORK_DIR = process.env["WORK_DIR"];
 const REPO_MEMORY = process.env["REPO_MEMORY"];
 const REVIEW_LEARNINGS = process.env["REVIEW_LEARNINGS"];
 
+const log = createMcpLogger("repo-memory");
+
 if (WORK_DIR === undefined || WORK_DIR === "") {
-  console.error("Error: WORK_DIR env var is required");
+  log.error("WORK_DIR env var is required");
   process.exit(1);
 }
 

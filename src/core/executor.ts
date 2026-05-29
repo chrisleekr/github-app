@@ -55,6 +55,9 @@ const ENV_ALLOW_KEYS = new Set<string>([
   "NODE_PATH",
   "NODE_NO_WARNINGS",
   "NODE_EXTRA_CA_CERTS",
+  // Log verbosity, so a daemon-side LOG_LEVEL=debug propagates to the CLI and
+  // the stdio MCP subprocesses for incident response (issue #172).
+  "LOG_LEVEL",
   // Custom CA bundles
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",

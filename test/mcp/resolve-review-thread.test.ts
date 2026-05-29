@@ -83,8 +83,12 @@ describe("MCP resolve-review-thread: static contract", () => {
     expect(SOURCE).toContain("retryWithBackoff");
   });
 
-  it("writes pino logs to stderr (not stdout: would corrupt JSON-RPC transport)", () => {
-    expect(SOURCE).toMatch(/pino\([^)]*,\s*process\.stderr\s*\)/);
+  it("logs via the shared createMcpLogger helper (writes to stderr, not stdout: #172)", () => {
+    // The stderr contract now lives in src/mcp/mcp-logger.ts (asserted in
+    // test/mcp/mcp-logger.test.ts); this server must route through it rather
+    // than constructing its own logger.
+    expect(SOURCE).toContain("createMcpLogger");
+    expect(SOURCE).not.toMatch(/pino\(/);
   });
 
   it("is wired through StdioServerTransport (per MCP spec for stdio servers)", () => {

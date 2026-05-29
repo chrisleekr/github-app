@@ -17,16 +17,16 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Octokit } from "octokit";
-import pino from "pino";
 import { z } from "zod";
 
 import { retryWithBackoff } from "../../utils/retry";
+import { createMcpLogger } from "../mcp-logger";
 
-// MCP servers communicate JSON-RPC over stdout, so pino must write to
-// stderr to avoid corrupting the transport stream. A locally-instantiated
-// logger keeps the dependency on `src/logger.ts` (which writes to stdout)
-// out of this child process.
-const log = pino({ level: process.env["LOG_LEVEL"] ?? "info" }, process.stderr);
+// MCP servers communicate JSON-RPC over stdout, so the logger writes to stderr
+// (createMcpLogger handles that). Shared helper (#172) gives this server the
+// same REDACT_PATHS + errSerializer scrubbing as the main logger plus a
+// `deliveryId` binding, without pulling in the config-bound `src/logger.ts`.
+const log = createMcpLogger("resolve-review-thread");
 
 const REPO_OWNER = process.env["REPO_OWNER"];
 const REPO_NAME = process.env["REPO_NAME"];

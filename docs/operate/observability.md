@@ -61,6 +61,18 @@ Volume policy: the per-request line is `debug` (default `info` stays quiet on a 
 | `github.api.rate_limit_low`     | warn  | Same fields; emitted once `rate_limit_remaining` drops below `RATE_LIMIT_LOW_WATER` (500).                    |
 | `github.api.rate_limit_warning` | warn  | `route`, `status`, `retry_after_s`; on a 429 or 403 secondary-rate-limit response.                            |
 
+## MCP server log fields
+
+The stdio MCP servers (`src/mcp/servers/*.ts`) run as subprocesses without the daemon `config`, so they cannot import `src/logger.ts` (it reads `config` at module load). Instead they build a pino logger via `createMcpLogger(serverName)` (`src/mcp/mcp-logger.ts`), which writes to **stderr** (stdout carries JSON-RPC) and applies the same `REDACT_PATHS` + `errSerializer` as the main logger, imported from the config-free `src/utils/log-redaction.ts` so redaction has parity without pulling in `config`. This replaced the prior raw `console.error` calls, where a `console.error(err)` on an Octokit `RequestError` could dump a `ghs_…` token verbatim.
+
+| Field        | Meaning                                                                                         |
+| ------------ | ----------------------------------------------------------------------------------------------- |
+| `server`     | MCP server name (e.g. `github-comment`, `github-state`, `merge-readiness`).                     |
+| `deliveryId` | Inherited from the parent request via the `DELIVERY_ID` env (set in `registry.ts` `sharedEnv`). |
+| `event`      | Structured event key, e.g. `secret_redacted` when the output secret-guard strips bytes.         |
+
+`LOG_LEVEL` is in the executor subprocess env allowlist, so `LOG_LEVEL=debug` on the daemon propagates to the CLI and the MCP subprocesses for incident response.
+
 ## Ship workflow log fields
 
 The shepherding lifecycle emits structured pino lines validated against the canonical Zod schema in `src/workflows/ship/log-fields.ts`. Field names and types are pinned so emitters cannot drift.
