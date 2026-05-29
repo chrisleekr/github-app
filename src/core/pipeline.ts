@@ -14,6 +14,7 @@ import { checkoutRepo } from "./checkout";
 import { executeAgent } from "./executor";
 import { fetchGitHubData } from "./fetcher";
 import { resolveGithubToken } from "./github-token";
+import { CORE_PIPELINE_LOG_EVENTS, logPipelineStage, timeStage } from "./log-fields";
 import { buildPrompt, buildPromptParts, resolveAllowedTools } from "./prompt-builder";
 import { createTrackingComment, finalizeTrackingComment } from "./tracking-comment";
 
@@ -281,7 +282,14 @@ export async function runPipeline(
   // overwrite it with the legacy "completed" template.
   const callerOwnsTrackingComment = overrides.trackingCommentId !== undefined;
 
+  // Stage timing baseline for the pipeline.stage / pipeline.completed events
+  // (issue #166); pipeline_wall_clock_ms on the terminal line is measured from
+  // here so an operator can see total request cost without a webhook arriving.
+  const pipelineStartedAt = Date.now();
+
   try {
+    ctx.log.info({ event: CORE_PIPELINE_LOG_EVENTS.started }, "Pipeline started");
+
     if (callerOwnsTrackingComment) {
       trackingCommentId = overrides.trackingCommentId;
       ctx.log.info(
@@ -291,21 +299,27 @@ export async function runPipeline(
     } else if (ctx.skipTrackingComments === true) {
       ctx.log.info("Skipping tracking comment (skipTrackingComments)");
     } else {
-      trackingCommentId = await retryWithBackoff(() => createTrackingComment(ctx), {
-        maxAttempts: 3,
-        initialDelayMs: 1000,
-        log: ctx.log,
-      });
+      trackingCommentId = await timeStage(ctx.log, "trackingComment.create", () =>
+        retryWithBackoff(() => createTrackingComment(ctx), {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          log: ctx.log,
+        }),
+      );
     }
     const resolvedTrackingCommentId = trackingCommentId;
 
-    const installationToken = await resolveGithubToken(ctx.octokit);
+    const installationToken = await timeStage(ctx.log, "token.resolve", () =>
+      resolveGithubToken(ctx.octokit),
+    );
 
-    const data = await retryWithBackoff(() => fetchGitHubData(ctx), {
-      maxAttempts: 3,
-      initialDelayMs: 2000,
-      log: ctx.log,
-    });
+    const data = await timeStage(ctx.log, "github.fetch", () =>
+      retryWithBackoff(() => fetchGitHubData(ctx), {
+        maxAttempts: 3,
+        initialDelayMs: 2000,
+        log: ctx.log,
+      }),
+    );
 
     const enrichedCtx: EnrichedBotContext = {
       ...ctx,
@@ -348,6 +362,7 @@ export async function runPipeline(
     // dry-run length log + executor fallback working byte-identical, and
     // `promptParts` is forwarded when cacheable layout is on so the executor
     // can pivot to systemPrompt.append + excludeDynamicSections (issue #134).
+    const promptBuildAt = Date.now();
     const prompt = buildPrompt(
       enrichedCtx,
       data,
@@ -358,6 +373,7 @@ export async function runPipeline(
       config.promptCacheLayout === "cacheable"
         ? buildPromptParts(enrichedCtx, data, resolvedTrackingCommentId, overrides.discussionDigest)
         : undefined;
+    logPipelineStage(ctx.log, "prompt.build", promptBuildAt);
 
     if (ctx.dryRun === true) {
       ctx.log.info(
@@ -367,10 +383,8 @@ export async function runPipeline(
       return { success: true, durationMs: 0, costUsd: 0, numTurns: 0, dryRun: true };
     }
 
-    const { workDir, cleanup } = await checkoutRepo(
-      enrichedCtx,
-      installationToken,
-      enrichedCtx.baseBranch,
+    const { workDir, cleanup } = await timeStage(enrichedCtx.log, "repo.clone", () =>
+      checkoutRepo(enrichedCtx, installationToken, enrichedCtx.baseBranch),
     );
     overrides.onWorkDirReady?.(workDir);
 
@@ -429,29 +443,33 @@ export async function runPipeline(
           ]
         : withResolveTool;
 
-      const result = await executeAgent({
-        ctx: enrichedCtx,
-        prompt,
-        mcpServers,
-        workDir,
-        artifactsDir,
-        allowedTools,
-        installationToken,
-        ...(overrides.maxTurns !== undefined ? { maxTurns: overrides.maxTurns } : {}),
-        ...(overrides.signal !== undefined ? { signal: overrides.signal } : {}),
-        ...(promptParts !== undefined ? { promptParts } : {}),
-      });
+      const result = await timeStage(enrichedCtx.log, "executor.invoke", () =>
+        executeAgent({
+          ctx: enrichedCtx,
+          prompt,
+          mcpServers,
+          workDir,
+          artifactsDir,
+          allowedTools,
+          installationToken,
+          ...(overrides.maxTurns !== undefined ? { maxTurns: overrides.maxTurns } : {}),
+          ...(overrides.signal !== undefined ? { signal: overrides.signal } : {}),
+          ...(promptParts !== undefined ? { promptParts } : {}),
+        }),
+      );
 
       if (resolvedTrackingCommentId !== undefined && !callerOwnsTrackingComment) {
         try {
           const finalOpts = buildFinalOpts(result);
-          await retryWithBackoff(
-            () => finalizeTrackingComment(enrichedCtx, resolvedTrackingCommentId, finalOpts),
-            {
-              maxAttempts: 3,
-              initialDelayMs: 1000,
-              log: enrichedCtx.log,
-            },
+          await timeStage(enrichedCtx.log, "trackingComment.finalize", () =>
+            retryWithBackoff(
+              () => finalizeTrackingComment(enrichedCtx, resolvedTrackingCommentId, finalOpts),
+              {
+                maxAttempts: 3,
+                initialDelayMs: 1000,
+                log: enrichedCtx.log,
+              },
+            ),
           );
         } catch (finalizeError) {
           enrichedCtx.log.error(
@@ -463,10 +481,12 @@ export async function runPipeline(
 
       enrichedCtx.log.info(
         {
+          event: CORE_PIPELINE_LOG_EVENTS.completed,
           success: result.success,
           durationMs: result.durationMs,
           costUsd: result.costUsd,
           numTurns: result.numTurns,
+          pipeline_wall_clock_ms: Date.now() - pipelineStartedAt,
         },
         "Request processing completed",
       );
@@ -526,7 +546,7 @@ export async function runPipeline(
       };
     } finally {
       try {
-        await cleanup();
+        await timeStage(ctx.log, "workspace.cleanup", () => cleanup());
       } catch (cleanupError) {
         ctx.log.error({ err: cleanupError }, "Failed to cleanup temp directory");
       }
@@ -538,7 +558,14 @@ export async function runPipeline(
     }
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    ctx.log.error({ err }, "Request processing failed");
+    ctx.log.error(
+      {
+        event: CORE_PIPELINE_LOG_EVENTS.failed,
+        err,
+        pipeline_wall_clock_ms: Date.now() - pipelineStartedAt,
+      },
+      "Request processing failed",
+    );
 
     if (trackingCommentId !== undefined && !callerOwnsTrackingComment) {
       const commentId = trackingCommentId;
