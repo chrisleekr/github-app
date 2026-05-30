@@ -467,6 +467,10 @@ export interface JobAcceptParams {
   daemonId: string;
   deliveryId: string;
   installationToken: string;
+  /** GitHub App installation id (App mode only; absent in PAT mode). Forwarded
+   * into `job:payload` so the daemon's child logger can emit it for
+   * per-installation rate-limit triage (#177). */
+  installationId?: number;
   contextJson: Record<string, unknown>;
   /** Optional turn cap. Omitted = no cap (the SDK runs the agent to completion). */
   maxTurns?: number;
@@ -501,6 +505,7 @@ export function handleJobAccept({
   daemonId,
   deliveryId,
   installationToken,
+  installationId,
   contextJson,
   maxTurns,
   allowedTools,
@@ -527,6 +532,7 @@ export function handleJobAccept({
       payload: {
         context: contextJson,
         installationToken,
+        ...(installationId !== undefined ? { installationId } : {}),
         ...(maxTurns !== undefined ? { maxTurns } : {}),
         allowedTools,
         ...(Object.keys(envVars).length > 0 ? { envVars } : {}),

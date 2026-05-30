@@ -53,6 +53,11 @@ export function handleIssueComment(
     // so the canonical `entityNumber` covers both surfaces under one field.
     entityNumber: payload.issue.number,
     senderLogin,
+    // Per-installation rate-limit triage (#177). Conditional because this
+    // logger is built before the `payload.installation === undefined` guard
+    // below; the guard can't move up (the owner-allowlist drop line logs
+    // through `log` first).
+    ...(payload.installation !== undefined ? { installationId: payload.installation.id } : {}),
   });
 
   const auth = isOwnerAllowed(ownerLogin, log);

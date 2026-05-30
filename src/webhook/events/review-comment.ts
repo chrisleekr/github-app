@@ -59,6 +59,11 @@ export function handleReviewComment(
     repo: payload.repository.name,
     entityNumber: payload.pull_request.number,
     senderLogin,
+    // Per-installation rate-limit triage (#177). Conditional because this
+    // logger is built before the `payload.installation === undefined` guard
+    // below; the guard can't move up (the owner-allowlist drop line logs
+    // through `log` first).
+    ...(payload.installation !== undefined ? { installationId: payload.installation.id } : {}),
   });
 
   const auth = isOwnerAllowed(ownerLogin, log);

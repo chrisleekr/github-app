@@ -141,6 +141,38 @@ describe("serverMessageSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("parses a valid job:payload message carrying installationId (#177)", () => {
+    const msg = {
+      type: "job:payload",
+      ...envelope(),
+      payload: {
+        context: { owner: "org", repo: "repo" },
+        installationToken: "ghs_abc123",
+        installationId: 12345,
+        allowedTools: [],
+      },
+    };
+    const result = serverMessageSchema.safeParse(msg);
+    expect(result.success).toBe(true);
+    if (result.success && result.data.type === "job:payload") {
+      expect(result.data.payload.installationId).toBe(12345);
+    }
+  });
+
+  it("rejects job:payload with a non-positive installationId (#177)", () => {
+    const msg = {
+      type: "job:payload",
+      ...envelope(),
+      payload: {
+        context: {},
+        installationToken: "ghs_abc123",
+        installationId: 0,
+        allowedTools: [],
+      },
+    };
+    expect(serverMessageSchema.safeParse(msg).success).toBe(false);
+  });
+
   it("parses a valid job:cancel message", () => {
     const msg = {
       type: "job:cancel",

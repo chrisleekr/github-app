@@ -170,8 +170,9 @@ server.tool(
       // to 3 attempts) is actually honoured. The helper short-circuits
       // on non-retriable 4xx (e.g. 404 thread_not_found) so callers
       // still see prompt failures.
-      const preflight = await retryWithBackoff(() =>
-        octokit.graphql<PreflightResponse>(GET_THREAD_QUERY, { threadId: thread_id }),
+      const preflight = await retryWithBackoff(
+        () => octokit.graphql<PreflightResponse>(GET_THREAD_QUERY, { threadId: thread_id }),
+        { log },
       );
       const preflightPr = preflight.node?.pullRequest.number;
       const preflightRepo = preflight.node?.pullRequest.repository;
@@ -205,8 +206,9 @@ server.tool(
         };
       }
 
-      const result = await retryWithBackoff(() =>
-        octokit.graphql<ResolveResponse>(RESOLVE_MUTATION, { threadId: thread_id }),
+      const result = await retryWithBackoff(
+        () => octokit.graphql<ResolveResponse>(RESOLVE_MUTATION, { threadId: thread_id }),
+        { log },
       );
       const thread = result.resolveReviewThread.thread;
 

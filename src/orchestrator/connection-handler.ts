@@ -907,6 +907,10 @@ async function handleAccept(
     // (per-repo config fetch, 1.5.F) can reuse it without re-minting.
     let token: string;
     let acceptOctokit: Octokit;
+    // App mode only: the installation id used to mint the token. Forwarded into
+    // job:payload so the daemon's child logger can emit it (#177). Stays
+    // undefined in PAT mode (no per-installation bucket to triage).
+    let installationId: number | undefined;
     if (config.githubPersonalAccessToken !== undefined) {
       token = config.githubPersonalAccessToken;
       acceptOctokit = new Octokit({ auth: token });
@@ -916,6 +920,7 @@ async function handleAccept(
         owner,
         repo,
       });
+      installationId = installation.id;
       acceptOctokit = await app.getInstallationOctokit(installation.id);
       token = await resolveGithubToken(acceptOctokit);
     }
@@ -961,6 +966,7 @@ async function handleAccept(
       daemonId,
       deliveryId: offer.deliveryId,
       installationToken: token,
+      ...(installationId !== undefined ? { installationId } : {}),
       contextJson,
       ...(maxTurns !== undefined ? { maxTurns } : {}),
       allowedTools: resolveAllowedTools(

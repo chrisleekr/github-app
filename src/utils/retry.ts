@@ -1,4 +1,28 @@
-import { type Logger, logger as rootLogger } from "../logger";
+import pino from "pino";
+
+import type { Logger } from "../logger";
+import { errSerializer, REDACT_PATHS } from "./log-redaction";
+
+// Config-free default logger (issue #184). Importing retry.ts must not pull in
+// src/logger.ts -> src/config, so the stdio MCP servers that use retry (e.g.
+// resolve-review-thread) stay config-free. `import type { Logger }` above is
+// erased at emit, so it adds no runtime coupling. Same REDACT_PATHS +
+// errSerializer as the root logger keeps redaction parity; the level reads
+// LOG_LEVEL directly because config is intentionally not imported. retry only
+// emits warn/error, so a log-level mismatch can never drop a line.
+//
+// Writes to stderr (like createMcpLogger), NOT pino's default stdout: a stdio
+// MCP server speaks JSON-RPC over stdout, so a default-path retry warning on
+// stdout would corrupt the protocol. stderr is safe in every context (k8s
+// ships both streams; warn/error on stderr is conventional).
+const defaultLog: Logger = pino(
+  {
+    level: process.env["LOG_LEVEL"] ?? "info",
+    redact: { paths: [...REDACT_PATHS] },
+    serializers: { err: errSerializer },
+  },
+  process.stderr,
+);
 
 /**
  * Retry configuration options.
@@ -60,7 +84,7 @@ export async function retryWithBackoff<T>(
     initialDelayMs = 5000,
     maxDelayMs = 20000,
     backoffFactor = 2,
-    log = rootLogger,
+    log = defaultLog,
   } = options;
 
   // Fail fast on invalid input. Each check names the offending option and
