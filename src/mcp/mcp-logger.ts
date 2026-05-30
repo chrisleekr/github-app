@@ -14,13 +14,15 @@
  */
 import pino from "pino";
 
-import { errSerializer, REDACT_PATHS } from "../utils/log-redaction";
+import { errSerializer, REDACT_PATHS, resolveLogLevel } from "../utils/log-redaction";
 
 export function createMcpLogger(serverName: string): pino.Logger {
   const deliveryId = process.env["DELIVERY_ID"];
   return pino(
     {
-      level: process.env["LOG_LEVEL"] ?? "info",
+      // resolveLogLevel falls back to `info` on an invalid LOG_LEVEL so pino
+      // can't throw at construction in this config-free subprocess (#184).
+      level: resolveLogLevel(process.env["LOG_LEVEL"]),
       base: {
         server: serverName,
         ...(deliveryId !== undefined && deliveryId !== "" ? { deliveryId } : {}),

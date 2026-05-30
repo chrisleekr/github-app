@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import pino from "pino";
 
 import { createChildLogger, errSerializer, REDACT_PATHS } from "../../src/logger";
+import { resolveLogLevel } from "../../src/utils/log-redaction";
 
 /**
  * Build a logger with the same redact paths and err serializer as the
@@ -340,5 +341,26 @@ describe("createChildLogger correlation contract (#175)", () => {
     expect(bindings["event"]).toBe("issues.labeled");
     expect(bindings["label"]).toBe("type: fix");
     expect(bindings["senderLogin"]).toBe("alice");
+  });
+});
+
+describe("resolveLogLevel (#184)", () => {
+  it("passes through every core pino level", () => {
+    for (const lv of ["trace", "debug", "info", "warn", "error", "fatal", "silent"]) {
+      expect(resolveLogLevel(lv)).toBe(lv);
+    }
+  });
+
+  it("falls back to info on undefined or an invalid level", () => {
+    expect(resolveLogLevel(undefined)).toBe("info");
+    expect(resolveLogLevel("")).toBe("info");
+    expect(resolveLogLevel("verbose")).toBe("info");
+    expect(resolveLogLevel("INFO")).toBe("info"); // case-sensitive: pino levels are lowercase
+  });
+
+  it("yields a level pino accepts at construction (no throw)", () => {
+    // pino 10 throws on a non-core level string; the resolved value must never trip that.
+    expect(() => pino({ level: resolveLogLevel("bogus") })).not.toThrow();
+    expect(() => pino({ level: resolveLogLevel(undefined) })).not.toThrow();
   });
 });

@@ -13,6 +13,22 @@ import pino, { type SerializedError } from "pino";
 
 import { redactGitHubTokens } from "./sanitize";
 
+const VALID_PINO_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal", "silent"]);
+
+/**
+ * Resolve a pino `level` from a raw env value, config-free.
+ *
+ * pino 10 throws at construction on a non-core level string (e.g. a typo'd
+ * `LOG_LEVEL`), so a logger built straight from `process.env` would crash at
+ * module import. The main process is protected by config's zod enum, but the
+ * stdio MCP subprocesses and `retryWithBackoff`'s default logger deliberately
+ * do NOT load config, so they validate here and fall back to `info` on anything
+ * unrecognised. See issue #184.
+ */
+export function resolveLogLevel(raw: string | undefined): string {
+  return raw !== undefined && VALID_PINO_LEVELS.has(raw) ? raw : "info";
+}
+
 /**
  * Path-based redaction list for pino loggers.
  *
