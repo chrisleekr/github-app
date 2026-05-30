@@ -86,6 +86,32 @@ The orchestrator emits a periodic `fleet.snapshot` info line (`src/orchestrator/
 
 Alerts worth having: `queue_depth` rising while `persistent_free_slots > 0` for several snapshots (suggests broken capability matching, work isn't reaching idle daemons); `active_daemons_total` dropping to 0 while `queue_depth > 0` (no workers).
 
+## Dispatcher log fields
+
+The job dispatcher (`src/orchestrator/job-dispatcher.ts`) and the accept handler in `src/orchestrator/connection-handler.ts` emit the offer lifecycle as structured events. The four `dispatcher.offer.*` keys are pinned per-event by a `z.discriminatedUnion` (`src/orchestrator/log-fields.ts:55#DispatcherOfferLogSchema`), so each event carries exactly its own fields; `dispatcher.no_eligible_daemon` has its own shape. Event-key constants live in `src/orchestrator/log-fields.ts:28#DISPATCHER_LOG_EVENTS`, and the co-located test rejects field drift.
+
+| `event`                         | Level | Meaning                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dispatcher.offer.sent`         | info  | An offer was sent to a selected daemon. Carries `kind`, `deliveryId`, `daemonId`, `offerId`, plus `fleetSize` + `requiredTools` for capacity/capability diagnostics.                                                                                                                                                                                  |
+| `dispatcher.offer.accepted`     | info  | The daemon claimed the offer. Carries `deliveryId`, `daemonId`, `offerId` plus `offer_latency_ms`, the offer→accept WebSocket round-trip, measured the instant the accept arrives so it excludes the orchestrator-side context lookup + token mint. `kind` is omitted here; correlate to the `sent` line by `offerId` for the authoritative job kind. |
+| `dispatcher.offer.rejected`     | info  | The daemon refused the offer; carries `reason` + `offer_latency_ms`. The job is re-queued for another daemon.                                                                                                                                                                                                                                         |
+| `dispatcher.offer.timed_out`    | warn  | No accept or reject arrived within `OFFER_TIMEOUT_MS` (default 5s); carries `offer_latency_ms` (≈ the timeout). The job is re-queued.                                                                                                                                                                                                                 |
+| `dispatcher.no_eligible_daemon` | info  | No live daemon matched the job's `requiredTools` or had free capacity. Carries `fleetSize` + `requiredTools` so an operator can separate a capability-match miss from sheer capacity exhaustion.                                                                                                                                                      |
+
+`offer_latency_ms` is the only snake_case field, matching the `delta_ms` metric idiom; ids stay camelCase, consistent with the app-wide pino correlation fields.
+
+## Daemon heartbeat fields
+
+The orchestrator pings each connected daemon every `HEARTBEAT_INTERVAL_MS` (default 30s) and evicts one that misses pongs past `HEARTBEAT_TIMEOUT_MS` (default 90s). The heartbeat lifecycle in `src/orchestrator/connection-handler.ts` emits three structured events pinned per-event by a `z.discriminatedUnion` (`src/orchestrator/log-fields.ts:114#DaemonHeartbeatLogSchema`), so `missedPongs` is pinned to `pong_missed` and `ttl_refresh_failed` carries its `err`; constants live in `src/orchestrator/log-fields.ts:36#DAEMON_HEARTBEAT_LOG_EVENTS`.
+
+| `event`                               | Level | Meaning                                                                                              |
+| ------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------- |
+| `daemon.heartbeat.pong_missed`        | warn  | A ping was sent while the prior pong was still outstanding; carries the running `missedPongs` count. |
+| `daemon.heartbeat.timeout`            | warn  | The pong window elapsed; the connection is closed and the daemon eligible for re-registration.       |
+| `daemon.heartbeat.ttl_refresh_failed` | error | A pong arrived but refreshing the daemon's Valkey/Postgres TTL failed; carries the redacted `err`.   |
+
+Alerts worth having: a sustained `daemon.heartbeat.timeout` rate points at network or resource-floor issues (a flapping daemon), distinct from a daemon that is responding slowly (visible as rising p99 `offer_latency_ms`).
+
 ## Ship workflow log fields
 
 The shepherding lifecycle emits structured pino lines validated against the canonical Zod schema in `src/workflows/ship/log-fields.ts`. Field names and types are pinned so emitters cannot drift.
@@ -176,7 +202,9 @@ Call them from an internal admin endpoint, a scheduled job, or `bun repl`.
 
 - **Triage error rate.** `parse-error` + `llm-error` + `timeout` + `circuit-open` above a sustained threshold (e.g. 10 % over 15 minutes) signals provider trouble or a regression.
 - **Ephemeral spawn failures.** Any `dispatch_reason=ephemeral-spawn-failed` points at RBAC, quota, or control-plane issues.
-- **Heartbeat drift.** Daemons missing heartbeats past `HEARTBEAT_TIMEOUT_MS` get evicted; sustained eviction points at network or resource-floor issues.
+- **Heartbeat drift.** Daemons missing heartbeats past `HEARTBEAT_TIMEOUT_MS` get evicted; sustained eviction points at network or resource-floor issues. A `daemon.heartbeat.timeout` rate above baseline is the log-side signal.
+- **Daemons refusing work.** A sustained `event:"dispatcher.offer.rejected"` rate (group by `reason`) means daemons are bouncing offers, a capacity or capability mismatch, before the queue visibly backs up.
+- **Offer round-trip latency.** A p99 regression on `offer_latency_ms` for `event:"dispatcher.offer.accepted"` flags a daemon that is responding but slow (GC pause, capability rescan stall, WebSocket back-pressure), eating dispatch headroom without tripping the heartbeat timeout.
 - **OOM / crash loops.** Standard infra alerts. Durable idempotency means a restart will not replay a processed event.
 - **Ship terminal-blocker rate.** A spike in `ship.intent.transition` events with `to_status:human_took_over` and `terminal_blocker_category:flake-cap` points at PR-flake regressions, not bot misbehaviour.
 

@@ -14,6 +14,7 @@ import {
   requeueJob,
   type ScopedQueuedJob,
 } from "./job-queue";
+import { DISPATCHER_LOG_EVENTS } from "./log-fields";
 
 // In-memory pending offers (keyed by offerId)
 
@@ -160,7 +161,13 @@ export async function dispatchJob(job: QueuedJob): Promise<boolean> {
 
   if (daemonId === null) {
     logger.info(
-      { kind: job.kind, deliveryId: job.deliveryId, fleetSize, requiredTools },
+      {
+        event: DISPATCHER_LOG_EVENTS.no_eligible_daemon,
+        kind: job.kind,
+        deliveryId: job.deliveryId,
+        fleetSize,
+        requiredTools,
+      },
       "dispatchJob: no daemon available, caller should enqueue or retry",
     );
     return false; // Caller handles FM-3 fallback
@@ -224,7 +231,15 @@ export async function dispatchJob(job: QueuedJob): Promise<boolean> {
   });
 
   logger.info(
-    { kind: job.kind, deliveryId: job.deliveryId, daemonId, offerId },
+    {
+      event: DISPATCHER_LOG_EVENTS.offer_sent,
+      kind: job.kind,
+      deliveryId: job.deliveryId,
+      daemonId,
+      offerId,
+      fleetSize,
+      requiredTools,
+    },
     "Job offered to daemon",
   );
 
@@ -349,7 +364,13 @@ async function handleOfferTimeout(offerId: string): Promise<void> {
   pendingOffers.delete(offerId);
 
   logger.warn(
-    { deliveryId: offer.deliveryId, daemonId: offer.daemonId, offerId },
+    {
+      event: DISPATCHER_LOG_EVENTS.offer_timed_out,
+      deliveryId: offer.deliveryId,
+      daemonId: offer.daemonId,
+      offerId,
+      offer_latency_ms: Date.now() - offer.offeredAt,
+    },
     "Job offer timed out",
   );
 
@@ -538,7 +559,14 @@ export async function handleJobReject(offerId: string, reason: string): Promise<
   pendingOffers.delete(offerId);
 
   logger.info(
-    { deliveryId: offer.deliveryId, daemonId: offer.daemonId, reason },
+    {
+      event: DISPATCHER_LOG_EVENTS.offer_rejected,
+      deliveryId: offer.deliveryId,
+      daemonId: offer.daemonId,
+      offerId,
+      offer_latency_ms: Date.now() - offer.offeredAt,
+      reason,
+    },
     "Job rejected by daemon",
   );
 

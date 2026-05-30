@@ -9,6 +9,7 @@ import { observableOctokit } from "../utils/octokit-observability";
 import { addReaction } from "../utils/reactions";
 import { findById, findInflightByOwner, type WorkflowRunRow } from "../workflows/runs-store";
 import { setState } from "../workflows/tracking-mirror";
+import { DAEMON_HEARTBEAT_LOG_EVENTS, DISPATCHER_LOG_EVENTS } from "./log-fields";
 import type {
   loadReviewLearnings as LoadReviewLearningsFn,
   ReviewLearning,
@@ -499,7 +500,14 @@ function sendHeartbeatPing(ws: ServerWebSocket<WsConnectionData>, daemonId: stri
   if (state.awaitingPong) {
     // Already waiting for a pong: this means we missed one
     state.missedPongs++;
-    logger.warn({ daemonId, missedPongs: state.missedPongs }, "Heartbeat pong not received");
+    logger.warn(
+      {
+        event: DAEMON_HEARTBEAT_LOG_EVENTS.pong_missed,
+        daemonId,
+        missedPongs: state.missedPongs,
+      },
+      "Heartbeat pong not received",
+    );
   }
 
   state.awaitingPong = true;
@@ -515,7 +523,10 @@ function sendHeartbeatPing(ws: ServerWebSocket<WsConnectionData>, daemonId: stri
   // Start pong timeout
   if (state.pongTimer !== null) clearTimeout(state.pongTimer);
   state.pongTimer = setTimeout(() => {
-    logger.warn({ daemonId }, "Heartbeat timeout, closing connection (FM-2)");
+    logger.warn(
+      { event: DAEMON_HEARTBEAT_LOG_EVENTS.timeout, daemonId },
+      "Heartbeat timeout, closing connection (FM-2)",
+    );
     ws.close(WS_CLOSE_CODES.HEARTBEAT_TIMEOUT.code, WS_CLOSE_CODES.HEARTBEAT_TIMEOUT.reason);
   }, config.heartbeatTimeoutMs);
 }
@@ -543,7 +554,10 @@ function handleHeartbeatPong(
     info.activeJobs = msg.payload.activeJobs;
     info.lastSeenAt = Date.now();
     void refreshDaemonTtl(daemonId, info.capabilities).catch((err: unknown) => {
-      logger.error({ err, daemonId }, "Failed to refresh daemon TTL");
+      logger.error(
+        { event: DAEMON_HEARTBEAT_LOG_EVENTS.ttl_refresh_failed, err, daemonId },
+        "Failed to refresh daemon TTL",
+      );
     });
   }
 }
@@ -800,6 +814,24 @@ async function handleAccept(
   // C2: Immediately claim the offer and clear its timeout to prevent a race
   // where the timeout fires during async work below and re-queues the job.
   removePendingOffer(offerId);
+
+  // dispatcher.offer.accepted: emitted here, the instant the accept arrives, so
+  // offer_latency_ms is the daemon's WebSocket round-trip and excludes the
+  // orchestrator-side context lookup + token mint that follow. Sits above the
+  // legacy/scoped split, so one emit covers both job kinds. `kind` is omitted:
+  // the authoritative job.kind is on the offer.sent line, correlated by offerId,
+  // so re-deriving a lossy scoped/non-scoped value under the same key would only
+  // collide vocabularies for an operator grouping by kind.
+  logger.info(
+    {
+      event: DISPATCHER_LOG_EVENTS.offer_accepted,
+      deliveryId: offer.deliveryId,
+      daemonId,
+      offerId,
+      offer_latency_ms: Date.now() - offer.offeredAt,
+    },
+    "Job offer accepted by daemon",
+  );
 
   // Capacity slot is owned here: take one when the daemon claims, release
   // in handleResult or in the error paths below. Every accept path must
