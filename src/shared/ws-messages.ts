@@ -183,6 +183,11 @@ const jobPayloadSchema = z.object({
   payload: z.object({
     context: z.record(z.string(), z.unknown()),
     installationToken: z.string(),
+    /** GitHub App installation id (App mode only; absent in PAT mode). The
+     * daemon emits it on its child logger for per-installation rate-limit
+     * triage (#177). Optional for rolling-deploy safety: an orchestrator that
+     * omits it must not fail a newer daemon's parse. */
+    installationId: z.number().int().positive().optional(),
     maxTurns: z.number().int().positive().optional(),
     allowedTools: z.array(z.string()),
     envVars: z.record(z.string(), z.string()).optional(),

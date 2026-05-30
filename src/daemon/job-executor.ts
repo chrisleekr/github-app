@@ -274,8 +274,15 @@ export async function executeJob(
     return;
   }
 
-  const { installationToken, maxTurns, allowedTools, envVars, memory, reviewLearnings } =
-    payload.payload;
+  const {
+    installationToken,
+    installationId,
+    maxTurns,
+    allowedTools,
+    envVars,
+    memory,
+    reviewLearnings,
+  } = payload.payload;
 
   // Abort controller for cancel/execute race prevention (C1)
   const abortController = new AbortController();
@@ -316,6 +323,9 @@ export async function executeJob(
       owner: context.owner,
       repo: context.repo,
       entityNumber: context.entityNumber,
+      // Per-installation rate-limit triage (#177). Orchestrator-sourced; absent
+      // in PAT mode, so emit conditionally.
+      ...(installationId !== undefined ? { installationId } : {}),
     });
 
     // Build the full BotContext. `envVars` is threaded through the context so

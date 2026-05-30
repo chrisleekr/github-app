@@ -74,6 +74,9 @@ export function handleIssues(octokit: Octokit, payload: IssuesEvent, deliveryId:
     owner: payload.repository.owner.login,
     repo: payload.repository.name,
     entityNumber: payload.issue.number,
+    // Per-installation rate-limit triage (#177): App webhooks always carry
+    // installation, but stay undefined-safe.
+    ...(payload.installation !== undefined ? { installationId: payload.installation.id } : {}),
   });
 
   const auth = isOwnerAllowed(senderLogin, log);
