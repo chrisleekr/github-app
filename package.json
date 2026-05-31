@@ -126,7 +126,7 @@
   },
   "overrides": {
     "@anthropic-ai/sdk": "0.96.0",
-    "@hono/node-server": "2.0.2",
+    "@hono/node-server": "2.0.4",
     "express-rate-limit": "8.5.2",
     "fast-uri": "3.1.2",
     "fast-xml-builder": "1.2.0",
