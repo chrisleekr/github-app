@@ -45,7 +45,7 @@
     "fast-uri": "3.1.2",
     "fast-xml-builder": "1.2.0",
     "flatted": "3.4.2",
-    "hono": "4.12.19",
+    "hono": "4.12.22",
     "path-to-regexp": "8.4.2",
     "picomatch": "4.0.4",
     "yaml": "2.9.0",
@@ -761,7 +761,7 @@
 
     "help-me": ["help-me@5.0.0", "", {}, "sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg=="],
 
-    "hono": ["hono@4.12.19", "", {}, "sha512-xa3eYXYXx68XTT4hZ7dRzsXBhaq85ToSrlUJNoR0gwz/1Ap/CNwX47wfvV7pc/xWhjKVVkLT7zBJy8chhNguqQ=="],
+    "hono": ["hono@4.12.22", "", {}, "sha512-7fvVPbB92zNRsQke+uiRGwtTuef0tB2Dg4hWxYfFNvkQhIltWoyi0ONReM5LWA+jJWS3nfT5lTq+qbsIpX0IQw=="],
 
     "hpagent": ["hpagent@1.2.0", "", {}, "sha512-A91dYTeIB6NoXG+PxTQpCCDDnfHsW9kc06Lvpu1TEe9gnd6ZFeiBoRO9JvzEv6xK7EX97/dUE8g/vBMTqTS3CA=="],
 
