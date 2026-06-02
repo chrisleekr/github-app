@@ -9,9 +9,9 @@ passed=0
 failed=0
 failures=()
 
-tests=(test/**/*.test.ts)
+tests=(test/**/*.test.ts src/**/*.test.ts)
 if (( ${#tests[@]} == 0 )); then
-  echo "No test files matched test/**/*.test.ts" >&2
+  echo "No test files matched test/**/*.test.ts or src/**/*.test.ts" >&2
   exit 1
 fi
 

@@ -110,6 +110,12 @@ jobs:
         # workflow from reintroducing the drift closed in issue #173.
         run: bun run check:runner-pins
 
+      - name: Test-glob drift guard
+        # Fails if any `*.test.ts` file is not reachable by the runner glob in
+        # scripts/test-isolated.sh, so a colocated test outside the globbed
+        # roots cannot go dark while CI stays green. See issue #201.
+        run: bun run check:test-globs
+
       - name: Docs-sync guard (bot workflows, FR-019)
         if: github.event_name == 'pull_request'
         env:

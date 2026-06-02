@@ -63,7 +63,10 @@ bun run test:watch        # re-run on file changes
 bun run test:coverage     # explicit coverage report (output in coverage/)
 ```
 
-Test files live in `test/` and mirror the `src/` directory structure.
+Test files live under `test/` mirroring the `src/` directory structure, or
+colocated as `src/.../foo.test.ts`. Both are CI-gated: the runner globs
+`test/**/*.test.ts src/**/*.test.ts`, and `bun run check:test-globs` fails CI
+if any `*.test.ts` is unreachable by that glob set.
 
 **Coverage threshold**: `bunfig.toml` enforces a per-file minimum of **90%
 lines and 90% functions** via Bun's native `coverageThreshold`. Any PR that

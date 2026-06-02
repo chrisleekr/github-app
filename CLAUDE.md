@@ -102,6 +102,7 @@ GitHub-side auth defaults to the App installation token minted on demand from `G
 - Strict TypeScript: `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `useUnknownInCatchVariables`, etc.
 - Pre-commit hooks via Husky + lint-staged (auto-format + lint on staged files).
 - Conventional commits enforced via commitlint.
+- Test files live under `test/<mirror>/foo.test.ts` or colocated as `src/.../foo.test.ts`; both are CI-gated. The runner (`scripts/test-isolated.sh`) globs `test/**/*.test.ts src/**/*.test.ts`, and `bun run check:test-globs` (`scripts/check-test-globs.ts`) fails CI if any `*.test.ts` is not reachable by that glob set, so a colocated test cannot go dark while CI stays green (issue #201).
 
 ## CI/CD Pipeline
 
