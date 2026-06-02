@@ -31,9 +31,11 @@ const repoRoot =
   process.env["TEST_GLOBS_REPO_ROOT"] ?? resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RUNNER_SCRIPT = join(repoRoot, "scripts", "test-isolated.sh");
 
-// Directories that never hold first-party test suites. `node_modules` and
-// `dist` would otherwise flood the scan with vendored / built `.test.ts`.
-const EXCLUDED_DIRS = ["node_modules", "dist", ".git", "coverage"];
+// Non-dot directories that never hold first-party test suites. `node_modules`
+// and `dist` would otherwise flood the scan with vendored / built `.test.ts`.
+// Dot-directories (`.git`, etc.) are pruned separately by the leading-dot rule
+// in collectTestFiles, mirroring bash's no-`dotglob` traversal.
+const EXCLUDED_DIRS = ["node_modules", "dist", "coverage"];
 
 // Extract the glob patterns from the runner's `tests=( ... )` array literal.
 // The runner is the source of truth for what CI actually executes. The match
@@ -50,10 +52,16 @@ function runnerGlobs(scriptPath: string): string[] {
         "Update this guard if the runner moved or duplicated its glob source of truth.",
     );
   }
-  return (matches[0]?.[1] ?? "")
-    .split(/\s+/)
-    .map((s) => s.trim().replace(/^["']|["']$/g, ""))
-    .filter((s) => s.length > 0 && !s.startsWith("#"));
+  const globs: string[] = [];
+  for (const raw of (matches[0]?.[1] ?? "").split(/\s+/)) {
+    const tok = raw.trim().replace(/^["']|["']$/g, "");
+    // Bash recognises an inline `#` comment inside the array literal; once one
+    // starts, the rest of the line is comment, not globs. Stop, do not just
+    // drop the `#` token (which would keep the comment words as bogus globs).
+    if (tok.startsWith("#")) break;
+    if (tok.length > 0) globs.push(tok);
+  }
+  return globs;
 }
 
 // Convert a shell glob (`**`, `*`, literal segments) to an anchored RegExp
@@ -91,6 +99,11 @@ function collectTestFiles(absDir: string, relDir: string): string[] {
   const out: string[] = [];
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- repoRoot is the script's own tree or a test fixture
   for (const entry of readdirSync(absDir, { withFileTypes: true })) {
+    // Bash runs the glob without `dotglob`, so the runner never matches a
+    // leading-dot path component (dir or file). Mirror that: a `.test.ts` under
+    // a dot-path is not runner-reachable and is out of scope for this guard.
+    // This also covers `.git` without listing it in EXCLUDED_DIRS.
+    if (entry.name.startsWith(".")) continue;
     const rel = relDir === "" ? entry.name : `${relDir}/${entry.name}`;
     if (entry.isDirectory()) {
       if (EXCLUDED_DIRS.includes(entry.name)) continue;

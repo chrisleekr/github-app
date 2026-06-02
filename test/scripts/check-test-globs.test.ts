@@ -176,4 +176,35 @@ describe("scripts/check-test-globs.ts", () => {
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("found 2");
   });
+
+  it("ignores a bash inline comment inside the tests=( ... ) array", () => {
+    // `tests=( ... # note)` is a comment in bash; the words after `#` must not
+    // become bogus globs that mark every file uncovered.
+    const root = mkdtempSync(join(tmpdir(), "check-test-globs-"));
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    mkdirSync(join(root, "test"), { recursive: true });
+    writeFileSync(
+      join(root, "scripts", "test-isolated.sh"),
+      "#!/usr/bin/env bash\ntests=(test/**/*.test.ts # widened for #201)\n",
+    );
+    writeFileSync(join(root, "test", "foo.test.ts"), "");
+    fixtures.push(root);
+    const { exitCode, stdout } = runScript(root);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("OK: every `*.test.ts` file is reachable");
+  });
+
+  it("does not flag test files under dot-paths the runner cannot reach", () => {
+    // Bash globs run without dotglob, so a `.test.ts` under a dot-dir or a
+    // dot-prefixed filename is never runner-reachable; the guard mirrors that
+    // and leaves them out of scope rather than falsely reporting coverage.
+    const root = makeFixture({
+      runnerGlobs: "test/**/*.test.ts",
+      testFiles: ["test/foo.test.ts", "test/.hidden/x.test.ts", "test/.dotfile.test.ts"],
+    });
+    fixtures.push(root);
+    const { exitCode, stdout } = runScript(root);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("OK: every `*.test.ts` file is reachable");
+  });
 });
