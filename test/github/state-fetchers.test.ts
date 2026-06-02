@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { Octokit } from "octokit";
 
 import { dispatchGithubStateTool, GITHUB_STATE_TOOLS } from "../../src/github/state-fetchers";
+import { makeSilentLogger } from "../factories";
 
 interface FakeOctokitOptions {
   graphql?: (query: string, vars: unknown) => Promise<unknown>;
@@ -156,6 +157,30 @@ describe("dispatchGithubStateTool: happy paths", () => {
     );
     expect(result.isError).toBeUndefined();
     expect(JSON.parse(result.content)).toEqual({ branch: "feat-x", protected: false });
+  });
+
+  it("get_branch_protection on a 404 does not emit a retry warn log", async () => {
+    // The expected 404 (unprotected branch) is converted to a sentinel inside
+    // the retried operation, so the retry helper never sees it as an error and
+    // never logs a spurious "non-retriable" warning (#199 review).
+    const log = makeSilentLogger();
+    const octokit = fakeOctokit({
+      rest: {
+        repos: {
+          getBranchProtection: () => {
+            const err = new Error("Not Found") as Error & { status: number };
+            err.status = 404;
+            return Promise.reject(err);
+          },
+        },
+      },
+    });
+    const result = await dispatchGithubStateTool(
+      { octokit, ...repo, log },
+      { id: "x", name: "get_branch_protection", input: { branch: "feat-x" } },
+    );
+    expect(JSON.parse(result.content)).toEqual({ branch: "feat-x", protected: false });
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
   it("get_pr_files passes through the listFiles result", async () => {

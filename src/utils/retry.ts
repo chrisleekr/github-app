@@ -112,22 +112,25 @@ export async function retryWithBackoff<T>(
 
       // Do not retry permanent client errors (4xx except 429 Too Many Requests).
       // Octokit wraps HTTP errors with a .status property; non-HTTP errors lack it.
-      // Exception: GitHub delivers a *secondary* rate limit as HTTP 403 (not 429)
-      // with a "secondary rate limit" body. A status-only check would misclassify
-      // it as a permanent permission error, so inspect the message and let a
-      // secondary rate limit fall through to the backoff path. A plain 403
-      // (no marker) still fails fast. See issue #199.
       const status = (error as { status?: number }).status;
-      const isSecondaryRateLimit = lastError.message.toLowerCase().includes("secondary rate limit");
-      if (
-        status !== undefined &&
-        status >= 400 &&
-        status < 500 &&
-        status !== 429 &&
-        !isSecondaryRateLimit
-      ) {
-        log.warn({ attempt, status, err: lastError }, "Non-retriable error, throwing immediately");
-        throw lastError;
+      if (status !== undefined && status >= 400 && status < 500 && status !== 429) {
+        // Exception: GitHub delivers a *secondary* rate limit as HTTP 403 (not
+        // 429) with a "secondary rate limit" body. A status-only check would
+        // misclassify it as a permanent permission error, so inspect the
+        // message and let a secondary rate limit fall through to the backoff
+        // path. A plain 403 (no marker) still fails fast. The message is
+        // inspected only inside this 4xx branch, so non-4xx errors skip the
+        // string work. See issue #199.
+        const isSecondaryRateLimit = lastError.message
+          .toLowerCase()
+          .includes("secondary rate limit");
+        if (!isSecondaryRateLimit) {
+          log.warn(
+            { attempt, status, err: lastError },
+            "Non-retriable error, throwing immediately",
+          );
+          throw lastError;
+        }
       }
 
       log.warn({ attempt, maxAttempts, err: lastError }, "Operation attempt failed");

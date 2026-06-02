@@ -235,38 +235,45 @@ export async function getWorkflowRun(deps: GithubStateDeps, runId: number): Prom
 }
 
 export async function getBranchProtection(deps: GithubStateDeps, branch: string): Promise<string> {
-  try {
-    const result = await retryWithBackoff(
-      () =>
-        deps.octokit.rest.repos.getBranchProtection({
+  // A 404 means the branch is unprotected, an expected outcome, not a failure.
+  // Convert it to a `null` sentinel INSIDE the retried operation so the retry
+  // helper never sees it as an error: no spurious "non-retriable" warn log and
+  // no wasted attempt. Octokit RequestError carries `status` directly; that's
+  // more reliable than matching the message string (which varies by SDK version
+  // and locale). Genuine transient failures still propagate and retry.
+  const result = await retryWithBackoff(
+    async () => {
+      try {
+        return await deps.octokit.rest.repos.getBranchProtection({
           owner: deps.owner,
           repo: deps.repo,
           branch,
-        }),
-      { log: deps.log },
-    );
-    return serialize({
-      branch,
-      protected: true,
-      required_status_checks: result.data.required_status_checks ?? null,
-      required_pull_request_reviews: result.data.required_pull_request_reviews ?? null,
-      enforce_admins: result.data.enforce_admins?.enabled ?? false,
-      restrictions: result.data.restrictions ?? null,
-    });
-  } catch (err) {
-    // 404 is expected for unprotected branches, return a structured payload, not an error.
-    // Octokit RequestError carries `status` directly; that's more reliable than
-    // matching the message string (which varies by SDK version and locale).
-    if (
-      err !== null &&
-      typeof err === "object" &&
-      "status" in err &&
-      (err as { status: unknown }).status === 404
-    ) {
-      return serialize({ branch, protected: false });
-    }
-    throw err;
+        });
+      } catch (err) {
+        if (
+          err !== null &&
+          typeof err === "object" &&
+          "status" in err &&
+          (err as { status: unknown }).status === 404
+        ) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    { log: deps.log },
+  );
+  if (result === null) {
+    return serialize({ branch, protected: false });
   }
+  return serialize({
+    branch,
+    protected: true,
+    required_status_checks: result.data.required_status_checks ?? null,
+    required_pull_request_reviews: result.data.required_pull_request_reviews ?? null,
+    enforce_admins: result.data.enforce_admins?.enabled ?? false,
+    restrictions: result.data.restrictions ?? null,
+  });
 }
 
 export async function getPrDiff(deps: GithubStateDeps, prNumber: number): Promise<string> {
