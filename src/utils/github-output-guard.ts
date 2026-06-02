@@ -28,7 +28,7 @@ import type { Logger } from "pino";
 
 import { config } from "../config";
 import { scanForSecretsWithLlm } from "./llm-output-scanner";
-import { redactSecrets, type RedactSecretsResult } from "./sanitize";
+import { isDeletionOnly, redactSecrets, type RedactSecretsResult } from "./sanitize";
 
 /**
  * Tag for the body's provenance.
@@ -119,6 +119,18 @@ export async function safePostToGitHub<R>(input: SafePostInput<R>): Promise<Safe
         llmResult.containsSecret &&
         llmResult.redactedBody.trim().length === 0 &&
         regexResult.body.trim().length > 0;
+      // Integrity gate (issue #198): the scanner's redactedBody MUST be
+      // achievable by deletion only from its input (the regex-pass body). A
+      // prompt-injected or hallucinating scanner could otherwise emit arbitrary
+      // bytes into a public GitHub comment under the bot's identity. Reject any
+      // body that adds, reorders, or alters bytes and fall back to the
+      // regex-only body, exactly as the empty-body over-match path does. The
+      // subsequence check runs only for a non-empty containsSecret verdict, so
+      // honest deletions still apply unchanged.
+      const scannerSubstituted =
+        llmResult.containsSecret &&
+        !scannerOverMatched &&
+        !isDeletionOnly(regexResult.body, llmResult.redactedBody);
       if (scannerOverMatched) {
         log.warn(
           {
@@ -130,6 +142,19 @@ export async function safePostToGitHub<R>(input: SafePostInput<R>): Promise<Safe
             bodyLengthBefore: body.length,
           },
           "llm scanner emptied body that regex pass kept; falling back to regex-only body",
+        );
+      } else if (scannerSubstituted) {
+        log.warn(
+          {
+            event: "llm_scanner_substitution_rejected",
+            callsite,
+            deliveryId,
+            kinds: llmResult.kinds,
+            matchCount: llmResult.matchCount,
+            bodyLengthBefore: regexResult.body.length,
+            bodyLengthAfter: llmResult.redactedBody.length,
+          },
+          "llm scanner returned a non-deletion-only body; rejecting substitution, falling back to regex-only body",
         );
       } else if (llmResult.containsSecret) {
         const before = body.length;

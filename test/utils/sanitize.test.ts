@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  isDeletionOnly,
   normalizeHtmlEntities,
   redactGitHubTokens,
   redactSecrets,
@@ -12,6 +13,49 @@ import {
   stripMarkdownImageAltText,
   stripMarkdownLinkTitles,
 } from "../../src/utils/sanitize";
+
+describe("isDeletionOnly", () => {
+  it("accepts an identical string (zero deletions)", () => {
+    expect(isDeletionOnly("hello world", "hello world")).toBe(true);
+  });
+
+  it("accepts the empty candidate (everything deleted)", () => {
+    expect(isDeletionOnly("hello", "")).toBe(true);
+  });
+
+  it("accepts a contiguous deletion (subsequence)", () => {
+    expect(isDeletionOnly("agent reply with secret xyz", "agent reply with  xyz")).toBe(true);
+  });
+
+  it("accepts a non-contiguous deletion (scattered subsequence)", () => {
+    expect(isDeletionOnly("abcdef", "ace")).toBe(true);
+  });
+
+  it("rejects an added byte not present in the original", () => {
+    expect(isDeletionOnly("agent reply", "agent reply!")).toBe(false);
+    expect(isDeletionOnly("hello world", "See http://evil")).toBe(false);
+  });
+
+  it("rejects reordered bytes", () => {
+    expect(isDeletionOnly("abc", "cba")).toBe(false);
+    expect(isDeletionOnly("abc", "ba")).toBe(false);
+  });
+
+  it("rejects an altered byte mid-string", () => {
+    expect(isDeletionOnly("abcdef", "abXdef")).toBe(false);
+  });
+
+  it("rejects any candidate longer than the original", () => {
+    expect(isDeletionOnly("short", "short and then some")).toBe(false);
+  });
+
+  it("preserves code-unit semantics around an astral character", () => {
+    // Deleting the trailing word keeps the emoji intact: a subsequence.
+    expect(isDeletionOnly("hi 😀 there", "hi 😀 ")).toBe(true);
+    // Replacing the emoji with other text is not deletion-only.
+    expect(isDeletionOnly("hi 😀 there", "hi XY there")).toBe(false);
+  });
+});
 
 describe("stripInvisibleCharacters", () => {
   it("removes zero-width characters", () => {

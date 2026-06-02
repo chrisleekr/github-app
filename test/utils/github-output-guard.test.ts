@@ -145,7 +145,9 @@ describe("safePostToGitHub", () => {
         text: JSON.stringify({
           contains_secret: true,
           kinds: ["BASE64_ENCODED_SECRET"],
-          redacted_body: "agent reply with detectable thing removed",
+          // Deletion-only: the base64 chunk is stripped in place, leaving a
+          // strict subsequence of the input (issue #198 contract).
+          redacted_body: "agent reply with detectable thing ",
         }),
         usage: { inputTokens: 50, outputTokens: 30 },
         model: "stub",
@@ -163,10 +165,84 @@ describe("safePostToGitHub", () => {
       },
     });
     expect(r.posted).toBe(true);
-    expect(received).toBe("agent reply with detectable thing removed");
+    expect(received).toBe("agent reply with detectable thing ");
     const llmWarn = log.warns.find((w) => w["scanner"] === "llm");
     expect(llmWarn).toBeDefined();
     expect(llmWarn?.["kinds"]).toEqual(["BASE64_ENCODED_SECRET"]);
+  });
+
+  it("rejects an LLM redacted_body that adds bytes not in the input (injection guard)", async () => {
+    // A prompt-injected or hallucinating scanner could return arbitrary text in
+    // the schema-valid redacted_body. That text must never reach GitHub: the
+    // gate accepts the substitution only when it is deletion-only (a byte
+    // subsequence of the scanner's input). See issue #198.
+    const log = makeTestLogger();
+    _setLlmScannerClientForTests(
+      stubScannerWith({
+        text: JSON.stringify({
+          contains_secret: true,
+          kinds: ["BASE64_ENCODED_SECRET"],
+          // Not a subsequence of the input body: attacker-injected content.
+          redacted_body: "See http://evil.example for the full report",
+        }),
+        usage: { inputTokens: 10, outputTokens: 10 },
+        model: "stub",
+      }),
+    );
+    let received = "";
+    const r = await safePostToGitHub({
+      body: "agent reply hello world",
+      source: "agent",
+      callsite: "test.llm-inject",
+      log,
+      post: (cleanBody) => {
+        received = cleanBody;
+        return Promise.resolve("ok");
+      },
+    });
+    expect(r.posted).toBe(true);
+    // Falls back to the regex-only body; the injected text never reaches GitHub.
+    expect(received).toBe("agent reply hello world");
+    expect(received).not.toContain("evil");
+    // The rejected verdict must not inflate the tally: only the regex pass
+    // (which matched nothing here) contributes.
+    expect(r.matchCount).toBe(0);
+    expect(r.kinds).toEqual([]);
+    const rejectWarn = log.warns.find((w) => w["event"] === "llm_scanner_substitution_rejected");
+    expect(rejectWarn).toBeDefined();
+  });
+
+  it("accepts an LLM redacted_body that only deletes bytes (deletion-only)", async () => {
+    const log = makeTestLogger();
+    _setLlmScannerClientForTests(
+      stubScannerWith({
+        text: JSON.stringify({
+          contains_secret: true,
+          kinds: ["BASE64_ENCODED_SECRET"],
+          // "secret " deleted from the input, a strict subsequence.
+          redacted_body: "agent reply with xyz",
+        }),
+        usage: { inputTokens: 10, outputTokens: 10 },
+        model: "stub",
+      }),
+    );
+    let received = "";
+    const r = await safePostToGitHub({
+      body: "agent reply with secret xyz",
+      source: "agent",
+      callsite: "test.llm-delete",
+      log,
+      post: (cleanBody) => {
+        received = cleanBody;
+        return Promise.resolve("ok");
+      },
+    });
+    expect(r.posted).toBe(true);
+    expect(received).toBe("agent reply with xyz");
+    expect(log.warns.find((w) => w["scanner"] === "llm")).toBeDefined();
+    expect(
+      log.warns.find((w) => w["event"] === "llm_scanner_substitution_rejected"),
+    ).toBeUndefined();
   });
 
   it("does not invoke LLM scanner for system-source bodies (regex only)", async () => {

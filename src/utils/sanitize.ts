@@ -176,6 +176,36 @@ export function redactSecrets(content: string): RedactSecretsResult {
 }
 
 /**
+ * True iff `candidate` can be produced from `original` by deleting zero or more
+ * code units, i.e. `candidate` is a (not necessarily contiguous) subsequence of
+ * `original`. O(N) two-pointer walk over UTF-16 code units.
+ *
+ * Used to gate the output-side LLM secret scanner (issue #198): the scanner's
+ * redaction must only remove bytes the regex pass accepted, never add, reorder,
+ * or alter them. A prompt-injected or hallucinating scanner returns a
+ * schema-valid `redacted_body` string that this check denies whenever it is not
+ * deletion-only, so attacker-controlled text cannot be substituted into a public
+ * GitHub comment under the bot's identity.
+ */
+export function isDeletionOnly(original: string, candidate: string): boolean {
+  if (candidate.length > original.length) return false;
+  let i = 0;
+  let j = 0;
+  // Two-pointer walk over UTF-16 code units. A `while` loop (not `for`/for-of)
+  // because the two indices advance independently and code-unit granularity is
+  // required: for-of iterates by code point, which would mis-handle a deletion
+  // adjacent to an astral character.
+  while (j < candidate.length) {
+    // eslint-disable-next-line security/detect-object-injection -- string index by loop counter, not user input
+    while (i < original.length && original[i] !== candidate[j]) i++;
+    if (i === original.length) return false;
+    i++;
+    j++;
+  }
+  return true;
+}
+
+/**
  * Full sanitization pipeline.
  * Apply to all user-provided content before including in prompts.
  */
