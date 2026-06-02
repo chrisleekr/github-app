@@ -110,6 +110,8 @@ Some merge-readiness probe verdicts cannot be recovered by ship at iteration 0, 
 
 Other non-readiness reasons (`failing_checks`, `behind_base`, `pending_checks`, etc.) are recoverable by the iteration loop and stay on the normal path. The reroute set is defined as `SHIP_REROUTE_REASONS` in `src/workflows/ship/session-runner.ts`.
 
+The `chat-thread` executor's GitHub-state tool calls (CI rollup, check output, branch protection, PR diff/files, comments) go through `dispatchGithubStateTool`, whose fetchers wrap every octokit call in `retryWithBackoff`. A transient GitHub API blip (5xx, 429, or a secondary rate limit) is retried up to three times with exponential backoff and a deliveryId-correlated retry-warning log, instead of surfacing to the model as a tool error it would have to recover from semantically (issue #199).
+
 ## Re-triggering
 
 Re-applying the `bot:ship` label or re-commenting `bot:ship` on the same PR while a session is **active** is a no-op. Re-applying after the session is **terminal** starts a fresh session: the prior `ship_intents` row is preserved for audit.
