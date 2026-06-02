@@ -276,6 +276,9 @@ export async function triageRequest(input: TriageInput, client: LLMClient): Prom
   const breakerResult = await breaker.execute(async () => {
     if (useTools && input.octokit !== undefined && input.prNumber !== undefined) {
       const octokit = input.octokit;
+      // Delivery-correlated logger so the fetchers' retryWithBackoff warnings
+      // carry the deliveryId binding (#199).
+      const toolLog = logger.child({ deliveryId: input.deliveryId });
       const result = await withTimeout(
         runWithTools(client, {
           model: modelId,
@@ -285,7 +288,10 @@ export async function triageRequest(input: TriageInput, client: LLMClient): Prom
           tools: GITHUB_STATE_TOOLS,
           maxIterations: TRIAGE_MAX_TOOL_ITERATIONS,
           onToolCall: (call) =>
-            dispatchGithubStateTool({ octokit, owner: input.owner, repo: input.repo }, call),
+            dispatchGithubStateTool(
+              { octokit, owner: input.owner, repo: input.repo, log: toolLog },
+              call,
+            ),
         }),
         timeoutMs,
       );

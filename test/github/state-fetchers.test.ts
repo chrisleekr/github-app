@@ -207,7 +207,16 @@ describe("dispatchGithubStateTool: happy paths", () => {
     const octokit = fakeOctokit({
       rest: {
         repos: {
-          getBranchProtection: () => Promise.reject(new Error("HTTP 500 Server Error")),
+          getBranchProtection: () => {
+            // A non-retriable status (422) surfaces immediately as is_error.
+            // The fetchers now wrap calls in retryWithBackoff (#199), so a
+            // retriable status (5xx/429/network) would be retried first; that
+            // retry behaviour is covered in test/utils/retry.test.ts. Using a
+            // non-retriable status here keeps this surfacing test fast.
+            const err = new Error("Validation Failed") as Error & { status: number };
+            err.status = 422;
+            return Promise.reject(err);
+          },
         },
       },
     });
@@ -216,6 +225,6 @@ describe("dispatchGithubStateTool: happy paths", () => {
       { id: "x", name: "get_branch_protection", input: { branch: "main" } },
     );
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("HTTP 500");
+    expect(result.content).toContain("Validation Failed");
   });
 });

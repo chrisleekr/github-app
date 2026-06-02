@@ -45,7 +45,9 @@ if (
 }
 
 const octokit = new Octokit({ auth: GITHUB_TOKEN });
-const deps = { octokit, owner: REPO_OWNER, repo: REPO_NAME } as const;
+// `log` carries the deliveryId binding into retryWithBackoff warnings emitted
+// by the fetchers on transient-failure retries (issue #199).
+const deps = { octokit, owner: REPO_OWNER, repo: REPO_NAME, log } as const;
 
 const server = new McpServer({
   name: "GitHub State Server",

@@ -34,8 +34,12 @@ export interface RetryOptions {
   initialDelayMs?: number;
   maxDelayMs?: number;
   backoffFactor?: number;
-  /** Optional scoped logger. Defaults to the root logger when omitted. */
-  log?: Logger;
+  /**
+   * Optional scoped logger. Defaults to the config-free default logger when
+   * omitted or `undefined` (the destructuring default below treats both the
+   * same), so callers can forward a maybe-undefined logger without a guard.
+   */
+  log?: Logger | undefined;
 }
 
 /**
@@ -108,8 +112,20 @@ export async function retryWithBackoff<T>(
 
       // Do not retry permanent client errors (4xx except 429 Too Many Requests).
       // Octokit wraps HTTP errors with a .status property; non-HTTP errors lack it.
+      // Exception: GitHub delivers a *secondary* rate limit as HTTP 403 (not 429)
+      // with a "secondary rate limit" body. A status-only check would misclassify
+      // it as a permanent permission error, so inspect the message and let a
+      // secondary rate limit fall through to the backoff path. A plain 403
+      // (no marker) still fails fast. See issue #199.
       const status = (error as { status?: number }).status;
-      if (status !== undefined && status >= 400 && status < 500 && status !== 429) {
+      const isSecondaryRateLimit = lastError.message.toLowerCase().includes("secondary rate limit");
+      if (
+        status !== undefined &&
+        status >= 400 &&
+        status < 500 &&
+        status !== 429 &&
+        !isSecondaryRateLimit
+      ) {
         log.warn({ attempt, status, err: lastError }, "Non-retriable error, throwing immediately");
         throw lastError;
       }

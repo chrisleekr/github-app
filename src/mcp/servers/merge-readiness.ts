@@ -4,6 +4,7 @@ import { Octokit } from "octokit";
 import { z } from "zod";
 
 import { PROBE_QUERY } from "../../github/queries";
+import { retryWithBackoff } from "../../utils/retry";
 import { computeVerdict, type ProbeResponseShape } from "../../workflows/ship/verdict";
 import { createMcpLogger } from "../mcp-logger";
 
@@ -76,11 +77,18 @@ server.tool(
   { pr_number: z.number().int().positive().describe("The pull request number") },
   async ({ pr_number }) => {
     try {
-      const response = await octokit.graphql<ProbeResponseShape>(PROBE_QUERY, {
-        owner: REPO_OWNER,
-        repo: REPO_NAME,
-        number: pr_number,
-      });
+      // Wrapped in retryWithBackoff so a single transient blip cannot flip the
+      // deterministic auto-merge gate to "not ready" and skip the merge until
+      // the next cron tick (#199).
+      const response = await retryWithBackoff(
+        () =>
+          octokit.graphql<ProbeResponseShape>(PROBE_QUERY, {
+            owner: REPO_OWNER,
+            repo: REPO_NAME,
+            number: pr_number,
+          }),
+        { log },
+      );
       // The probe fetches the first 100 review threads only, sufficient for
       // a scheduled action's own freshly-created PR. botPushedShas is empty:
       // a scheduled action tracks no prior pushes, so head-commit authorship

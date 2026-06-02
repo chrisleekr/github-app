@@ -389,7 +389,10 @@ export async function runChatThread(input: RunChatThreadInput): Promise<RunChatT
   // tool-less: the tool surface is PR-scoped.
   let raw: string;
   const toolDispatch: LLMToolHandler = (call) =>
-    dispatchGithubStateTool({ octokit: input.octokit, owner: input.owner, repo: input.repo }, call);
+    dispatchGithubStateTool(
+      { octokit: input.octokit, owner: input.owner, repo: input.repo, log },
+      call,
+    );
   const toolsActive = input.targetType === "pr" && config.chatThreadToolsEnabled;
   const llmParams = toolsActive
     ? {

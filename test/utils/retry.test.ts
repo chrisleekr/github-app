@@ -92,6 +92,47 @@ describe("retryWithBackoff: 429 Too Many Requests (should retry)", () => {
   });
 });
 
+describe("retryWithBackoff: secondary rate limit (403, should retry)", () => {
+  // GitHub delivers a secondary rate limit as HTTP 403 (not 429) with a
+  // "secondary rate limit" body. A status-only 4xx check misclassifies it as
+  // a permanent permission error; the helper must inspect the message and
+  // retry. See issue #199.
+  it("retries a 403 whose message indicates a secondary rate limit", async () => {
+    let calls = 0;
+    const op = mock(() => {
+      calls++;
+      if (calls === 1) {
+        const err = new Error(
+          "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+        ) as Error & { status: number };
+        err.status = 403;
+        return Promise.reject(err);
+      }
+      return Promise.resolve("after-secondary-limit");
+    });
+    const result = await retryWithBackoff(op, {
+      maxAttempts: 3,
+      initialDelayMs: 1,
+      log: silentLog,
+    });
+    expect(result).toBe("after-secondary-limit");
+    expect(op).toHaveBeenCalledTimes(2);
+  });
+
+  // The negative case (a plain 403 permission error stays non-retriable) is
+  // covered by "does NOT retry on 403 Forbidden" above: its message has no
+  // "secondary rate limit" marker, so the message inspection does not fire.
+
+  it("still fails fast on a 403 whose message lacks the secondary-rate-limit marker", () => {
+    // A realistic permission error (longer message, no marker) must NOT be
+    // retried, locking the substring match against a future over-broad change.
+    const err = new Error("Resource not accessible by integration") as Error & { status: number };
+    err.status = 403;
+    const op = mock(() => Promise.reject(err));
+    return expectImmedateThrow(op, "Resource not accessible by integration", 1);
+  });
+});
+
 describe("retryWithBackoff: 5xx server errors (should retry)", () => {
   it("retries on 500 Internal Server Error", async () => {
     let calls = 0;

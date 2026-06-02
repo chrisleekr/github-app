@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Octokit } from "octokit";
 import { z } from "zod";
 
+import { retryWithBackoff } from "../../utils/retry";
 import { redactSecrets, sanitizeContent } from "../../utils/sanitize";
 import { createMcpLogger } from "../mcp-logger";
 
@@ -99,13 +100,19 @@ server.tool(
       const markerPrefix = `<!-- delivery:${DELIVERY_ID} -->`;
       const bodyWithMarker = `${markerPrefix}\n${guarded.body}`;
 
-      // Always use issues API -- tracking comment is created via issues.createComment
-      const result = await octokit.rest.issues.updateComment({
-        owner: REPO_OWNER,
-        repo: REPO_NAME,
-        comment_id: commentId,
-        body: bodyWithMarker,
-      });
+      // Always use issues API -- tracking comment is created via issues.createComment.
+      // Wrapped in retryWithBackoff so a transient 5xx/429/secondary-rate-limit
+      // does not drop a status update and leave a stale "Working..." comment (#199).
+      const result = await retryWithBackoff(
+        () =>
+          octokit.rest.issues.updateComment({
+            owner: REPO_OWNER,
+            repo: REPO_NAME,
+            comment_id: commentId,
+            body: bodyWithMarker,
+          }),
+        { log },
+      );
 
       return {
         content: [

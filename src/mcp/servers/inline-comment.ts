@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Octokit } from "octokit";
 import { z } from "zod";
 
+import { retryWithBackoff } from "../../utils/retry";
 import { redactSecrets, sanitizeContent } from "../../utils/sanitize";
 import { createMcpLogger } from "../mcp-logger";
 
@@ -107,11 +108,15 @@ server.tool(
       // Get latest commit SHA if not provided
       let commitSha = commit_id;
       if (commitSha === undefined || commitSha === "") {
-        const pr = await octokit.rest.pulls.get({
-          owner: REPO_OWNER,
-          repo: REPO_NAME,
-          pull_number,
-        });
+        const pr = await retryWithBackoff(
+          () =>
+            octokit.rest.pulls.get({
+              owner: REPO_OWNER,
+              repo: REPO_NAME,
+              pull_number,
+            }),
+          { log },
+        );
         commitSha = pr.data.head.sha;
       }
 
@@ -133,7 +138,9 @@ server.tool(
         params.line = line;
       }
 
-      const result = await octokit.rest.pulls.createReviewComment(params);
+      const result = await retryWithBackoff(() => octokit.rest.pulls.createReviewComment(params), {
+        log,
+      });
 
       return {
         content: [
