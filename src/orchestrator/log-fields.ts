@@ -60,6 +60,10 @@ export const DispatcherOfferLogSchema = z.discriminatedUnion("event", [
       ...offerIds,
       fleetSize: z.number().int().nonnegative(),
       requiredTools: z.array(z.string()),
+      // Per-attempt enqueue->dispatch wait (ms): Date.now() - job.enqueuedAt at
+      // the moment the offer is sent. enqueuedAt resets on requeue, so this is
+      // wait for the current attempt, not total time in system (issue #200).
+      queue_wait_ms: z.number().int().nonnegative(),
     })
     .strict(),
   z
@@ -100,6 +104,10 @@ export const DispatcherNoEligibleDaemonLogSchema = z
     deliveryId: z.string().min(1),
     fleetSize: z.number().int().nonnegative(),
     requiredTools: z.array(z.string()),
+    // Per-attempt wait at the moment of the miss. Surfaces a capability-match
+    // bounce loop: the job requeues (resetting enqueuedAt) and looks fresh on
+    // the depth gauge, but this field shows it kept missing (issue #200).
+    queue_wait_ms: z.number().int().nonnegative(),
   })
   .strict();
 

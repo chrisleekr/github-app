@@ -10,6 +10,11 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 import type { QueuedJob } from "../../src/orchestrator/job-queue";
+import {
+  DISPATCHER_LOG_EVENTS,
+  DispatcherNoEligibleDaemonLogSchema,
+  DispatcherOfferLogSchema,
+} from "../../src/orchestrator/log-fields";
 import type { DaemonCapabilities, DaemonInfo } from "../../src/shared/daemon-types";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -107,6 +112,26 @@ void mock.module("../../src/db/index", () => ({
   }),
 }));
 
+// Capture structured log lines so a test can assert the REAL emitter (not just
+// a hand-written schema fixture) satisfies the dispatcher log schemas, incl.
+// the queue_wait_ms field (issue #200).
+const capturedLogs: Record<string, unknown>[] = [];
+void mock.module("../../src/logger", () => {
+  const record = (obj: unknown): void => {
+    if (obj !== null && typeof obj === "object") capturedLogs.push(obj as Record<string, unknown>);
+  };
+  const log = {
+    info: record,
+    debug: record,
+    warn: record,
+    error: record,
+    fatal: record,
+    trace: record,
+    child: () => log,
+  };
+  return { logger: log };
+});
+
 // Import AFTER all mocks
 const {
   inferRequiredTools,
@@ -159,6 +184,9 @@ function makeDaemonInfo(id: string, overrides?: Partial<DaemonInfo>): DaemonInfo
 
 function makeQueuedJob(overrides?: Partial<QueuedJob>): QueuedJob {
   return {
+    // A real QueuedJob always carries the `kind` discriminator; default to
+    // legacy so emitted log lines satisfy the dispatcher schemas.
+    kind: "legacy",
     deliveryId: `del-${crypto.randomUUID().slice(0, 8)}`,
     repoOwner: "test-owner",
     repoName: "test-repo",
@@ -179,6 +207,7 @@ function makeQueuedJob(overrides?: Partial<QueuedJob>): QueuedJob {
 beforeEach(() => {
   mockConnections.clear();
   daemonInfoStore.clear();
+  capturedLogs.length = 0;
 
   mockGetActiveDaemons.mockClear();
   mockGetDaemonActiveJobs.mockClear();
@@ -394,6 +423,14 @@ describe("dispatchJob", () => {
   it("returns false when no daemon available", async () => {
     const result = await dispatchJob(makeQueuedJob());
     expect(result).toBe(false);
+    // The real emitter must produce a schema-valid no_eligible_daemon line
+    // carrying queue_wait_ms (issue #200).
+    const missLog = capturedLogs.find(
+      (l) => l["event"] === DISPATCHER_LOG_EVENTS.no_eligible_daemon,
+    );
+    expect(missLog).toBeDefined();
+    expect(DispatcherNoEligibleDaemonLogSchema.safeParse(missLog).success).toBe(true);
+    expect(typeof missLog?.["queue_wait_ms"]).toBe("number");
   });
 
   it("returns false when daemon has no active connection", async () => {
@@ -424,6 +461,13 @@ describe("dispatchJob", () => {
     const parsed = JSON.parse(sentText) as { type: string; payload: { deliveryId: string } };
     expect(parsed.type).toBe("job:offer");
     expect(parsed.payload.deliveryId).toBe("dispatch-test");
+
+    // The real emitter must produce a schema-valid offer.sent line carrying
+    // queue_wait_ms (issue #200).
+    const offerLog = capturedLogs.find((l) => l["event"] === DISPATCHER_LOG_EVENTS.offer_sent);
+    expect(offerLog).toBeDefined();
+    expect(DispatcherOfferLogSchema.safeParse(offerLog).success).toBe(true);
+    expect(typeof offerLog?.["queue_wait_ms"]).toBe("number");
   });
 
   it("creates pending offer with correct metadata", async () => {

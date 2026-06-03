@@ -167,6 +167,9 @@ export async function dispatchJob(job: QueuedJob): Promise<boolean> {
         deliveryId: job.deliveryId,
         fleetSize,
         requiredTools,
+        // Clamp guards the rare clock-skew case where a requeue's Date.now()
+        // ran slightly behind the producer's (issue #200).
+        queue_wait_ms: Math.max(0, Date.now() - job.enqueuedAt),
       },
       "dispatchJob: no daemon available, caller should enqueue or retry",
     );
@@ -239,6 +242,9 @@ export async function dispatchJob(job: QueuedJob): Promise<boolean> {
       offerId,
       fleetSize,
       requiredTools,
+      // Per-attempt enqueue->offer wait. Clamp guards clock-skew on requeue
+      // (issue #200).
+      queue_wait_ms: Math.max(0, Date.now() - job.enqueuedAt),
     },
     "Job offered to daemon",
   );

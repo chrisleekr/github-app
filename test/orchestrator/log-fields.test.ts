@@ -9,7 +9,7 @@ import {
 } from "../../src/orchestrator/log-fields";
 
 describe("DispatcherOfferLogSchema (#187)", () => {
-  it("accepts a well-formed offer.sent line (kind + fleetSize + requiredTools, no latency)", () => {
+  it("accepts a well-formed offer.sent line (kind + fleetSize + requiredTools + queue_wait_ms)", () => {
     const result = DispatcherOfferLogSchema.safeParse({
       event: DISPATCHER_LOG_EVENTS.offer_sent,
       kind: "legacy",
@@ -18,6 +18,7 @@ describe("DispatcherOfferLogSchema (#187)", () => {
       offerId: "offer-1",
       fleetSize: 3,
       requiredTools: ["mcp__github"],
+      queue_wait_ms: 1200,
     });
     expect(result.success).toBe(true);
   });
@@ -54,6 +55,33 @@ describe("DispatcherOfferLogSchema (#187)", () => {
       offer_latency_ms: 5000,
     });
     expect(result.success).toBe(true);
+  });
+
+  it("rejects offer.sent missing queue_wait_ms", () => {
+    const result = DispatcherOfferLogSchema.safeParse({
+      event: DISPATCHER_LOG_EVENTS.offer_sent,
+      kind: "legacy",
+      deliveryId: "delivery-1",
+      daemonId: "daemon-1",
+      offerId: "offer-1",
+      fleetSize: 3,
+      requiredTools: ["mcp__github"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a negative or non-integer queue_wait_ms on offer.sent", () => {
+    const base = {
+      event: DISPATCHER_LOG_EVENTS.offer_sent,
+      kind: "legacy",
+      deliveryId: "delivery-1",
+      daemonId: "daemon-1",
+      offerId: "offer-1",
+      fleetSize: 3,
+      requiredTools: ["mcp__github"],
+    };
+    expect(DispatcherOfferLogSchema.safeParse({ ...base, queue_wait_ms: -1 }).success).toBe(false);
+    expect(DispatcherOfferLogSchema.safeParse({ ...base, queue_wait_ms: 1.5 }).success).toBe(false);
   });
 
   it("rejects offer.sent missing requiredTools", () => {
@@ -126,8 +154,20 @@ describe("DispatcherNoEligibleDaemonLogSchema (#187)", () => {
       deliveryId: "delivery-1",
       fleetSize: 0,
       requiredTools: ["mcp__github"],
+      queue_wait_ms: 4500,
     });
     expect(result.success).toBe(true);
+  });
+
+  it("rejects no_eligible_daemon missing queue_wait_ms", () => {
+    const result = DispatcherNoEligibleDaemonLogSchema.safeParse({
+      event: DISPATCHER_LOG_EVENTS.no_eligible_daemon,
+      kind: "legacy",
+      deliveryId: "delivery-1",
+      fleetSize: 0,
+      requiredTools: ["mcp__github"],
+    });
+    expect(result.success).toBe(false);
   });
 
   it("rejects a missing required field (fleetSize)", () => {
