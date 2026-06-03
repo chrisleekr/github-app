@@ -17,8 +17,8 @@ import { setState } from "../workflows/tracking-mirror";
 import { getDaemonId } from "./daemon-id";
 
 /**
- * Daemon-side entry point for jobs carrying a `workflowRun` field. Implements
- * T019 (job-type router) from `specs/20260421-181205-bot-workflows`:
+ * Daemon-side entry point for jobs carrying a `workflowRun` field. Routes by
+ * job type:
  *
  *   1. Resolve registry entry by `workflowRun.workflowName`.
  *   2. Build `WorkflowRunContext` (logger + octokit + deliveryId + setState).

@@ -32,12 +32,11 @@ Direct link: <https://github.com/settings/apps/new>.
 
 The path `/api/github` is set by `pathPrefix` in `createNodeMiddleware` (`src/app.ts`). Don't change the path unless you also change the source.
 
-For local dev, use a tunnel:
+For local dev, set the Webhook URL to a [smee.io](https://smee.io) channel and relay it to your local server:
 
 ```bash
-bun run dev:ngrok
-# or
-smee --url https://smee.io/<channel> --path /api/github/webhooks --port 3000
+# SMEE_URL=https://smee.io/<channel> in .env, then:
+bun run dev:smee
 ```
 
 ### 1.4 OAuth, Setup, post-install

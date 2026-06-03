@@ -26,9 +26,7 @@ const BOT_LABEL_PATTERN = /^bot:[a-z]+(?:-[a-z]+)*$/;
  *      Mirrors the `writeCommentCacheThrough` pattern in `issue-comment.ts`.
  *      See issues #129 and #130.
  *
- *   2. Label dispatch (`labeled` only). Implements the protocol from
- *      `specs/20260421-181205-bot-workflows/contracts/webhook-dispatch.md`
- *      §Label trigger:
+ *   2. Label dispatch (`labeled` only). Implements the label-trigger protocol:
  *
  *        1. label.name matches ^bot:[a-z]+$
  *        2. sender.login in ALLOWED_OWNERS

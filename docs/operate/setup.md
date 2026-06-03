@@ -4,14 +4,14 @@ This page covers running the bot on your laptop against a real GitHub App. For f
 
 ## Prerequisites
 
-| Tool                    | Version                                    | Purpose                                                                          |
-| ----------------------- | ------------------------------------------ | -------------------------------------------------------------------------------- |
-| [Bun](https://bun.sh)   | from `.tool-versions` (currently `1.3.14`) | Runtime and package manager.                                                     |
-| Git                     | any                                        | Repository checkout during agent execution.                                      |
-| Docker                  | any recent                                 | Local Postgres + Valkey via `docker-compose.dev.yml`.                            |
-| GitHub account          | _none_                                     | Admin access to the org or personal account where the App is registered.         |
-| Tunnelling tool         | _none_                                     | ngrok or smee.io to expose `localhost:3000` to GitHub.                           |
-| AI provider credentials | _none_                                     | One of: Anthropic API key, Claude Code OAuth token, AWS credentials for Bedrock. |
+| Tool                    | Version                                    | Purpose                                                                                       |
+| ----------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| [Bun](https://bun.sh)   | from `.tool-versions` (currently `1.3.14`) | Runtime and package manager.                                                                  |
+| Git                     | any                                        | Repository checkout during agent execution.                                                   |
+| Docker                  | any recent                                 | Local Postgres + Valkey via `docker-compose.dev.yml`.                                         |
+| GitHub account          | _none_                                     | Admin access to the org or personal account where the App is registered.                      |
+| Webhook relay           | _none_                                     | A [smee.io](https://smee.io) channel to relay GitHub webhook deliveries to your local server. |
+| AI provider credentials | _none_                                     | One of: Anthropic API key, Claude Code OAuth token, AWS credentials for Bedrock.              |
 
 ## First run
 
@@ -36,20 +36,18 @@ bun run dev
 
 The HTTP server binds to `PORT` (default `3000`). Hit `http://localhost:3000/healthz` to confirm it's up; `http://localhost:3000/readyz` confirms the data layer is reachable.
 
-## Expose the local server
+## Relay webhooks to your local server
 
-GitHub must reach your webhook URL over the internet.
+GitHub delivers webhooks to a public smee.io channel URL (not to your laptop directly); a local client subscribes to that channel and relays each delivery to your server, so no inbound tunnel is needed.
 
-```bash
-# Wrapped script: ngrok on port 3000
-bun run dev:ngrok
-# Copy the https://....ngrok.io URL into the GitHub App's webhook URL field.
-```
-
-Alternative, smee.io:
+1. Create a channel at [smee.io](https://smee.io) and copy its URL.
+2. Put it in the GitHub App's webhook URL field, and set `SMEE_URL=https://smee.io/<your-channel>` in `.env`.
+3. Run the relay:
 
 ```bash
-smee --url https://smee.io/<your-channel> --path /api/github/webhooks --port 3000
+# Wrapped script: forwards SMEE_URL -> http://localhost:$PORT/api/github/webhooks (PORT default 3000).
+# Override the whole target with SMEE_TARGET in .env.
+bun run dev:smee
 ```
 
 The local trigger phrase is conventionally `@chrisleekr-bot-dev` (set `TRIGGER_PHRASE` in `.env`) so the dev installation does not collide with the production bot's mention.

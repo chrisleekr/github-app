@@ -19,8 +19,8 @@ import { join } from "node:path";
 // not trigger the guard. The runtime test in T046a covers the legacy
 // handlers via mocked tool-call recorders.
 //
-// US3 extension (specs/20260429-212559-ship-iteration-wiring T035):
-// the daemon-side scoped executors live under `src/daemon/` as
+// Scoped-executor extension: the daemon-side scoped executors live under
+// `src/daemon/` as
 // `scoped-<kind>-executor.ts`, outside the ship-workflow tree but governed by
 // the same FR-009 prohibitions. They are DERIVED from the filesystem rather
 // than a hardcoded list so a renamed or removed executor cannot leave a stale

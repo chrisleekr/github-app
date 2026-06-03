@@ -1,6 +1,5 @@
 # Scheduled research workflow for github-app-playground.
 # Runs daily + on-demand; produces at most one research-labelled GitHub issue per run.
-# Spec, plan, contracts: specs/20260410-164348-scheduled-research-workflow/
 
 name: Scheduled Research
 
@@ -169,8 +168,8 @@ jobs:
               recent changes.
             - Run `git log --oneline -20` for recent change context.
             - If FOCUS_AREA is `infrastructure` or `docs`, ALSO read
-              `specs/20260410-164348-scheduled-research-workflow/spec.md` so
-              you do not file a meta-finding about this very workflow.
+              `.github/workflows/research.yml` so you do not file a
+              meta-finding about this very workflow.
 
             ### Step 2: Duplicate check (1 turn)
 
@@ -197,7 +196,7 @@ jobs:
             | security         | src/utils/, src/config.ts                                            |
             | observability    | src/logger.ts (and grep for logger usage across src/)                |
             | testing          | src/**/*.test.ts (sample 3-5; do not read all)                       |
-            | docs             | CLAUDE.md, top-level README.md if present, specs/                    |
+            | docs             | CLAUDE.md, top-level README.md if present, docs/                     |
             | infrastructure   | .github/workflows/, Dockerfile, package.json                         |
             | agent-sdk        | src/core/prompt-builder.ts, src/core/executor.ts                     |
 

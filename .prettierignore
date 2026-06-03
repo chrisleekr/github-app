@@ -5,10 +5,6 @@ node_modules/
 CHANGELOG.md
 bun.lockb
 
-# Speckit-managed files (formatting controlled by Speckit)
+# Generated/managed assets with intentional non-prettier formatting
 .claude/skills/
-.cursor/commands/
-.github/agents/
-.github/prompts/
-.specify/
 docs/index.md

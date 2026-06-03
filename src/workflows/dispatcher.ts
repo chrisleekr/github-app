@@ -43,9 +43,8 @@ export type DispatchOutcome =
     };
 
 /**
- * Label-triggered workflow dispatch. Implements the seven-step protocol in
- * `specs/20260421-181205-bot-workflows/contracts/webhook-dispatch.md` §Label
- * trigger: registry lookup → context check → prior-output requirement →
+ * Label-triggered workflow dispatch. Implements the seven-step label-trigger
+ * protocol: registry lookup → context check → prior-output requirement →
  * label mutex → idempotency insert → job enqueue → return. Prior-output is
  * checked before the mutex so a refusal does not strip unrelated `bot:*`
  * labels from the target.

@@ -1,7 +1,6 @@
 /**
  * Unit tests for dispatchByLabel: registry-driven label → workflow lookup
- * and the seven-step protocol from `specs/20260421-181205-bot-workflows/
- * contracts/webhook-dispatch.md` §Label trigger.
+ * and the seven-step label-trigger protocol.
  *
  * Downstream surfaces (runs-store, job-queue, label-mutex, tracking-mirror)
  * are mocked: the dispatcher is a pure orchestrator over the registry.

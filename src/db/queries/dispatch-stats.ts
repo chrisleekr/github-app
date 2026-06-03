@@ -1,9 +1,8 @@
 /**
  * FR-014 operator aggregate queries for the triage-dispatch-modes feature.
  *
- * Thin typed wrappers over `Bun.sql` for the four queries defined in
- * `specs/20260415-000159-triage-dispatch-modes/contracts/dispatch-telemetry.md`
- * §5. Operator dashboards and ad-hoc reports read through this module so
+ * Thin typed wrappers over `Bun.sql` for the four dispatch-telemetry
+ * aggregate queries. Operator dashboards and ad-hoc reports read through this module so
  * the SQL stays in one place: any future schema migration only needs to
  * update the queries here.
  *

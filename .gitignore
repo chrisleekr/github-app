@@ -104,9 +104,3 @@ Thumbs.db
 mcp-config.json
 
 .claude/scheduled_tasks.lock
-
-# Spec Kit — ephemeral/local artifacts only
-.specify/feature.json
-.specify/extensions/.cache/
-.specify/extensions/.backup/
-.specify/extensions/*/local-config.yml

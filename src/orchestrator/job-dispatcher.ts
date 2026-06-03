@@ -140,8 +140,7 @@ export async function selectDaemon(requiredTools: string[]): Promise<string | nu
  *
  * Branches on `job.kind`:
  *   - `legacy` / `workflow-run` → existing `job:offer` envelope.
- *   - `scoped-*` → `scoped-job-offer` envelope per
- *     `specs/.../contracts/ws-messages.md`.
+ *   - `scoped-*` → `scoped-job-offer` envelope.
  */
 export async function dispatchJob(job: QueuedJob): Promise<boolean> {
   const requiredTools = inferRequiredTools(job.labels, job.triggerBodyPreview);

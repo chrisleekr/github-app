@@ -1,6 +1,5 @@
 -- Migration 005: workflow_runs — state store for the Definitive Bot Workflows feature.
 --
--- Spec: specs/20260421-181205-bot-workflows/
 -- FR mapping: FR-011 (in-flight uniqueness), FR-025 (no-migration extension
 -- via JSONB state column), FR-026 (tracking_comment_id persisted), FR-029
 -- (parent linkage for composite workflows).

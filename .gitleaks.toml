@@ -22,7 +22,6 @@ description = "Project paths with documented placeholder content"
 paths = [
   '''\.env\.example''',   # Documented placeholder values, not real secrets
   '''\.gitleaks\.toml''', # This file may contain example patterns
-  '''^specs/''',          # Feature specs may contain example tokens for documentation
   '''^docs/''',           # Documentation examples
 ]
 

@@ -12,7 +12,11 @@ if (!url) {
   process.exit(1);
 }
 
-const target = process.env["SMEE_TARGET"] ?? "http://localhost:3030/api/github/webhooks";
+// Default target follows PORT (same var the dev server binds) so the relay
+// tracks the server across the manual flow (.env PORT) and dev-up.sh (PORT=3030).
+// SMEE_TARGET overrides the whole URL when set.
+const port = process.env["PORT"] ?? "3000";
+const target = process.env["SMEE_TARGET"] ?? `http://localhost:${port}/api/github/webhooks`;
 
 console.log(`[dev:smee] forwarding ${url} -> ${target}`);
 

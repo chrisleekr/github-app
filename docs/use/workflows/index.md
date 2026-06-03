@@ -48,6 +48,10 @@ A comment that mentions the trigger phrase is routed through `src/workflows/inte
 
 The classifier prompt distinguishes `review` (proactive, find bugs, post inline findings) from `resolve` (reactive, fix CI, answer feedback). Tune the threshold per environment with `INTENT_CONFIDENCE_THRESHOLD`.
 
+## Label-path dispatch
+
+Both the label trigger and the in-registry classifier verdict run the same seven-step sequence in `src/workflows/dispatcher.ts`: registry lookup → context check → prior-output requirement → label mutex → idempotency insert → job enqueue → return. Prior-output is checked before the mutex, so refusing a workflow that lacks its prerequisite (e.g. `bot:implement` before any `bot:plan`) does not strip unrelated `bot:*` labels. The idempotency insert is the durable in-flight guard: a redelivered or concurrent label event for the same workflow and target is rejected at the database, not just at the best-effort Valkey claim.
+
 ## Conversational `chat-thread` (sub-threshold fallback)
 
 When the intent classifier verdict is below `INTENT_CONFIDENCE_THRESHOLD` AND the conversational backend (`DATABASE_URL`) is configured, the dispatcher routes the comment to `src/workflows/ship/scoped/chat-thread.ts` instead of refusing: a freeform exchange entry point for review threads, PR replies, and issue comments. Output modes the executor can return are validated by Zod (`answer`, `decline`, `execute-workflow`, `propose-workflow`, `propose-action`, `approve-pending`, `decline-pending`, `replace-proposal`).

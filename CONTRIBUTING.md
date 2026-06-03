@@ -42,16 +42,16 @@ bun run dev
 
 The server starts on `PORT` (default `3000`) and restarts automatically on file changes.
 
-### Expose the server for webhook delivery (optional)
+### Relay webhook delivery to your local server (optional)
 
-GitHub must reach your webhook URL over the internet. Use a tunnelling tool during development:
+GitHub must reach your webhook endpoint over the internet. Use [smee.io](https://smee.io) during development: GitHub delivers to a smee channel and a local client relays to your server.
 
 ```bash
-# ngrok: generates a public HTTPS URL
-bun run dev:ngrok   # alias for: ngrok http 3000
+# SMEE_URL=https://smee.io/<your-channel> in .env, then:
+bun run dev:smee   # relays SMEE_URL -> http://localhost:$PORT/api/github/webhooks (PORT default 3000)
 ```
 
-Paste the generated URL into the GitHub App webhook settings.
+Paste the smee.io channel URL into the GitHub App webhook settings.
 
 ---
 

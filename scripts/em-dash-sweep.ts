@@ -34,12 +34,9 @@
  * is left untouched at that line; the human resolves it.
  *
  * Skip list (hard-coded so the gate stays trustworthy):
- *   specs/**, src/db/migrations/**, CHANGELOG.md,
+ *   src/db/migrations/**, CHANGELOG.md,
  *   test/**\/fixtures/**, node_modules/**, .git/**,
  *   build outputs (dist/, coverage/, site/),
- *   spec-kit-managed assets (.specify/, .claude/skills/speckit*,
- *   .github/agents/speckit*) — these are sync'd from upstream
- *   and editing them in-repo gets clobbered,
  *   this script itself.
  */
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -50,7 +47,6 @@ const EM = "—";
 const SCRIPT_REL = relative(REPO_ROOT, import.meta.path);
 
 const SKIP_PATTERNS: RegExp[] = [
-  /^specs\//,
   /^src\/db\/migrations\//,
   /^CHANGELOG\.md$/,
   /^test\/.*\/fixtures\//,
@@ -59,11 +55,6 @@ const SKIP_PATTERNS: RegExp[] = [
   /^dist\//,
   /^coverage\//,
   /^site\//,
-  // Externally managed by spec-kit. Editing these files in-repo would be
-  // overwritten on the next spec-kit sync; the rule is to leave them alone.
-  /^\.specify\//,
-  /^\.claude\/skills\/speckit/,
-  /^\.github\/agents\/speckit/,
   new RegExp(`^${SCRIPT_REL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
 ];
 

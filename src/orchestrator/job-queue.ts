@@ -8,8 +8,6 @@ import { requireValkeyClient } from "./valkey";
  * Queue-payload schemas. The on-the-wire JSON in `queue:jobs` is parsed via
  * `QueuedJobSchema` at every dequeue boundary so a malformed entry surfaces
  * at the queue edge, not deep in a consumer.
- *
- * Schema layout matches `specs/20260429-212559-ship-iteration-wiring/contracts/job-kinds.md`.
  */
 
 const workflowRunRefSchema = z.object({

@@ -189,7 +189,3 @@ The `docs.yml` `pull_request:` trigger has no `paths:` filter, so these gates ru
 - PostgreSQL 17 (pgvector-ready, existing `executions` + `daemons` tables from `001_initial.sql`) + Valkey 8 (Redis 7.2-compatible, via Bun built-in `RedisClient`) (20260413-191249-daemon-orchestrator-core)
 
 - TypeScript (strict mode) on Bun >=1.3.14 + `octokit`, `@anthropic-ai/claude-agent-sdk`, `@modelcontextprotocol/sdk`, `pino`, `zod`
-
-<!-- SPECKIT START -->
-
-<!-- SPECKIT END -->
