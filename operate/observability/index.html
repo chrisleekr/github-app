@@ -2232,7 +2232,7 @@
 <tr>
 <td><code>dispatcher.offer.sent</code></td>
 <td>info</td>
-<td>An offer was sent to a selected daemon. Carries <code>kind</code>, <code>deliveryId</code>, <code>daemonId</code>, <code>offerId</code>, plus <code>fleetSize</code> + <code>requiredTools</code> for capacity/capability diagnostics.</td>
+<td>An offer was sent to a selected daemon. Carries <code>kind</code>, <code>deliveryId</code>, <code>daemonId</code>, <code>offerId</code>, plus <code>fleetSize</code> + <code>requiredTools</code> for capacity/capability diagnostics, plus <code>queue_wait_ms</code> (enqueue→offer wait for this attempt; see the per-attempt note below).</td>
 </tr>
 <tr>
 <td><code>dispatcher.offer.accepted</code></td>
@@ -2252,13 +2252,14 @@
 <tr>
 <td><code>dispatcher.no_eligible_daemon</code></td>
 <td>info</td>
-<td>No live daemon matched the job's <code>requiredTools</code> or had free capacity. Carries <code>fleetSize</code> + <code>requiredTools</code> so an operator can separate a capability-match miss from sheer capacity exhaustion.</td>
+<td>No live daemon matched the job's <code>requiredTools</code> or had free capacity. Carries <code>fleetSize</code> + <code>requiredTools</code> so an operator can separate a capability-match miss from sheer capacity exhaustion, plus <code>queue_wait_ms</code> (wait at the moment of the miss), which surfaces a capability-match bounce loop that the <code>queue_depth</code> gauge hides.</td>
 </tr>
 </tbody>
 </table>
-<p><code>offer_latency_ms</code> is the only snake_case field, matching the <code>delta_ms</code> metric idiom; ids stay camelCase, consistent with the app-wide pino correlation fields.</p>
+<p><code>offer_latency_ms</code> and <code>queue_wait_ms</code> are the snake_case fields, matching the <code>delta_ms</code> metric idiom; ids stay camelCase, consistent with the app-wide pino correlation fields.</p>
+<p><code>queue_wait_ms</code> is <code>max(0, Date.now() - job.enqueuedAt)</code> at the moment of the event. <strong>It is per-attempt, not end-to-end:</strong> <code>enqueuedAt</code> is reset to <code>Date.now()</code> on every requeue (the <code>requeueJob</code> paths in <code>src/orchestrator/job-queue.ts</code> and the <code>reconstructJobFromOffer</code> paths in <code>src/orchestrator/job-dispatcher.ts</code>), so a job that bounces through <code>no_eligible_daemon</code> or a daemon reject restarts the clock. Read it as "how long this attempt waited for a dispatch decision," the saturation signal (USE-method "time waiting" / Sidekiq queue latency), not total time in system. Alert: a sustained p99 <code>queue_wait_ms</code> over ~30s on <code>dispatcher.offer.sent</code> indicates fleet undersizing; cross-check against <code>offer_latency_ms</code> (rising there instead points to slow daemons, not too few of them).</p>
 <h2 id="daemon-heartbeat-fields">Daemon heartbeat fields<a class="headerlink" href="#daemon-heartbeat-fields" title="Permanent link">&para;</a></h2>
-<p>The orchestrator pings each connected daemon every <code>HEARTBEAT_INTERVAL_MS</code> (default 30s) and evicts one that misses pongs past <code>HEARTBEAT_TIMEOUT_MS</code> (default 90s). The heartbeat lifecycle in <code>src/orchestrator/connection-handler.ts</code> emits three structured events pinned per-event by a <code>z.discriminatedUnion</code> (<code>src/orchestrator/log-fields.ts:114#DaemonHeartbeatLogSchema</code>), so <code>missedPongs</code> is pinned to <code>pong_missed</code> and <code>ttl_refresh_failed</code> carries its <code>err</code>; constants live in <code>src/orchestrator/log-fields.ts:36#DAEMON_HEARTBEAT_LOG_EVENTS</code>.</p>
+<p>The orchestrator pings each connected daemon every <code>HEARTBEAT_INTERVAL_MS</code> (default 30s) and evicts one that misses pongs past <code>HEARTBEAT_TIMEOUT_MS</code> (default 90s). The heartbeat lifecycle in <code>src/orchestrator/connection-handler.ts</code> emits three structured events pinned per-event by a <code>z.discriminatedUnion</code> (<code>src/orchestrator/log-fields.ts:122#DaemonHeartbeatLogSchema</code>), so <code>missedPongs</code> is pinned to <code>pong_missed</code> and <code>ttl_refresh_failed</code> carries its <code>err</code>; constants live in <code>src/orchestrator/log-fields.ts:36#DAEMON_HEARTBEAT_LOG_EVENTS</code>.</p>
 <table>
 <thead>
 <tr>
