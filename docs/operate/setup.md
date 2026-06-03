@@ -38,15 +38,15 @@ The HTTP server binds to `PORT` (default `3000`). Hit `http://localhost:3000/hea
 
 ## Relay webhooks to your local server
 
-GitHub must reach your webhook endpoint over the internet. smee.io receives deliveries and a local client relays them to your server, so no inbound tunnel is needed.
+GitHub delivers webhooks to a public smee.io channel URL (not to your laptop directly); a local client subscribes to that channel and relays each delivery to your server, so no inbound tunnel is needed.
 
 1. Create a channel at [smee.io](https://smee.io) and copy its URL.
 2. Put it in the GitHub App's webhook URL field, and set `SMEE_URL=https://smee.io/<your-channel>` in `.env`.
 3. Run the relay:
 
 ```bash
-# Wrapped script: forwards SMEE_URL -> http://localhost:3000/api/github/webhooks
-# Override the local target with SMEE_TARGET in .env.
+# Wrapped script: forwards SMEE_URL -> http://localhost:$PORT/api/github/webhooks (PORT default 3000).
+# Override the whole target with SMEE_TARGET in .env.
 bun run dev:smee
 ```
 

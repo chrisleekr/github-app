@@ -48,7 +48,7 @@ GitHub must reach your webhook endpoint over the internet. Use [smee.io](https:/
 
 ```bash
 # SMEE_URL=https://smee.io/<your-channel> in .env, then:
-bun run dev:smee   # relays SMEE_URL -> http://localhost:3000/api/github/webhooks
+bun run dev:smee   # relays SMEE_URL -> http://localhost:$PORT/api/github/webhooks (PORT default 3000)
 ```
 
 Paste the smee.io channel URL into the GitHub App webhook settings.
