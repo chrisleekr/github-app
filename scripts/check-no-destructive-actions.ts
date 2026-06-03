@@ -85,11 +85,13 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
-function scan(): { file: string; line: number; description: string; text: string }[] {
+function scan(
+  scopedExecutors: readonly string[],
+): { file: string; line: number; description: string; text: string }[] {
   const violations: { file: string; line: number; description: string; text: string }[] = [];
   const visited = new Set<string>();
   const fileIterables: Iterable<string>[] = SCAN_ROOTS.map((r) => walk(r));
-  fileIterables.push(scopedExecutorFiles());
+  fileIterables.push(scopedExecutors);
   for (const iter of fileIterables) {
     for (const file of iter) {
       if (visited.has(file)) continue;
@@ -119,7 +121,10 @@ function scan(): { file: string; line: number; description: string; text: string
   return violations;
 }
 
-const violations = scan();
+// Enumerate the scoped executors once so the scan set and the summary count
+// are always consistent and src/daemon is read a single time per run.
+const scopedExecutors = scopedExecutorFiles();
+const violations = scan(scopedExecutors);
 if (violations.length > 0) {
   console.error("FR-009 destructive-action guard: violations found");
   for (const v of violations) {
@@ -129,5 +134,5 @@ if (violations.length > 0) {
   process.exit(1);
 }
 console.log(
-  `FR-009 destructive-action guard: clean (${SCAN_ROOTS.length} roots, ${scopedExecutorFiles().length} scoped executors scanned)`,
+  `FR-009 destructive-action guard: clean (${SCAN_ROOTS.length} roots, ${scopedExecutors.length} scoped executors scanned)`,
 );
