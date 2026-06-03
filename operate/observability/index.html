@@ -1132,6 +1132,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Core pipeline log fields">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#token-usage-and-the-cache-hit-ratio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token usage and the cache hit-ratio
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1762,6 +1779,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Core pipeline log fields">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#token-usage-and-the-cache-hit-ratio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token usage and the cache hit-ratio
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2089,7 +2123,7 @@
 </tr>
 <tr>
 <td><code>pipeline.completed</code></td>
-<td>Success terminal line; carries <code>pipeline_wall_clock_ms</code> alongside the existing cost/turn fields.</td>
+<td>Success terminal line; carries <code>pipeline_wall_clock_ms</code> alongside <code>costUsd</code> / <code>numTurns</code> and the token counters <code>inputTokens</code> / <code>outputTokens</code> / <code>cacheReadInputTokens</code> / <code>cacheCreationInputTokens</code> (issue #192). Pinned by <code>PipelineCompletedLogSchema</code>.</td>
 </tr>
 <tr>
 <td><code>pipeline.failed</code></td>
@@ -2097,6 +2131,12 @@
 </tr>
 </tbody>
 </table>
+<h3 id="token-usage-and-the-cache-hit-ratio">Token usage and the cache hit-ratio<a class="headerlink" href="#token-usage-and-the-cache-hit-ratio" title="Permanent link">&para;</a></h3>
+<p>The executor's <code>Claude Agent SDK execution completed</code> line (<code>src/core/executor.ts</code>) and the <code>pipeline.completed</code> line carry the SDK token counters; the executor line additionally carries a <code>modelUsage</code> array (one <code>{ model, inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens, costUsd }</code> entry per model). The same four scalar counters are persisted to the <code>executions</code> table (<code>input_tokens</code>, <code>output_tokens</code>, <code>cache_read_input_tokens</code>, <code>cache_creation_input_tokens</code>) plus a <code>model_usage</code> JSONB column (migration <code>016_executions_tokens.sql</code>), so per-installation / per-workflow / per-day aggregates can join them.</p>
+<p>Cost alone is opaque: a 500 KB-prompt / 2-turn run and a 5 KB-prompt / 50-turn run can bill the same <code>costUsd</code>. Tokens disambiguate them, an oversized prompt is an <code>inputTokens</code> problem; a runaway tool-loop is an <code>outputTokens</code> + <code>numTurns</code> problem. The load-bearing metric for prompt-cache stability (#134) is the hit-ratio:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>cache_read_input_tokens / (input_tokens + cache_read_input_tokens + cache_creation_input_tokens)
+</span></code></pre></div>
+<p>(The ratio is undefined when the denominator is zero, e.g. a dry-run that never called the model; guard against that in the query.) A high ratio on the second+ run of the same prompt shape confirms <code>PROMPT_CACHE_LAYOUT=cacheable</code> is working; a sudden drop in the per-installation cache-read share is the signature of a prompt-cache stability regression. Alert on <code>sum(cache_read_input_tokens) / sum(input_tokens + cache_read_input_tokens + cache_creation_input_tokens)</code> falling below its established baseline.</p>
 <h2 id="github-api-rate-limit-fields">GitHub API rate-limit fields<a class="headerlink" href="#github-api-rate-limit-fields" title="Permanent link">&para;</a></h2>
 <p>The <code>App</code> is constructed with <code>ObservableOctokit</code> (<code>src/utils/octokit-observability.ts</code>), an <code>Octokit.plugin</code> subclass shared by <code>app.octokit</code> and every installation octokit. It logs GitHub's per-installation rate-limit headers via <code>octokit.hook.after</code> / <code>hook.error</code>. The <code>pipeline.stage</code>-style strict Zod schema (<code>GithubApiLogFieldsSchema</code>) pins the field shape.</p>
 <p>Volume policy: the per-request line is <code>debug</code> (default <code>info</code> stays quiet on a fleet issuing thousands of calls/hour); a <code>warn</code> fires only when quota runs low or a rate-limit error lands. Set <code>LOG_LEVEL=debug</code> for full per-call visibility, no separate sampling knob.</p>
@@ -2430,8 +2470,8 @@
 </tbody>
 </table>
 <h3 id="querying-example-datadog-loki">Querying example (Datadog / Loki)<a class="headerlink" href="#querying-example-datadog-loki" title="Permanent link">&para;</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>event:&quot;ship.intent.transition&quot; to_status:&quot;human_took_over&quot; terminal_blocker_category:&quot;flake-cap&quot;
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>| count by pr.repo
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>event:&quot;ship.intent.transition&quot; to_status:&quot;human_took_over&quot; terminal_blocker_category:&quot;flake-cap&quot;
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>| count by pr.repo
 </span></code></pre></div>
 <h2 id="dispatch-reasons">Dispatch reasons<a class="headerlink" href="#dispatch-reasons" title="Permanent link">&para;</a></h2>
 <p>Canonical source: <code>src/shared/dispatch-types.ts</code>. Four values; all land on <code>dispatch_target=daemon</code>.</p>
@@ -2538,13 +2578,13 @@ daemon executor.</p>
 <h2 id="data-fetching-safety-caps">Data fetching safety caps<a class="headerlink" href="#data-fetching-safety-caps" title="Permanent link">&para;</a></h2>
 <p><code>src/core/fetcher.ts</code> walks every <code>pageInfo { hasNextPage endCursor }</code> connection it receives via <code>octokit.graphql.paginate(...)</code>, so PRs/issues with hundreds of comments, reviews, inline review comments, or changed files are no longer silently truncated to the first 100. The four <code>MAX_FETCHED_*</code> env vars (see <a href="../configuration/"><code>configuration.md</code></a>) bound the <strong>merged result</strong> that reaches the agent prompt, they do not bound how much data is fetched and held in memory during pagination. The fetcher walks every page first, then trims the array to the most recent <code>cap</code> items; fetch-time memory is bounded by GitHub API limits (max items per connection), not these caps. Operators tuning for cost/latency should narrow entity selection (e.g. close noisy issues) rather than rely on the cap to cut request volume.</p>
 <p>When a cap fires the fetcher emits a single structured warn line per affected connection and flags the connection on the returned <code>FetchedData</code> so downstream code can surface it:</p>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;warn&quot;</span><span class="p">,</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">&quot;msg&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Fetched comments exceeded MAX_FETCHED cap; truncating to 500&quot;</span><span class="p">,</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">&quot;connection&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;comments&quot;</span><span class="p">,</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">&quot;fetched&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">642</span><span class="p">,</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">&quot;cap&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">500</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">}</span>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;warn&quot;</span><span class="p">,</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">&quot;msg&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Fetched comments exceeded MAX_FETCHED cap; truncating to 500&quot;</span><span class="p">,</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">&quot;connection&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;comments&quot;</span><span class="p">,</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">&quot;fetched&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">642</span><span class="p">,</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">&quot;cap&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">500</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="p">}</span>
 </span></code></pre></div>
 <p><code>connection</code> is one of <code>comments</code>, <code>reviews</code>, <code>reviewComments</code>, <code>changedFiles</code>. The matching boolean lands on <code>FetchedData.truncated.&lt;connection&gt;</code> (<code>src/types.ts</code>).</p>
 <p><code>buildPrompt</code> (<code>src/core/prompt-builder.ts</code>) reads <code>data.truncated</code> and, when at least one flag is set, prepends a <code>WARNING: pre-fetched context is incomplete…</code> line to the agent's instructions naming the affected connections and instructing it to reach for the GitHub CLI / API directly when full context matters. Operators reading agent transcripts can grep for that banner to confirm a cap fired without re-querying logs.</p>
