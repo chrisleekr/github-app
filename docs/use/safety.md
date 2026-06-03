@@ -4,7 +4,7 @@ This page enumerates the boundary the bot enforces on itself. The boundary is de
 
 ## Static guard: destructive actions
 
-`scripts/check-no-destructive-actions.ts` scans `src/workflows/ship/` (recursive) and the four scoped daemon executors for the following patterns. The CI gate fails the build on any match outside of comments.
+`scripts/check-no-destructive-actions.ts` scans `src/workflows/ship/` (recursive) and the scoped daemon executors (`src/daemon/scoped-*-executor.ts`, derived from the filesystem so the set cannot go stale) for the following patterns. The CI gate (`bun run check:no-destructive`, wired into `ci.yml`) fails the build on any match outside of comments.
 
 | Pattern                                                                | Why blocked                                                     |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------- |

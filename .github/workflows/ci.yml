@@ -116,6 +116,13 @@ jobs:
         # roots cannot go dark while CI stays green. See issue #201.
         run: bun run check:test-globs
 
+      - name: Destructive-action guard (FR-009)
+        # Fails if the ship workflow or a daemon scoped executor contains a
+        # destructive git/merge call (force-push, reset --hard, gh pr merge,
+        # merge mutations). Previously local-only; wired into CI so the guard
+        # is actually enforced. See issue #203.
+        run: bun run check:no-destructive
+
       - name: Docs-sync guard (bot workflows, FR-019)
         if: github.event_name == 'pull_request'
         env:
