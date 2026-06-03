@@ -97,6 +97,15 @@ describe("scripts/check-no-destructive-actions.ts", () => {
     expect(exitCode).toBe(0);
   });
 
+  it("does not flag a single-line block comment documenting the prohibition", () => {
+    const root = makeFixture({
+      daemonFiles: { "scoped-rebase-executor.ts": "/* NEVER call gh pr merge here */\n" },
+    });
+    fixtures.push(root);
+    const { exitCode } = runScript(root);
+    expect(exitCode).toBe(0);
+  });
+
   it("excludes a non-executor daemon file from the scan (narrowing boundary)", () => {
     const root = makeFixture({
       daemonFiles: {

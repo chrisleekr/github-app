@@ -102,9 +102,14 @@ function scan(
       const lines = text.split(/\r?\n/);
       for (let i = 0; i < lines.length; i += 1) {
         const line = lines[i] ?? "";
-        // Skip pure JSDoc/comment lines that document the prohibition.
+        // Skip pure comment lines that document the prohibition: `//` line
+        // comments, block-comment bodies (`*`), and single-line block comments
+        // (`/* ... */`). A scoped executor's prompt strings legitimately quote
+        // the forbidden calls inside such comments.
         const stripped = line.trim();
-        if (stripped.startsWith("//") || stripped.startsWith("*")) continue;
+        if (stripped.startsWith("//") || stripped.startsWith("*") || stripped.startsWith("/*")) {
+          continue;
+        }
         for (const rule of FORBIDDEN) {
           if (rule.pattern.test(line)) {
             violations.push({
