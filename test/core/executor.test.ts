@@ -23,6 +23,10 @@ interface QueryCall {
     abortController?: AbortController;
     stderr?: (chunk: string) => void;
     systemPrompt?: unknown;
+    // Security pins asserted by the #196 / #191 regression tests.
+    strictMcpConfig?: boolean;
+    settingSources?: unknown[];
+    mcpServers?: unknown;
   };
 }
 
