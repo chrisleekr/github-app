@@ -20,18 +20,37 @@ import { join } from "node:path";
 // handlers via mocked tool-call recorders.
 //
 // US3 extension (specs/20260429-212559-ship-iteration-wiring T035):
-// the four daemon-side scoped executors live under `src/daemon/`,
-// outside the ship-workflow tree but governed by the same FR-009
-// prohibitions. Including them as explicit file roots keeps the scan
-// noise-free (other `src/daemon/` files embed agent prompts that
-// document `--force` semantics legitimately).
+// the daemon-side scoped executors live under `src/daemon/` as
+// `scoped-<kind>-executor.ts`, outside the ship-workflow tree but governed by
+// the same FR-009 prohibitions. They are DERIVED from the filesystem rather
+// than a hardcoded list so a renamed or removed executor cannot leave a stale
+// entry that crashes the scan with ENOENT (issue #203). The scan stays narrowed
+// to the scoped-executor naming pattern: other `src/daemon/` files embed agent
+// prompts that document `--force` semantics legitimately.
 const SCAN_ROOTS = ["src/workflows/ship"];
-const SCAN_FILES = [
-  "src/daemon/scoped-rebase-executor.ts",
-  "src/daemon/scoped-fix-thread-executor.ts",
-  "src/daemon/scoped-explain-thread-executor.ts",
-  "src/daemon/scoped-open-pr-executor.ts",
-];
+const SCOPED_EXECUTOR_DIR = "src/daemon";
+const SCOPED_EXECUTOR_RE = /^scoped-.+-executor\.ts$/;
+
+function scopedExecutorFiles(): string[] {
+  // Fail-closed like walk(): let a missing src/daemon dir throw rather than
+  // silently scan nothing and report clean. `withFileTypes` + `isFile()` skips
+  // a directory that happens to match the regex (it would EISDIR on the later
+  // readFileSync otherwise), mirroring walk()'s isFile guard.
+  const files = readdirSync(SCOPED_EXECUTOR_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && SCOPED_EXECUTOR_RE.test(entry.name))
+    .map((entry) => join(SCOPED_EXECUTOR_DIR, entry.name))
+    .sort();
+  // Fail-closed on convention drift: if the naming pattern ever changes so that
+  // NO executor matches, fail loudly instead of silently scanning none, which
+  // would re-open the dead-guard hole from a different direction (issue #203).
+  if (files.length === 0) {
+    throw new Error(
+      `check-no-destructive: no files matched ${String(SCOPED_EXECUTOR_RE)} under ${SCOPED_EXECUTOR_DIR}; ` +
+        "the scoped-executor naming convention may have drifted. Update SCOPED_EXECUTOR_RE.",
+    );
+  }
+  return files;
+}
 
 const FORBIDDEN: { readonly pattern: RegExp; readonly description: string }[] = [
   { pattern: /git\s+push\s+--force(?!-with-lease-if)/i, description: "git push --force" },
@@ -70,7 +89,7 @@ function scan(): { file: string; line: number; description: string; text: string
   const violations: { file: string; line: number; description: string; text: string }[] = [];
   const visited = new Set<string>();
   const fileIterables: Iterable<string>[] = SCAN_ROOTS.map((r) => walk(r));
-  fileIterables.push(SCAN_FILES);
+  fileIterables.push(scopedExecutorFiles());
   for (const iter of fileIterables) {
     for (const file of iter) {
       if (visited.has(file)) continue;
@@ -110,5 +129,5 @@ if (violations.length > 0) {
   process.exit(1);
 }
 console.log(
-  `FR-009 destructive-action guard: clean (${SCAN_ROOTS.length} roots, ${SCAN_FILES.length} files scanned)`,
+  `FR-009 destructive-action guard: clean (${SCAN_ROOTS.length} roots, ${scopedExecutorFiles().length} scoped executors scanned)`,
 );
