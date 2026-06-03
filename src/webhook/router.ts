@@ -1,5 +1,4 @@
 import { config } from "../config";
-import { isAlreadyProcessed } from "../core/tracking-comment";
 import { getDb } from "../db";
 import { EphemeralSpawnError, spawnEphemeralDaemon } from "../k8s/ephemeral-daemon-spawner";
 import { getActiveCount, isAtCapacity } from "../orchestrator/concurrency";
@@ -42,25 +41,6 @@ export interface DispatchDecision {
   spawnError?: string;
 }
 
-const processed = new Map<string, number>();
-
-const IDEMPOTENCY_TTL_MS = 60 * 60 * 1000;
-
-export function cleanupStaleIdempotencyEntries(entries: Map<string, number>, ttlMs: number): void {
-  const cutoff = Date.now() - ttlMs;
-  for (const [id, ts] of entries) {
-    if (ts < cutoff) {
-      entries.delete(id);
-    }
-  }
-}
-
-const cleanupInterval = setInterval(
-  cleanupStaleIdempotencyEntries.bind(null, processed, IDEMPOTENCY_TTL_MS),
-  IDEMPOTENCY_TTL_MS,
-);
-cleanupInterval.unref();
-
 export function logDispatchDecision(ctx: BotContext, decision: DispatchDecision): void {
   const triage = decision.triage;
   ctx.log.info(
@@ -86,20 +66,19 @@ export function logDispatchDecision(ctx: BotContext, decision: DispatchDecision)
   );
 }
 
+/**
+ * Triage + dispatch a single request through the orchestrator → daemon flow.
+ *
+ * Reachable ONLY via the dev-only `/api/test/webhook` endpoint (`app.ts`,
+ * 404 in production); production webhook handlers in `webhook/events/*`
+ * bypass this path entirely. It carries no idempotency layer of its own:
+ * the dev endpoint mints a fresh synthetic delivery id per call so there
+ * is nothing to dedup, and real redelivery dedup belongs to the production
+ * handlers (`claimDelivery` + the `idx_workflow_runs_inflight` backstop,
+ * issue #202). The legacy in-memory Map + `isAlreadyProcessed()` durable
+ * scan that used to guard this entry point were retired in issue #211.
+ */
 export async function processRequest(ctx: BotContext): Promise<void> {
-  if (processed.has(ctx.deliveryId)) {
-    ctx.log.info("Skipping duplicate delivery (in-memory)");
-    return;
-  }
-
-  // Reserve BEFORE the async durable check, closes a retry race.
-  processed.set(ctx.deliveryId, Date.now());
-
-  if (await isAlreadyProcessed(ctx)) {
-    ctx.log.info("Skipping duplicate delivery (durable marker found)");
-    return;
-  }
-
   // Owner allowlist check, MUST run before any GitHub side effects to
   // preserve the "silent skip" guarantee for non-allowlisted repos.
   const authResult = isOwnerAllowed(ctx.owner, ctx.log);

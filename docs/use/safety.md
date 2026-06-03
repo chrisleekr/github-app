@@ -42,7 +42,7 @@ The shepherding probe detects when a non-bot principal has pushed to the PR's he
 
 ## Idempotency
 
-A duplicate webhook delivery, same `X-GitHub-Delivery` header or same tracking-comment marker, is dropped before any work runs. The fast in-memory `Map` is lost on restart; the durable check (looking for the bot's hidden delivery marker in existing tracking comments) survives crash loops.
+A duplicate webhook delivery (same `X-GitHub-Delivery` header) is dropped before any work runs: the side-effecting handlers claim each delivery once via a Valkey `SET NX` with a 3-day TTL (`claimDelivery`), and the `idx_workflow_runs_inflight` index is the durable backstop that rejects a second in-flight run for the same workflow+target if the claim was skipped (issue #202).
 
 ## Fork PRs
 

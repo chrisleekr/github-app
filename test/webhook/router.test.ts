@@ -1,12 +1,17 @@
 /**
  * Router tests: post dispatch-collapse surface.
  *
- * The router now exposes three public functions plus telemetry helpers:
- *   - cleanupStaleIdempotencyEntries (pure utility)
- *   - logDispatchDecision            (pure telemetry)
- *   - decideDispatch                 (triage → scaler → spawn? verdict)
- *   - dispatch                       (routes spawn-failed vs persistent-daemon)
- *   - processRequest                 (top-level: idempotency + auth + capacity)
+ * The router now exposes these functions:
+ *   - logDispatchDecision (pure telemetry)
+ *   - decideDispatch      (triage → scaler → spawn? verdict)
+ *   - dispatch            (routes spawn-failed vs persistent-daemon)
+ *   - processRequest      (dev-test-endpoint-only: auth + capacity + dispatch)
+ *
+ * The in-memory idempotency Map + `isAlreadyProcessed` marker scan that
+ * `processRequest` used to carry were retired in issue #211 (the path is
+ * reachable only from the dev `/api/test/webhook` endpoint, which mints a
+ * fresh delivery id per call; production handlers own redelivery dedup via
+ * `claimDelivery` + `idx_workflow_runs_inflight`, issue #202).
  *
  * We mock every downstream surface that reaches over the network or hits
  * Valkey/Postgres: the router is a pure orchestrator.
@@ -18,11 +23,6 @@ import type { BotContext } from "../../src/types";
 import { makeBotContext, makeOctokit } from "../factories";
 
 // ─── Mocked downstream surfaces (persist across this process run) ─────────
-
-const mockIsAlreadyProcessed = mock(() => Promise.resolve(false));
-void mock.module("../../src/core/tracking-comment", () => ({
-  isAlreadyProcessed: mockIsAlreadyProcessed,
-}));
 
 const mockGetDb = mock(() => null as unknown);
 void mock.module("../../src/db", () => ({
@@ -104,13 +104,8 @@ void mock.module("../../src/webhook/triage-client-factory", () => ({
 
 // Import router AFTER mocks are set up.
 
-const {
-  cleanupStaleIdempotencyEntries,
-  decideDispatch,
-  dispatch,
-  logDispatchDecision,
-  processRequest,
-} = await import("../../src/webhook/router");
+const { decideDispatch, dispatch, logDispatchDecision, processRequest } =
+  await import("../../src/webhook/router");
 const { getActiveCount, decrementActiveCount } = await import("../../src/orchestrator/concurrency");
 const { config } = await import("../../src/config");
 
@@ -150,7 +145,6 @@ function withConfig<T>(patch: Record<string, unknown>, fn: () => T | Promise<T>)
 // ─── Tests ────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  mockIsAlreadyProcessed.mockClear();
   mockSpawnEphemeralDaemon.mockClear();
   mockSpawnEphemeralDaemon.mockImplementation(() => Promise.resolve("ephemeral-daemon-xyz"));
   mockMarkSpawn.mockClear();
@@ -173,18 +167,6 @@ beforeEach(() => {
   mockIsValkeyHealthy.mockImplementation(() => true);
   // Drain any active-count state left over from prior tests.
   while (getActiveCount() > 0) decrementActiveCount();
-});
-
-describe("cleanupStaleIdempotencyEntries", () => {
-  it("removes entries older than the TTL and keeps fresh ones", () => {
-    const m = new Map<string, number>();
-    const now = Date.now();
-    m.set("old", now - 10_000);
-    m.set("fresh", now);
-    cleanupStaleIdempotencyEntries(m, 5_000);
-    expect(m.has("old")).toBe(false);
-    expect(m.has("fresh")).toBe(true);
-  });
 });
 
 describe("logDispatchDecision", () => {
@@ -421,23 +403,21 @@ describe("dispatch", () => {
   });
 });
 
-describe("processRequest: idempotency + auth + capacity", () => {
-  it("skips duplicate delivery (in-memory map)", async () => {
-    const ctx = makeCtx({ deliveryId: "dup-delivery" });
-    // First pass runs, stub allowlist via ambient env, else allowlist check
-    // silently skips. We deliberately use the same deliveryId twice.
-    await processRequest(ctx);
-    mockIsAlreadyProcessed.mockClear();
-    await processRequest(makeCtx({ deliveryId: "dup-delivery" }));
-    // Second call bailed at the in-memory map, so isAlreadyProcessed is not called.
-    expect(mockIsAlreadyProcessed).toHaveBeenCalledTimes(0);
+describe("processRequest: auth + dispatch wiring", () => {
+  it("dispatches an allowlisted request through decideDispatch → dispatch", async () => {
+    await withConfig({ allowedOwners: undefined }, async () => {
+      await processRequest(makeCtx());
+      // Reached dispatchDaemon: executions row written + daemon dispatch attempted.
+      expect(mockCreateExecution).toHaveBeenCalledTimes(1);
+      expect(mockDispatchJob).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it("skips request when the durable marker is already present", async () => {
-    mockIsAlreadyProcessed.mockImplementation(() => Promise.resolve(true));
-    const ctx = makeCtx();
-    await processRequest(ctx);
-    expect(mockDispatchJob).toHaveBeenCalledTimes(0);
-    expect(mockCreateExecution).toHaveBeenCalledTimes(0);
+  it("skips a non-allowlisted owner without any side effects", async () => {
+    await withConfig({ allowedOwners: ["someone-else"] }, async () => {
+      await processRequest(makeCtx({ owner: "chrisleekr" }));
+      expect(mockCreateExecution).toHaveBeenCalledTimes(0);
+      expect(mockDispatchJob).toHaveBeenCalledTimes(0);
+    });
   });
 });

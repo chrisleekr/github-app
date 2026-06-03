@@ -290,7 +290,7 @@ async function handleTestWebhook(
     const deliveryId = `test-${randomUUID()}`;
 
     // Mock Octokit that logs instead of calling GitHub API.
-    // Only used by the router path (isAlreadyProcessed, concurrency comment).
+    // Only used by the router path (capacity / spawn-failed comments).
     // The daemon creates its own real Octokit from the installation token.
     const mockOctokit = buildMockOctokit();
 

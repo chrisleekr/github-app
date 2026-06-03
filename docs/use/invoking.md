@@ -51,12 +51,12 @@ flowchart TD
 
 ## Idempotency
 
-A duplicate webhook delivery never spawns a duplicate job. The router checks two layers:
+A duplicate webhook delivery never spawns a duplicate job (issue #202). Two layers:
 
-1. **Fast in-memory**: a `Map` keyed by the `X-GitHub-Delivery` header, swept every 60 minutes (`src/webhook/router.ts`). Lost on restart.
-2. **Durable**, `isAlreadyProcessed` looks for the hidden delivery marker that the bot embeds in its tracking comment. Survives pod restarts, OOM kills, and crash loops; works without `DATABASE_URL`.
+1. **Best-effort claim**: the side-effecting event handlers call `claimDelivery(deliveryId)` (`src/webhook/idempotency.ts`), a Valkey `SET key 1 NX EX 259200` that returns `true` exactly once per `X-GitHub-Delivery` within GitHub's 3-day redelivery window; a redelivery gets `false` and returns early. Fail-open: a Valkey outage degrades to at-least-once rather than dropping webhooks.
+2. **Durable backstop**: the `idx_workflow_runs_inflight` partial-unique index makes the dispatcher reject a second in-flight run for the same workflow+target even if the Valkey claim was skipped.
 
-If both miss, the request proceeds to the allowlist + concurrency guard.
+The legacy in-memory `Map` + tracking-comment marker scan was retired in issue #211.
 
 ## What you see while it runs
 
