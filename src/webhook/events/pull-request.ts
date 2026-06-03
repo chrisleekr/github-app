@@ -8,6 +8,7 @@ import { dispatchCanonicalCommand } from "../../workflows/ship/command-dispatch"
 import { fireReactor } from "../../workflows/ship/reactor-bridge";
 import { routeTrigger } from "../../workflows/ship/trigger-router";
 import { isOwnerAllowed } from "../authorize";
+import { claimDelivery } from "../idempotency";
 
 // Permits the documented label shapes:
 //   bot:ship, bot:abort-ship, bot:fix-thread, bot:investigate, ...
@@ -179,6 +180,8 @@ function handlePullRequestLabeled(
   const installationId = payload.installation?.id;
 
   void (async (): Promise<void> => {
+    // Idempotency gate (issue #202): skip a redelivery before any dispatch.
+    if (!(await claimDelivery(deliveryId, log))) return;
     if (installationId !== undefined) {
       try {
         const command = await routeTrigger({

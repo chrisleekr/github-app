@@ -13,6 +13,12 @@
  *     to the dispatcher, which relies on the partial unique index at the
  *     runs-store layer. The handler is invoked twice → dispatcher is invoked
  *     twice → second call returns {status:"refused", reason:"in-flight…"}.
+ *
+ * Dispatch is fire-and-forget inside a `void (async () => {...})()` IIFE whose
+ * first statement is `await claimDelivery(...)` (issue #202). That await defers
+ * the `dispatchByLabel` call past the synchronous test body, so the positive
+ * cases must drain the microtask queue (`flushMicrotasks`) before asserting,
+ * otherwise the deferred call also leaks into the next test after `mockClear`.
  */
 
 import type { IssuesEvent } from "@octokit/webhooks-types";
@@ -47,6 +53,13 @@ const { handleIssues } = await import("../../../src/webhook/events/issues");
 
 const fakeOctokit = {} as unknown as Octokit;
 
+// Drain the microtask queue so the fire-and-forget dispatch IIFE runs past its
+// leading `await claimDelivery(...)` gate (#202) and the `await dispatchByLabel`
+// call lands before assertions / the next test's `mockClear`.
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+}
+
 function issueLabeledPayload(overrides?: {
   labelName?: string;
   senderLogin?: string;
@@ -76,8 +89,9 @@ describe("handleIssues", () => {
     );
   });
 
-  it("dispatches for bot:triage on open issue from allowed sender (T012)", () => {
+  it("dispatches for bot:triage on open issue from allowed sender (T012)", async () => {
     handleIssues(fakeOctokit, issueLabeledPayload({ labelName: "bot:triage" }), "delivery-1");
+    await flushMicrotasks();
 
     expect(mockDispatchByLabel).toHaveBeenCalledTimes(1);
     const call = mockDispatchByLabel.mock.calls[0] as unknown as [
@@ -116,8 +130,13 @@ describe("handleIssues", () => {
   });
 
   it("T014: duplicate label events delegate to dispatcher, second invocation is refused by idempotency guard", async () => {
-    // First call: normal dispatch
+    // First call: normal dispatch. Drain BEFORE arming the once-impl so this
+    // dispatch resolves on the default "dispatched" path. Dispatch is deferred
+    // past the leading `await claimDelivery(...)` gate (#202), so without this
+    // drain the once-impl below would be consumed by THIS (first) call instead
+    // of the second one.
     handleIssues(fakeOctokit, issueLabeledPayload({ labelName: "bot:triage" }), "delivery-dup-1");
+    await flushMicrotasks();
 
     // Second call with the same (target, workflow): dispatcher reports the
     // partial unique index rejection surfaced by runs-store.
@@ -130,9 +149,9 @@ describe("handleIssues", () => {
     );
     handleIssues(fakeOctokit, issueLabeledPayload({ labelName: "bot:triage" }), "delivery-dup-2");
 
-    // Let the micro-task queue drain so the fire-and-forget dispatch resolves.
-    await Promise.resolve();
-    await Promise.resolve();
+    // Let the micro-task queue drain so the second fire-and-forget dispatch
+    // resolves.
+    await flushMicrotasks();
 
     expect(mockDispatchByLabel).toHaveBeenCalledTimes(2);
     // Second call's resolved outcome is the "in-flight" refusal, the handler

@@ -10,6 +10,12 @@ import { fireReactor } from "../../workflows/ship/reactor-bridge";
  *
  * Fires the ship reactor (T024) so any active intent on this PR wakes early
  * to inspect the new review state.
+ *
+ * No `claimDelivery` idempotency gate (issue #202): unlike the comment/label
+ * handlers, this fires only an idempotent reactor wake (no LLM dispatch, no
+ * workflow_runs row, no GitHub write). A redelivery just re-pokes an already-
+ * awake intent, which is harmless and self-deduping, so the dedup claim would
+ * add a Valkey round trip with nothing to protect.
  */
 export function handleReview(
   _octokit: Octokit,

@@ -11,6 +11,7 @@ import { dispatchByIntent } from "../../workflows/dispatcher";
 import { dispatchCommentSurface } from "../../workflows/ship/command-dispatch";
 import { fireReactor } from "../../workflows/ship/reactor-bridge";
 import { isOwnerAllowed } from "../authorize";
+import { claimDelivery } from "../idempotency";
 
 /**
  * Handler for pull_request_review_comment.{created,edited,deleted} events.
@@ -112,6 +113,8 @@ export function handleReviewComment(
   const threadId = String(topLevelCommentId);
 
   void (async (): Promise<void> => {
+    // Idempotency gate (issue #202): skip a redelivery before any LLM dispatch.
+    if (!(await claimDelivery(deliveryId, log))) return;
     const dispatchLog = log.child({ thread_id: threadId, event_surface: "review-comment" });
     let canonicalHandled = false;
     try {

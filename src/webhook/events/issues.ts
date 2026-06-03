@@ -7,6 +7,7 @@ import { dispatchByLabel } from "../../workflows/dispatcher";
 import { dispatchCanonicalCommand } from "../../workflows/ship/command-dispatch";
 import { routeTrigger } from "../../workflows/ship/trigger-router";
 import { isOwnerAllowed } from "../authorize";
+import { claimDelivery } from "../idempotency";
 
 // Permits hyphenated verbs (e.g. `bot:open-pr`, `bot:fix-thread`); the verb
 // must start with a letter and may contain `-`-separated lowercase segments.
@@ -97,6 +98,8 @@ export function handleIssues(octokit: Octokit, payload: IssuesEvent, deliveryId:
   const installationId = payload.installation?.id;
 
   void (async (): Promise<void> => {
+    // Idempotency gate (issue #202): skip a redelivery before any dispatch.
+    if (!(await claimDelivery(deliveryId, log))) return;
     if (installationId !== undefined) {
       try {
         const command = await routeTrigger({

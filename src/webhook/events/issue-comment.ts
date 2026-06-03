@@ -10,6 +10,7 @@ import { addReaction } from "../../utils/reactions";
 import { dispatchByIntent } from "../../workflows/dispatcher";
 import { dispatchCommentSurface } from "../../workflows/ship/command-dispatch";
 import { isOwnerAllowed } from "../authorize";
+import { claimDelivery } from "../idempotency";
 
 /**
  * Handler for issue_comment.created events.
@@ -84,6 +85,11 @@ export function handleIssueComment(
   // only on PR comments. Canonical wins; legacy `dispatchByIntent`
   // runs only when canonical produced no command.
   void (async (): Promise<void> => {
+    // Idempotency gate (issue #202): GitHub redelivers with the same
+    // deliveryId, so a redelivery would re-run both the canonical NL classifier
+    // and the legacy intent LLM call (and any chat-thread turn). Claim the
+    // delivery before any dispatch; a redelivery skips. Fail-open in claimDelivery.
+    if (!(await claimDelivery(deliveryId, log))) return;
     const dispatchLog = log.child({ event_surface: eventSurface });
     let canonicalHandled = false;
     try {
