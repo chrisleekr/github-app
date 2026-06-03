@@ -199,6 +199,10 @@ describe("dispatchByLabel", () => {
     }
     expect(mockPostRefusalComment).toHaveBeenCalledTimes(1);
     expect(mockEnqueueJob).not.toHaveBeenCalled();
+    // #211 Part 2: a collision surfaces "in-flight" (refused), it must NOT be
+    // marked failed. markFailed is reserved for post-insert enqueue failures
+    // (next test), where it deliberately clears the in-flight guard for retry.
+    expect(mockMarkFailed).not.toHaveBeenCalled();
   });
 
   it("rethrows non-collision insertQueued errors without refusing", async () => {

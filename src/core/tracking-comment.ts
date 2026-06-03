@@ -75,43 +75,14 @@ export function renderTriageSection(triage: TriageCommentSection): string {
 }
 
 /**
- * Build the hidden HTML marker used for durable idempotency.
- * Embedded in the tracking comment body so the marker survives pod restarts
- * and can be detected on webhook retries.
+ * Build the hidden HTML marker embedded in the tracking comment body so the
+ * bot's own tracking comment can be located and updated in place (see the
+ * `comment` MCP server). Redelivery idempotency lives elsewhere now
+ * (`claimDelivery` + `idx_workflow_runs_inflight`, issue #202); the in-memory
+ * Map + marker-scan idempotency check were retired in issue #211.
  */
 export function deliveryMarker(deliveryId: string): string {
   return `<!-- delivery:${deliveryId} -->`;
-}
-
-/**
- * Check if a bot comment for this delivery already exists.
- * Used as a durable idempotency check that survives pod restarts, complementing
- * the in-memory processed Map which only covers the current process lifetime.
- *
- * Per: https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks
- */
-export async function isAlreadyProcessed(ctx: BotContext): Promise<boolean> {
-  const { octokit, owner, repo, entityNumber, deliveryId, triggerTimestamp } = ctx;
-
-  const marker = deliveryMarker(deliveryId);
-
-  // Scope the scan with `since=triggerTimestamp` so we only see comments at-or-after the
-  // webhook trigger. The per-issue listComments endpoint orders strictly by ascending ID
-  // and accepts only `since`, `per_page`, `page`, `direction`/`sort` are silently dropped
-  // (only the repo-level sibling endpoint honours them). Without `since`, page 1 would be
-  // the OLDEST 100 comments, leaving the tracking marker stranded on page 2+ for any
-  // PR/issue with >100 prior comments and breaking the durable idempotency check on retry.
-  // The tracking comment is posted seconds after the trigger, so even ~24h of retries land
-  // inside the `since` window and the marker is guaranteed to be on page 1.
-  const comments = await octokit.rest.issues.listComments({
-    owner,
-    repo,
-    issue_number: entityNumber,
-    per_page: 100,
-    since: triggerTimestamp,
-  });
-
-  return comments.data.some((c) => c.body?.includes(marker) === true);
 }
 
 /**
@@ -123,9 +94,10 @@ export async function isAlreadyProcessed(ctx: BotContext): Promise<boolean> {
 export async function createTrackingComment(ctx: BotContext): Promise<number> {
   const { octokit, owner, repo, entityNumber, log } = ctx;
 
-  // Embed the deliveryId marker for durable idempotency, survives pod restarts.
-  // The in-memory processed Map in router.ts is the fast-path check;
-  // this marker is the durable fallback.
+  // Embed the deliveryId marker so the bot can locate and update its own tracking
+  // comment in place (see the `comment` MCP server). Not an idempotency mechanism
+  // anymore (claimDelivery + idx_workflow_runs_inflight own that, #202; the Map +
+  // marker-scan check were retired in #211).
   const body = `${deliveryMarker(ctx.deliveryId)}\n${SPINNER_HTML} **${config.triggerPhrase}** is working on this...\n\n_Analyzing your request..._`;
 
   const guarded = await safePostToGitHub({
@@ -245,8 +217,9 @@ export async function finalizeTrackingComment(
 
   const errorSection = error !== undefined && error !== "" ? `\n\n---\n**Error:** ${error}` : "";
 
-  // Re-prepend the delivery marker so the durable idempotency check survives even if
-  // Claude's update_claude_comment call (which runs sanitizeContent) previously stripped it.
+  // Re-prepend the delivery marker so the tracking comment keeps its stable hidden marker
+  // even if Claude's update_claude_comment call (which runs sanitizeContent) previously
+  // stripped it. The marker locates the bot's comment, not idempotency (#202/#211).
   const finalBody = `${deliveryMarker(ctx.deliveryId)}\n${header}\n\n---\n${cleanedBody}${errorSection}`;
 
   await updateTrackingComment(ctx, trackingCommentId, finalBody);

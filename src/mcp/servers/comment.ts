@@ -94,8 +94,10 @@ server.tool(
           "secret redacted from comment body",
         );
       }
-      // Re-prepend the delivery marker after sanitizeContent strips it (stripHtmlComments).
-      // The marker is required for the durable idempotency check in isAlreadyProcessed().
+      // Re-prepend the delivery marker after sanitizeContent strips it (stripHtmlComments)
+      // so the tracking comment keeps the stable hidden marker createTrackingComment wrote
+      // (see `deliveryMarker`). The idempotency check that used to read it was retired in
+      // issue #211; the marker is preserved for tracking-comment format consistency.
       // DELIVERY_ID is validated non-empty at process startup so the cast is safe.
       const markerPrefix = `<!-- delivery:${DELIVERY_ID} -->`;
       const bodyWithMarker = `${markerPrefix}\n${guarded.body}`;

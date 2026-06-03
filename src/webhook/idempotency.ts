@@ -28,10 +28,10 @@ const KEY_PREFIX = "idemp:webhook:";
  * degrades to at-least-once processing rather than dropping every webhook. The
  * `idx_workflow_runs_inflight` partial-unique index remains the durable backstop
  * against duplicate work when this best-effort layer is skipped: the dispatcher
- * rejects a second in-flight run for the same workflow+target. (The
- * tracking-comment marker scan via `isAlreadyProcessed` is NOT a backstop here:
- * it runs only on the legacy `router.ts processRequest` path that production
- * handlers bypass, issue #202.)
+ * rejects a second in-flight run for the same workflow+target. (The legacy
+ * tracking-comment marker scan that used to guard the `router.ts processRequest`
+ * path was retired in issue #211; that path is dev-test-only and production
+ * handlers never used it, issue #202.)
  */
 export async function claimDelivery(deliveryId: string, log: Logger): Promise<boolean> {
   const client = getValkeyClient();
