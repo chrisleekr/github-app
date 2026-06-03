@@ -26,9 +26,12 @@ const KEY_PREFIX = "idemp:webhook:";
  *
  * Fail-OPEN: if Valkey is unavailable or errors, returns `true` so an outage
  * degrades to at-least-once processing rather than dropping every webhook. The
- * in-flight unique index (`idx_workflow_runs_inflight`) and the GitHub
- * tracking-comment marker scan remain the durable backstops against duplicate
- * work when this best-effort layer is unavailable.
+ * `idx_workflow_runs_inflight` partial-unique index remains the durable backstop
+ * against duplicate work when this best-effort layer is skipped: the dispatcher
+ * rejects a second in-flight run for the same workflow+target. (The
+ * tracking-comment marker scan via `isAlreadyProcessed` is NOT a backstop here:
+ * it runs only on the legacy `router.ts processRequest` path that production
+ * handlers bypass, issue #202.)
  */
 export async function claimDelivery(deliveryId: string, log: Logger): Promise<boolean> {
   const client = getValkeyClient();

@@ -9,8 +9,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { Logger } from "pino";
 
-// Configurable Valkey stub: each test swaps `clientImpl` before importing /
-// invoking claimDelivery. getValkeyClient returns whatever clientImpl holds.
+// Configurable Valkey stub: the mock is wired once at module load (below);
+// each test swaps `clientImpl` (and `healthy`) before invoking claimDelivery.
+// getValkeyClient returns whatever clientImpl holds at call time.
 type SendFn = (cmd: string, args: string[]) => Promise<unknown>;
 let clientImpl: { send: SendFn } | null = null;
 let healthy = true;
