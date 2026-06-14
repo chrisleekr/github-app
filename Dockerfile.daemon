@@ -86,15 +86,15 @@ ARG TERRAFORM_VERSION=1.15.5
 # renovate: datasource=github-releases depName=aws/aws-cli
 ARG AWSCLI_VERSION=2.34.32
 # renovate: datasource=github-releases depName=mikefarah/yq
-ARG YQ_VERSION=v4.53.2
+ARG YQ_VERSION=v4.53.3
 # renovate: datasource=github-releases depName=asdf-vm/asdf
 ARG ASDF_VERSION=v0.19.0
 # renovate: datasource=github-releases depName=nvm-sh/nvm
-ARG NVM_VERSION=v0.40.4
+ARG NVM_VERSION=v0.40.5
 # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize
 ARG KUSTOMIZE_VERSION=v5.8.1
 # renovate: datasource=github-releases depName=derailed/k9s
-ARG K9S_VERSION=v0.50.18
+ARG K9S_VERSION=v0.51.0
 # renovate: datasource=github-releases depName=stern/stern
 ARG STERN_VERSION=v1.34.0
 # renovate: datasource=github-releases depName=argoproj/argo-cd
@@ -102,13 +102,13 @@ ARG ARGOCD_VERSION=v3.4.3
 # renovate: datasource=github-releases depName=fluxcd/flux2
 ARG FLUX_VERSION=v2.8.8
 # renovate: datasource=github-releases depName=terraform-linters/tflint
-ARG TFLINT_VERSION=v0.62.1
+ARG TFLINT_VERSION=v0.63.1
 # renovate: datasource=github-releases depName=koalaman/shellcheck
 ARG SHELLCHECK_VERSION=v0.11.0
 # renovate: datasource=github-releases depName=hadolint/hadolint
 ARG HADOLINT_VERSION=v2.14.0
 # renovate: datasource=golang-version depName=golang
-ARG GO_VERSION=1.26.3
+ARG GO_VERSION=1.26.4
 # renovate: datasource=pypi depName=poetry
 ARG POETRY_VERSION=2.4.1
 
