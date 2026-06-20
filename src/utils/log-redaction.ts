@@ -11,7 +11,7 @@
  */
 import pino, { type SerializedError } from "pino";
 
-import { redactGitHubTokens } from "./sanitize";
+import { redactGitHubTokens, redactSecrets } from "./sanitize";
 
 const VALID_PINO_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal", "silent"]);
 
@@ -104,6 +104,17 @@ const SENSITIVE_FIELD_NAMES_LC: ReadonlySet<string> = new Set([
  */
 function redactCredentialUrls(text: string): string {
   return text.replace(/\b([a-z][a-z0-9+\-.]*:\/\/)([^@/\s:]+):([^@/\s]+)@/gi, "$1***:***@");
+}
+
+/**
+ * Redact secrets from an error before it crosses the trust boundary into the
+ * agent's tool-result channel. Strips matched bytes with no marker (security
+ * invariant 2: a marker leaks probing signal). Covers every redactSecrets
+ * shape plus the x-access-token:<token>@host credential URLs Octokit echoes.
+ */
+export function redactErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  return redactSecrets(redactCredentialUrls(raw)).body;
 }
 
 /** Censor placeholder, matches pino's default so output is uniform. */

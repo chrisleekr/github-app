@@ -12,6 +12,7 @@ import {
   getWorkflowRun,
   listPrComments,
 } from "../../github/state-fetchers";
+import { redactErrorMessage } from "../../utils/log-redaction";
 import { createMcpLogger } from "../mcp-logger";
 
 /**
@@ -59,7 +60,7 @@ function ok(text: string): { content: { type: "text"; text: string }[] } {
 }
 
 function fail(err: unknown): { content: { type: "text"; text: string }[]; isError: true } {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = redactErrorMessage(err);
   return {
     content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
     isError: true,

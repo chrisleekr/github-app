@@ -4,6 +4,7 @@ import { Octokit } from "octokit";
 import { z } from "zod";
 
 import { PROBE_QUERY } from "../../github/queries";
+import { redactErrorMessage } from "../../utils/log-redaction";
 import { retryWithBackoff } from "../../utils/retry";
 import { computeVerdict, type ProbeResponseShape } from "../../workflows/ship/verdict";
 import { createMcpLogger } from "../mcp-logger";
@@ -55,12 +56,7 @@ function ok(text: string): { content: { type: "text"; text: string }[] } {
 }
 
 function fail(err: unknown): { content: { type: "text"; text: string }[]; isError: true } {
-  // Silently strip a token-shaped substring: an octokit GraphQL error can
-  // echo the request URL, which carries the installation token. Output-path
-  // redaction strips matched bytes rather than leaving a marker (a marker
-  // leaks probing signal to an attacker, CLAUDE.md security invariant 2).
-  const raw = err instanceof Error ? err.message : String(err);
-  const message = raw.replace(/gh[a-z]_[A-Za-z0-9_]{20,}|x-access-token:[^@\s]+/g, "");
+  const message = redactErrorMessage(err);
   return {
     content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
     isError: true,

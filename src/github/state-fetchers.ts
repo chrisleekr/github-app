@@ -14,6 +14,7 @@ import type { Octokit } from "octokit";
 
 import type { LLMTool, LLMToolCall, LLMToolResult } from "../ai/llm-client";
 import type { Logger } from "../logger";
+import { redactErrorMessage } from "../utils/log-redaction";
 import { retryWithBackoff } from "../utils/retry";
 import { PROBE_QUERY } from "./queries";
 
@@ -535,7 +536,7 @@ export async function dispatchGithubStateTool(
         };
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = redactErrorMessage(err);
     return { content: JSON.stringify({ error: message }), isError: true };
   }
 }

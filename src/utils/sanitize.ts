@@ -86,14 +86,20 @@ export function stripHtmlComments(content: string): string {
  * attacker any probing feedback.
  */
 export function redactGitHubTokens(content: string): string {
+  // ghp_/gho_/ghs_/ghr_ tokens: open-ended body, no trailing \b. The legacy
+  // shape was exactly 36 alphanumerics, but GitHub's stateless installation
+  // token (ghs_APPID_JWT, ~520 chars with dots/underscores; staged rollout from
+  // 2026-04-27) breaks any /ghs_[A-Za-z0-9]{36}/ assumption. Match the whole
+  // opaque run instead so the new format is scrubbed too. Over-matching is the
+  // safe direction for redaction.
   // GitHub Personal Access Tokens (classic)
-  content = content.replace(/\bghp_[A-Za-z0-9]{36}\b/g, "[REDACTED_GITHUB_TOKEN]");
+  content = content.replace(/\bghp_[A-Za-z0-9._-]{36,}/g, "[REDACTED_GITHUB_TOKEN]");
   // GitHub OAuth tokens
-  content = content.replace(/\bgho_[A-Za-z0-9]{36}\b/g, "[REDACTED_GITHUB_TOKEN]");
-  // GitHub installation tokens
-  content = content.replace(/\bghs_[A-Za-z0-9]{36}\b/g, "[REDACTED_GITHUB_TOKEN]");
+  content = content.replace(/\bgho_[A-Za-z0-9._-]{36,}/g, "[REDACTED_GITHUB_TOKEN]");
+  // GitHub installation tokens (legacy 36-char body + new ghs_APPID_JWT stateless)
+  content = content.replace(/\bghs_[A-Za-z0-9._-]{36,}/g, "[REDACTED_GITHUB_TOKEN]");
   // GitHub refresh tokens
-  content = content.replace(/\bghr_[A-Za-z0-9]{36}\b/g, "[REDACTED_GITHUB_TOKEN]");
+  content = content.replace(/\bghr_[A-Za-z0-9._-]{36,}/g, "[REDACTED_GITHUB_TOKEN]");
   // GitHub fine-grained personal access tokens
   content = content.replace(/\bgithub_pat_[A-Za-z0-9_]{11,221}\b/g, "[REDACTED_GITHUB_TOKEN]");
   return content;
@@ -122,11 +128,14 @@ interface SecretPattern {
 // Patterns are applied in fixed order. Most-specific first so a value that
 // would match multiple patterns is attributed to its true kind.
 const SECRET_PATTERNS: SecretPattern[] = [
-  // GitHub tokens, same five formats as the input-side redactor.
-  { kind: "GITHUB_TOKEN", re: /\bghp_[A-Za-z0-9]{36}\b/g },
-  { kind: "GITHUB_TOKEN", re: /\bgho_[A-Za-z0-9]{36}\b/g },
-  { kind: "GITHUB_TOKEN", re: /\bghs_[A-Za-z0-9]{36}\b/g },
-  { kind: "GITHUB_TOKEN", re: /\bghr_[A-Za-z0-9]{36}\b/g },
+  // GitHub tokens, same five formats as the input-side redactor. Open-ended
+  // bodies (no trailing \b) so the new ghs_APPID_JWT stateless installation
+  // token (~520 chars with dots/underscores, GitHub rollout from 2026-04-27)
+  // is matched, not just the legacy 36-char shape.
+  { kind: "GITHUB_TOKEN", re: /\bghp_[A-Za-z0-9._-]{36,}/g },
+  { kind: "GITHUB_TOKEN", re: /\bgho_[A-Za-z0-9._-]{36,}/g },
+  { kind: "GITHUB_TOKEN", re: /\bghs_[A-Za-z0-9._-]{36,}/g },
+  { kind: "GITHUB_TOKEN", re: /\bghr_[A-Za-z0-9._-]{36,}/g },
   { kind: "GITHUB_TOKEN", re: /\bgithub_pat_[A-Za-z0-9_]{11,221}\b/g },
   // Anthropic API keys and OAuth tokens.
   { kind: "ANTHROPIC_API_KEY", re: /\bsk-ant-api03-[A-Za-z0-9_-]{80,}\b/g },
@@ -149,6 +158,10 @@ const SECRET_PATTERNS: SecretPattern[] = [
     kind: "DB_URL_WITH_PASSWORD",
     re: /\b(?:postgres|postgresql|redis|valkey|rediss|mongodb|mongodb\+srv|mysql):\/\/[^\s:@/]+:[^\s@/]+@[^\s)\]"'`<>]+/g,
   },
+  // JWT must stay BELOW the GITHUB_TOKEN patterns: a new ghs_APPID_JWT stateless
+  // token embeds a JWT, and the ghs_ pattern above must claim the whole run
+  // first. Reordering JWT above would strip only the JWT portion and leak the
+  // ghs_APPID_ prefix bytes.
   // JSON Web Tokens. Three base64url segments separated by `.`. Each segment
   // requires ≥20 chars to keep us above the noise floor of arbitrary base64
   // chunks that happen to start with `eyJ` (the literal `{"`). Real-world

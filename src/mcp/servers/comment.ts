@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Octokit } from "octokit";
 import { z } from "zod";
 
+import { redactErrorMessage } from "../../utils/log-redaction";
 import { retryWithBackoff } from "../../utils/retry";
 import { redactSecrets, sanitizeContent } from "../../utils/sanitize";
 import { createMcpLogger } from "../mcp-logger";
@@ -125,7 +126,7 @@ server.tool(
         ],
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage = redactErrorMessage(error);
       return {
         content: [{ type: "text" as const, text: `Error: ${errorMessage}` }],
         isError: true,
