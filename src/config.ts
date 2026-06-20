@@ -238,6 +238,15 @@ const configSchema = z
     // for testing or smaller-scope deployments.
     agentTimeoutMs: z.coerce.number().int().positive().default(3_600_000),
 
+    // TTL before an orphaned per-job workspace triple (clone dir +
+    // `<workDir>.cred.sh` + `<workDir>-artifacts`) under cloneBaseDir is swept
+    // at daemon/server startup. Orphans are left behind when a pod is
+    // SIGKILL-ed / OOM-killed / evicted mid-run, skipping the pipeline's own
+    // cleanup. Default 1 hour, long enough that an in-flight job's fresh
+    // workspace is never reaped, short enough that a leaked install token does
+    // not linger across restarts. Set via WORKSPACE_STALE_TTL_MS (issue #221).
+    workspaceStaleTtlMs: z.coerce.number().int().positive().default(3_600_000),
+
     // Override max turns for the Claude Agent SDK, used as a FALLBACK ONLY on
     // src/core/executor.ts when invoked without an explicit `maxTurns`
     // argument. Since the dispatch-collapse, the orchestrator always passes
@@ -913,6 +922,7 @@ function loadConfig(): Config {
     // Group 5, App runtime / behaviour
     context7ApiKey: process.env["CONTEXT7_API_KEY"],
     cloneBaseDir: process.env["CLONE_BASE_DIR"],
+    workspaceStaleTtlMs: process.env["WORKSPACE_STALE_TTL_MS"],
     cloneDepth: process.env["CLONE_DEPTH"],
     triggerPhrase: process.env["TRIGGER_PHRASE"],
     botAppLogin: process.env["BOT_APP_LOGIN"],

@@ -46,6 +46,8 @@ flowchart LR
     classDef done fill:#2a6f2a,stroke:#1a4d1a,color:#ffffff
 ```
 
+At boot, before connecting to the orchestrator, the daemon sweeps stale workspace triples (clone dir + `.cred.sh` token helper + `-artifacts`) older than `WORKSPACE_STALE_TTL_MS` under `CLONE_BASE_DIR`, reclaiming SIGKILL/OOM/eviction orphans left behind when a prior run skipped its own cleanup. Each sweep emits a single `workspace.sweep` log line with `swept` / `retained` / `durationMs`.
+
 ## Operational knobs
 
 The full list lives at [`../configuration.md`](../configuration.md#orchestrator-and-daemon). The handful you'll actually touch:

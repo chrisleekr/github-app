@@ -68,6 +68,14 @@ cache_read_input_tokens / (input_tokens + cache_read_input_tokens + cache_creati
 
 (The ratio is undefined when the denominator is zero, e.g. a dry-run that never called the model; guard against that in the query.) A high ratio on the second+ run of the same prompt shape confirms `PROMPT_CACHE_LAYOUT=cacheable` is working; a sudden drop in the per-installation cache-read share is the signature of a prompt-cache stability regression. Alert on `sum(cache_read_input_tokens) / sum(input_tokens + cache_read_input_tokens + cache_creation_input_tokens)` falling below its established baseline.
 
+### Workspace sweep
+
+`sweepStaleWorkspaces` (`src/core/workspace-sweep.ts`) emits one line per startup sweep when the daemon and the webhook server reclaim stale per-job workspace triples under `CLONE_BASE_DIR` (orphans left by SIGKILL/OOM/eviction). A `swept` count climbing across restarts means jobs are being killed mid-run before their own cleanup runs.
+
+| `event`           | Level | Fields                                                                                                       |
+| ----------------- | ----- | ------------------------------------------------------------------------------------------------------------ |
+| `workspace.sweep` | info  | `swept` (entries removed), `retained` (entries kept as fresh), `durationMs` (wall-clock time for the sweep). |
+
 ## GitHub API rate-limit fields
 
 The `App` is constructed with `ObservableOctokit` (`src/utils/octokit-observability.ts`), an `Octokit.plugin` subclass shared by `app.octokit` and every installation octokit. It logs GitHub's per-installation rate-limit headers via `octokit.hook.after` / `hook.error`. The `pipeline.stage`-style strict Zod schema (`GithubApiLogFieldsSchema`) pins the field shape.

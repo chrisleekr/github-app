@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, constants, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { access, constants } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
 
@@ -17,6 +17,7 @@ import type {
 import { App, Octokit } from "octokit";
 
 import { config } from "./config";
+import { sweepStaleWorkspaces } from "./core/workspace-sweep";
 import { closeDb, getDb } from "./db";
 import { runMigrations } from "./db/migrate";
 import { installFatalHandlers, logger } from "./logger";
@@ -368,35 +369,11 @@ async function runStartupChecks(): Promise<void> {
     }
   }
 
-  // *.cred.sh files accumulate in cloneBaseDir when the pod is SIGKILL-ed mid-checkout.
-  // Remove files older than 1 hour to avoid leaking installation tokens across restarts.
-  const STALE_CRED_TTL_MS = 60 * 60 * 1000;
-  const staleCutoff = Date.now() - STALE_CRED_TTL_MS;
-
-  try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await mkdir(config.cloneBaseDir, { recursive: true });
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    const entries = await readdir(config.cloneBaseDir);
-    const credFiles = entries.filter((f) => f.endsWith(".cred.sh"));
-
-    for (const credFile of credFiles) {
-      const fullPath = join(config.cloneBaseDir, credFile);
-      try {
-        // eslint-disable-next-line no-await-in-loop, security/detect-non-literal-fs-filename
-        const { mtimeMs } = await stat(fullPath);
-        if (mtimeMs < staleCutoff) {
-          // eslint-disable-next-line no-await-in-loop -- fullPath is join()-constructed, not user input
-          await rm(fullPath, { force: true });
-          logger.info({ credFile }, "Removed stale credential helper script");
-        }
-      } catch {
-        // Non-fatal: file may have been removed concurrently
-      }
-    }
-  } catch {
-    // Non-fatal: cloneBaseDir may not exist yet on a fresh pod
-  }
+  // Reclaim workspace triples (clone dir + `.cred.sh` token helper +
+  // `-artifacts`) orphaned in cloneBaseDir when a pod was SIGKILL-ed
+  // mid-run, to avoid leaking installation tokens and disk across restarts
+  // (issue #221).
+  await sweepStaleWorkspaces(config.cloneBaseDir, config.workspaceStaleTtlMs, logger);
 
   const db = getDb();
   if (db !== null) {

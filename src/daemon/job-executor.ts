@@ -1,9 +1,8 @@
-import { rmSync } from "node:fs";
-
 import { Octokit } from "octokit";
 
 import { config } from "../config";
 import { runPipeline } from "../core/pipeline";
+import { removeWorkspaceTripleSync } from "../core/workspace-sweep";
 import { createChildLogger, logger } from "../logger";
 import type { ActiveJob, DaemonCapabilities, SerializableBotContext } from "../shared/daemon-types";
 import {
@@ -42,19 +41,9 @@ export function registerExitCleanup(): void {
       // Scoped jobs never own a workspace path; skip the rm so we do not
       // accidentally target `.cred.sh` in the daemon's CWD.
       if (job.workDir === "") continue;
-      try {
-        rmSync(job.workDir, { recursive: true, force: true });
-      } catch {
-        // Best effort on exit
-      }
-      // Credential helper (${workDir}.cred.sh) is written by checkoutRepo beside
-      // the workspace and contains the installation token, remove it too so a
-      // SIGKILL / crash does not leak it for the app.ts stale-cred sweep window.
-      try {
-        rmSync(`${job.workDir}.cred.sh`, { force: true });
-      } catch {
-        // Best effort on exit
-      }
+      // Removes the clone, the `.cred.sh` token helper, and the `-artifacts`
+      // sibling. The artifacts dir was previously leaked on crash exit.
+      removeWorkspaceTripleSync(job.workDir);
     }
   });
 }
@@ -732,16 +721,9 @@ export function handleJobCancel(cancel: JobCancelMessage, send: (msg: unknown) =
   }
 
   if (job.workDir !== "") {
-    try {
-      rmSync(job.workDir, { recursive: true, force: true });
-    } catch {
-      // Best effort
-    }
-    try {
-      rmSync(`${job.workDir}.cred.sh`, { force: true });
-    } catch {
-      // Best effort
-    }
+    // Clone + `.cred.sh` + `-artifacts` sibling; the artifacts dir was
+    // previously leaked on cancel.
+    removeWorkspaceTripleSync(job.workDir);
   }
 
   activeJobs.delete(offerId);

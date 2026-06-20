@@ -1,6 +1,7 @@
 import { platform } from "node:os";
 
 import { config } from "../config";
+import { sweepStaleWorkspaces } from "../core/workspace-sweep";
 import { installFatalHandlers, logger } from "../logger";
 import type { DaemonCapabilities } from "../shared/daemon-types";
 import {
@@ -365,6 +366,11 @@ async function main(): Promise<void> {
   });
 
   registerExitCleanup();
+
+  // Reclaim workspace triples orphaned by a prior SIGKILL/OOM/eviction (issue
+  // #221). Best-effort, runs before connecting so a cluttered base dir does
+  // not accumulate clones + install-token `.cred.sh` files across restarts.
+  await sweepStaleWorkspaces(config.cloneBaseDir, config.workspaceStaleTtlMs, logger);
 
   capabilities = await discoverCapabilities(config.cloneBaseDir);
   logger.info(

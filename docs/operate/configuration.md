@@ -52,6 +52,7 @@ Server mode only. If `ORCHESTRATOR_URL` is set, the process runs in daemon mode 
 | `CLAUDE_CODE_PATH`            | resolved from `node_modules` | Absolute path to the Claude Code CLI `cli.js`.                                                                                                                                                                       |
 | `CLONE_BASE_DIR`              | `/tmp/bot-workspaces`        | Parent directory for per-delivery clones.                                                                                                                                                                            |
 | `CLONE_DEPTH`                 | `50`                         | Shallow-clone depth. Increase for deeply-diverged PRs.                                                                                                                                                               |
+| `WORKSPACE_STALE_TTL_MS`      | `3600000`                    | TTL before an orphaned per-job workspace triple (clone dir + `.cred.sh` + `-artifacts`) under `CLONE_BASE_DIR` is swept at startup. Reclaims SIGKILL/OOM/eviction orphans. Lower only if you understand the risk.    |
 | `CONTEXT7_API_KEY`            | unset                        | Lifts Context7 MCP rate limiting. No other effect.                                                                                                                                                                   |
 
 ## Postgres
@@ -189,7 +190,7 @@ before committing:
 
 ## Prompt cache layout
 
-Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See `src/config.ts:573#promptCacheLayout` for the Zod definition and `src/core/executor.ts:208` for the runtime guard.
+Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See `src/config.ts:582#promptCacheLayout` for the Zod definition and `src/core/executor.ts:208` for the runtime guard.
 
 | Variable              | Default  | Notes                                                                                                        |
 | --------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
