@@ -187,6 +187,13 @@ describe("redactGitHubTokens", () => {
     expect(redactGitHubTokens(token)).toBe("[REDACTED_GITHUB_TOKEN]");
   });
 
+  it("redacts the new ghs_APPID_JWT stateless installation token", () => {
+    // GitHub's 2026-04-27 rollout: ghs_ tokens become ghs_APPID_JWT (~520
+    // chars, dots + underscores). The legacy {36} pattern cannot match it.
+    const token = `ghs_1234567_eyJ${"a".repeat(200)}.${"b".repeat(160)}.${"c".repeat(140)}`;
+    expect(redactGitHubTokens(`auth: ${token} done`)).toBe("auth: [REDACTED_GITHUB_TOKEN] done");
+  });
+
   it("preserves non-token text", () => {
     expect(redactGitHubTokens("normal text")).toBe("normal text");
   });
