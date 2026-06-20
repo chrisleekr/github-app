@@ -17,7 +17,11 @@ export interface ForbiddenRule {
 }
 
 export const FORBIDDEN: readonly ForbiddenRule[] = [
-  { pattern: /git\s+push\s+--force/i, description: "git push --force" },
+  // `(?!-with-lease)` keeps this rule mutually exclusive with the next one, so
+  // `--force-with-lease` reports the specific rule (not "git push --force") and
+  // the static scanner does not double-count one line. `--force-if-includes`
+  // still matches here, which is intended.
+  { pattern: /git\s+push\s+--force(?!-with-lease)/i, description: "git push --force" },
   { pattern: /git\s+push\s+--force-with-lease/i, description: "git push --force-with-lease" },
   { pattern: /git\s+push\s+-f\b/i, description: "git push -f" },
   // Whitespace then `+` then a word char catches `+HEAD:main` after a remote;
