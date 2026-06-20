@@ -179,6 +179,24 @@ describe("PipelineFailedLogSchema (#226)", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects failed_stage without failed_stage_delta_ms (paired contract)", () => {
+    const result = PipelineFailedLogSchema.safeParse({
+      event: CORE_PIPELINE_LOG_EVENTS.failed,
+      failed_stage: "executor.invoke",
+      pipeline_wall_clock_ms: 5,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects failed_stage_delta_ms without failed_stage (paired contract)", () => {
+    const result = PipelineFailedLogSchema.safeParse({
+      event: CORE_PIPELINE_LOG_EVENTS.failed,
+      failed_stage_delta_ms: 42,
+      pipeline_wall_clock_ms: 5,
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("timeStage tracker (#226)", () => {

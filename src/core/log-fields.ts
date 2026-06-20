@@ -69,7 +69,9 @@ export type PipelineCompletedLog = z.infer<typeof PipelineCompletedLogSchema>;
  * wall-clock up to the throw. `err` (the standard pino error field) is not
  * pinned here, same as `PipelineCompletedLogSchema`: this schema fixes only the
  * custom metric fields. `.strict()` so an emitter that adds an unpinned field,
- * or mistypes one, trips the co-located test.
+ * or mistypes one, trips the co-located test. The two stage fields are emitted
+ * together or not at all (the catch spreads both or neither), so a `.refine`
+ * rejects a record that carries only one.
  */
 export const PipelineFailedLogSchema = z
   .object({
@@ -78,7 +80,10 @@ export const PipelineFailedLogSchema = z
     failed_stage_delta_ms: z.number().int().nonnegative().optional(),
     pipeline_wall_clock_ms: z.number().int().nonnegative(),
   })
-  .strict();
+  .strict()
+  .refine((v) => (v.failed_stage === undefined) === (v.failed_stage_delta_ms === undefined), {
+    message: "failed_stage and failed_stage_delta_ms must be present together",
+  });
 
 export type PipelineFailedLog = z.infer<typeof PipelineFailedLogSchema>;
 
