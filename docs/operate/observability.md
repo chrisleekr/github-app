@@ -76,6 +76,14 @@ cache_read_input_tokens / (input_tokens + cache_read_input_tokens + cache_creati
 | ----------------- | ----- | ------------------------------------------------------------------------------------------------------------ |
 | `workspace.sweep` | info  | `swept` (entries removed), `retained` (entries kept as fresh), `durationMs` (wall-clock time for the sweep). |
 
+### Agent hook denials
+
+The `PreToolUse` destructive-Bash hook (`src/core/hooks/forbidden-bash.ts`) emits one line each time it blocks a Bash command matching the shared `FORBIDDEN` set (force-push, `git reset --hard`, branch delete, history rewrite, `gh pr merge`, GraphQL merge mutations). A sustained `agent.hook.denied` rate means the agent is repeatedly attempting destructive operations, worth investigating as a possible prompt-injection signal. The raw command is never logged (token-leak risk); only the matched rule label is.
+
+| `event`             | Level | Fields                                                                                       |
+| ------------------- | ----- | -------------------------------------------------------------------------------------------- |
+| `agent.hook.denied` | warn  | `tool` (always `Bash`), `rule` (the matched FORBIDDEN description, e.g. `git push --force`). |
+
 ## GitHub API rate-limit fields
 
 The `App` is constructed with `ObservableOctokit` (`src/utils/octokit-observability.ts`), an `Octokit.plugin` subclass shared by `app.octokit` and every installation octokit. It logs GitHub's per-installation rate-limit headers via `octokit.hook.after` / `hook.error`. The `pipeline.stage`-style strict Zod schema (`GithubApiLogFieldsSchema`) pins the field shape.

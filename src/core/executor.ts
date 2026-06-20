@@ -3,6 +3,7 @@ import { type ModelUsage, query, type SDKResultMessage } from "@anthropic-ai/cla
 import { config } from "../config";
 import type { BotContext, ExecutionResult, McpServerConfig, ModelUsageEntry } from "../types";
 import { redactSecrets } from "../utils/sanitize";
+import { createForbiddenBashHook } from "./hooks/forbidden-bash";
 
 function isResultMessage(msg: unknown): msg is SDKResultMessage {
   return (
@@ -266,6 +267,12 @@ export async function executeAgent({
     // single fat tracking-comment dump. Block it so the model uses the eager
     // tool list delivered in the SDK init message instead.
     disallowedTools: ["ToolSearch"],
+    // Runtime backstop for the prompt-only destructive-action bans (issue #222):
+    // the agent runs bypassPermissions with Bash allowed, so this PreToolUse
+    // hook denies force-push / reset --hard / gh pr merge / GraphQL merge calls
+    // before they execute. Patterns are shared with the static check:no-destructive
+    // CI guard via src/utils/forbidden-bash.ts.
+    hooks: { PreToolUse: [{ matcher: "Bash", hooks: [createForbiddenBashHook(log)] }] },
     // cwd is the cloned PR head (checkout.ts), which can carry an attacker's
     // .claude/settings.json. Omitting settingSources makes the SDK load
     // user/project/local filesystem settings by default (v0.3.x), so a

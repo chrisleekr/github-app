@@ -23,6 +23,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "bun:test";
 
+import { FORBIDDEN } from "../../../src/utils/forbidden-bash";
+
 // Mirrors the SCAN_ROOTS list in scripts/check-no-destructive-actions.ts.
 // The static scan is intentionally restricted to `src/workflows/ship/`,
 // the legacy `src/workflows/handlers/{ship,resolve,review,branch-refresh}.ts`
@@ -33,28 +35,6 @@ import { describe, expect, it } from "bun:test";
 // surface to git/gh is the agent's tool list, not direct shell-outs in
 // JS, so a static text scan would not catch a runtime leak anyway.
 const SCAN_ROOTS = ["src/workflows/ship"];
-
-interface ForbiddenRule {
-  readonly pattern: RegExp;
-  readonly description: string;
-}
-
-const FORBIDDEN: readonly ForbiddenRule[] = [
-  { pattern: /git\s+push\s+--force(?!-with-lease-if)/i, description: "git push --force" },
-  { pattern: /git\s+push\s+--force-with-lease/i, description: "git push --force-with-lease" },
-  { pattern: /git\s+push\s+-f\b/i, description: "git push -f" },
-  { pattern: /git\s+push\s+\+/, description: "git push with + force-refspec" },
-  { pattern: /git\s+push\s+--mirror/i, description: "git push --mirror" },
-  { pattern: /git\s+reset\s+--hard\b/i, description: "git reset --hard" },
-  { pattern: /git\s+branch\s+-D\b/i, description: "git branch -D" },
-  { pattern: /git\s+push\b[^"\n]*\s--delete\b/i, description: "git push --delete" },
-  { pattern: /git\s+filter-branch/i, description: "git filter-branch" },
-  { pattern: /git\s+filter-repo/i, description: "git filter-repo" },
-  { pattern: /git\s+replace\b/i, description: "git replace" },
-  { pattern: /\bgh\s+pr\s+merge/i, description: "gh pr merge" },
-  { pattern: /mergePullRequest\s*\(/, description: "mergePullRequest GraphQL mutation" },
-  { pattern: /mergeBranch\s*\(/, description: "mergeBranch GraphQL mutation" },
-];
 
 function* walkTs(rootPath: string): Generator<string> {
   const stat = statSync(rootPath);
