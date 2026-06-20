@@ -1833,6 +1833,7 @@
     classDef wait fill:#5c3d00,stroke:#3d2900,color:#ffffff
     classDef halt fill:#852020,stroke:#5a1414,color:#ffffff
     classDef done fill:#2a6f2a,stroke:#1a4d1a,color:#ffffff</code></pre>
+<p>At boot, before connecting to the orchestrator, the daemon sweeps stale workspace triples (clone dir + <code>.cred.sh</code> token helper + <code>-artifacts</code>) older than <code>WORKSPACE_STALE_TTL_MS</code> under <code>CLONE_BASE_DIR</code>, reclaiming SIGKILL/OOM/eviction orphans left behind when a prior run skipped its own cleanup. Each sweep emits a single <code>workspace.sweep</code> log line with <code>swept</code> / <code>retained</code> / <code>durationMs</code>.</p>
 <h2 id="operational-knobs">Operational knobs<a class="headerlink" href="#operational-knobs" title="Permanent link">&para;</a></h2>
 <p>The full list lives at <a href="../../configuration/#orchestrator-and-daemon"><code>../configuration.md</code></a>. The handful you'll actually touch:</p>
 <table>

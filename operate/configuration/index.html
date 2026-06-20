@@ -2154,6 +2154,11 @@
 <td>Shallow-clone depth. Increase for deeply-diverged PRs.</td>
 </tr>
 <tr>
+<td><code>WORKSPACE_STALE_TTL_MS</code></td>
+<td><code>3600000</code></td>
+<td>TTL before an orphaned per-job workspace triple (clone dir + <code>.cred.sh</code> + <code>-artifacts</code>) under <code>CLONE_BASE_DIR</code> is swept at startup. Reclaims SIGKILL/OOM/eviction orphans. Lower only if you understand the risk.</td>
+</tr>
+<tr>
 <td><code>CONTEXT7_API_KEY</code></td>
 <td>unset</td>
 <td>Lifts Context7 MCP rate limiting. No other effect.</td>
@@ -2537,7 +2542,7 @@ before committing:</p>
    no schema change needed.</li>
 </ol>
 <h2 id="prompt-cache-layout">Prompt cache layout<a class="headerlink" href="#prompt-cache-layout" title="Permanent link">&para;</a></h2>
-<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:573#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:208</code> for the runtime guard.</p>
+<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:582#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:208</code> for the runtime guard.</p>
 <table>
 <thead>
 <tr>

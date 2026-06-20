@@ -1146,6 +1146,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#workspace-sweep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace sweep
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1804,6 +1815,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#workspace-sweep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace sweep
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2183,6 +2205,24 @@
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>cache_read_input_tokens / (input_tokens + cache_read_input_tokens + cache_creation_input_tokens)
 </span></code></pre></div>
 <p>(The ratio is undefined when the denominator is zero, e.g. a dry-run that never called the model; guard against that in the query.) A high ratio on the second+ run of the same prompt shape confirms <code>PROMPT_CACHE_LAYOUT=cacheable</code> is working; a sudden drop in the per-installation cache-read share is the signature of a prompt-cache stability regression. Alert on <code>sum(cache_read_input_tokens) / sum(input_tokens + cache_read_input_tokens + cache_creation_input_tokens)</code> falling below its established baseline.</p>
+<h3 id="workspace-sweep">Workspace sweep<a class="headerlink" href="#workspace-sweep" title="Permanent link">&para;</a></h3>
+<p><code>sweepStaleWorkspaces</code> (<code>src/core/workspace-sweep.ts</code>) emits one line per startup sweep when the daemon and the webhook server reclaim stale per-job workspace triples under <code>CLONE_BASE_DIR</code> (orphans left by SIGKILL/OOM/eviction). A <code>swept</code> count climbing across restarts means jobs are being killed mid-run before their own cleanup runs.</p>
+<table>
+<thead>
+<tr>
+<th><code>event</code></th>
+<th>Level</th>
+<th>Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>workspace.sweep</code></td>
+<td>info</td>
+<td><code>swept</code> (entries removed), <code>retained</code> (entries kept as fresh), <code>durationMs</code> (wall-clock time for the sweep).</td>
+</tr>
+</tbody>
+</table>
 <h2 id="github-api-rate-limit-fields">GitHub API rate-limit fields<a class="headerlink" href="#github-api-rate-limit-fields" title="Permanent link">&para;</a></h2>
 <p>The <code>App</code> is constructed with <code>ObservableOctokit</code> (<code>src/utils/octokit-observability.ts</code>), an <code>Octokit.plugin</code> subclass shared by <code>app.octokit</code> and every installation octokit. It logs GitHub's per-installation rate-limit headers via <code>octokit.hook.after</code> / <code>hook.error</code>. The <code>pipeline.stage</code>-style strict Zod schema (<code>GithubApiLogFieldsSchema</code>) pins the field shape.</p>
 <p>Volume policy: the per-request line is <code>debug</code> (default <code>info</code> stays quiet on a fleet issuing thousands of calls/hour); a <code>warn</code> fires only when quota runs low or a rate-limit error lands. Set <code>LOG_LEVEL=debug</code> for full per-call visibility, no separate sampling knob.</p>
