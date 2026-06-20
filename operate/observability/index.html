@@ -2239,7 +2239,7 @@
 </tr>
 <tr>
 <td><code>pipeline.failed</code></td>
-<td>Failure terminal line; carries <code>pipeline_wall_clock_ms</code> + the redacted <code>err</code>.</td>
+<td>Failure terminal line; carries <code>pipeline_wall_clock_ms</code> + the redacted <code>err</code>, plus <code>failed_stage</code> (the timed stage in flight when the throw happened) and <code>failed_stage_delta_ms</code> (that stage's wall-clock up to the throw) when a stage was running (issue #226). Both stage fields are omitted if no timed stage was active. Pinned by <code>PipelineFailedLogSchema</code>.</td>
 </tr>
 </tbody>
 </table>
