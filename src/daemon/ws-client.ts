@@ -89,11 +89,15 @@ export class DaemonWsClient {
         },
       });
     } catch (err) {
+      // Omit `message` when redaction empties it: the schema pins
+      // `message: z.string().min(1).optional()`, and an empty string is both
+      // schema-invalid and useless in logs.
+      const message = redactErrorMessage(err);
       logger.error(
         {
           event: DAEMON_CONNECTION_LOG_EVENTS.error,
           readyState: this.ws?.readyState ?? null,
-          message: redactErrorMessage(err),
+          ...(message !== "" ? { message } : {}),
         },
         "Failed to create WebSocket connection",
       );
@@ -156,13 +160,14 @@ export class DaemonWsClient {
 
     this.ws.onerror = (event: Event): void => {
       const maybeMessage = (event as { message?: unknown }).message;
+      // Omit `message` when absent or emptied by redaction: the schema pins
+      // `message: z.string().min(1).optional()`.
+      const message = typeof maybeMessage === "string" ? redactErrorMessage(maybeMessage) : "";
       logger.error(
         {
           event: DAEMON_CONNECTION_LOG_EVENTS.error,
           readyState: this.ws?.readyState ?? null,
-          ...(typeof maybeMessage === "string"
-            ? { message: redactErrorMessage(maybeMessage) }
-            : {}),
+          ...(message !== "" ? { message } : {}),
         },
         "WebSocket error",
       );

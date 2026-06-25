@@ -98,3 +98,25 @@ export const DaemonConnectionLogSchema = z.discriminatedUnion("event", [
 ]);
 
 export type DaemonConnectionLog = z.infer<typeof DaemonConnectionLogSchema>;
+
+export const DAEMON_JOB_LOG_EVENTS = {
+  cancelled: "daemon.job.cancelled",
+} as const;
+
+/**
+ * Daemon job-lifecycle event. Pinned so the cancel line emitted by
+ * `handleJobCancel` cannot drift, matching the schema-per-event convention the
+ * rest of this PR establishes. `reason` is the operator/system cancel reason
+ * (bounded, not attacker-controlled); `offerId` / `deliveryId` are the
+ * established correlation bindings.
+ */
+export const DaemonJobCancelledLogSchema = z
+  .object({
+    event: z.literal(DAEMON_JOB_LOG_EVENTS.cancelled),
+    offerId: z.string().min(1),
+    deliveryId: z.string().min(1),
+    reason: z.string(),
+  })
+  .strict();
+
+export type DaemonJobCancelledLog = z.infer<typeof DaemonJobCancelledLogSchema>;

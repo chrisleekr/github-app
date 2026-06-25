@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 
 import {
   DAEMON_CONNECTION_LOG_EVENTS,
+  DAEMON_JOB_LOG_EVENTS,
   DaemonConnectionLogSchema,
+  DaemonJobCancelledLogSchema,
 } from "../../src/daemon/log-fields";
 
 describe("DAEMON_CONNECTION_LOG_EVENTS", () => {
@@ -150,6 +152,43 @@ describe("DaemonConnectionLogSchema: rejects drift and bad input", () => {
       event: DAEMON_CONNECTION_LOG_EVENTS.error,
       readyState: 3,
       message: "",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("DaemonJobCancelledLogSchema", () => {
+  it("pins the canonical event string", () => {
+    expect(DAEMON_JOB_LOG_EVENTS.cancelled).toBe("daemon.job.cancelled");
+  });
+
+  it("accepts a well-formed cancel record", () => {
+    const result = DaemonJobCancelledLogSchema.safeParse({
+      event: DAEMON_JOB_LOG_EVENTS.cancelled,
+      offerId: "offer-1",
+      deliveryId: "del-1",
+      reason: "superseded",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an unknown extra field (strict)", () => {
+    const result = DaemonJobCancelledLogSchema.safeParse({
+      event: DAEMON_JOB_LOG_EVENTS.cancelled,
+      offerId: "offer-1",
+      deliveryId: "del-1",
+      reason: "superseded",
+      surprise: "boo",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an empty offerId", () => {
+    const result = DaemonJobCancelledLogSchema.safeParse({
+      event: DAEMON_JOB_LOG_EVENTS.cancelled,
+      offerId: "",
+      deliveryId: "del-1",
+      reason: "superseded",
     });
     expect(result.success).toBe(false);
   });

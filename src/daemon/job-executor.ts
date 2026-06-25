@@ -15,6 +15,7 @@ import {
   type ScopedJobOfferMessage,
   WS_REJECT_REASONS,
 } from "../shared/ws-messages";
+import { DAEMON_JOB_LOG_EVENTS } from "./log-fields";
 import { executeWorkflowRun } from "./workflow-executor";
 
 // Active job tracking (FM-9)
@@ -47,7 +48,9 @@ export function registerExitCleanup(): void {
         {
           event: WORKSPACE_LOG_EVENTS.cleanupExit,
           count: workspaceJobs.length,
-          jobIds: [...activeJobs.keys()],
+          // Same `workspaceJobs` filter as `count`, so `jobIds.length === count`.
+          // Scoped jobs with `workDir === ""` own no workspace and are excluded.
+          jobIds: workspaceJobs.map((job) => job.offerId),
         },
         "Exit handler reclaiming in-flight workspaces",
       );
@@ -716,7 +719,7 @@ export function handleJobCancel(cancel: JobCancelMessage, send: (msg: unknown) =
 
   logger.info(
     {
-      event: "daemon.job.cancelled",
+      event: DAEMON_JOB_LOG_EVENTS.cancelled,
       offerId,
       deliveryId: job.deliveryId,
       reason: cancel.payload.reason,
