@@ -1292,6 +1292,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diagnosing-ephemeral-spawn-failures-by-kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnosing ephemeral-spawn failures by kind
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#implementation-references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1740,6 +1751,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#diagnosing-ephemeral-spawn-failures-by-kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnosing ephemeral-spawn failures by kind
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#implementation-references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2001,6 +2023,15 @@
 </tr>
 </tbody>
 </table>
+<h2 id="diagnosing-ephemeral-spawn-failures-by-kind">Diagnosing ephemeral-spawn failures by kind<a class="headerlink" href="#diagnosing-ephemeral-spawn-failures-by-kind" title="Permanent link">&para;</a></h2>
+<p>When <code>dispatch_reason=ephemeral-spawn-failed</code> rises, break it down with the <code>k8s.spawn.failed</code> event's <code>kind</code> field (<code>src/orchestrator/k8s-spawn-log-fields.ts</code>) instead of guessing:</p>
+<ul>
+<li><code>kind: "infra-absent"</code>, missing <code>DAEMON_IMAGE</code>, <code>ORCHESTRATOR_PUBLIC_URL</code>, or <code>DAEMON_AUTH_TOKEN</code>, or neither <code>KUBERNETES_SERVICE_HOST</code> (in-cluster) nor <code>KUBECONFIG</code> (out-of-cluster) is set. A deploy/config regression; no transient retry will help.</li>
+<li><code>kind: "auth-load-failed"</code>: a kubeconfig is present but unreadable/malformed.</li>
+<li><code>kind: "api-rejected"</code>: the K8s API returned a 4xx. Usually RBAC drift on the ServiceAccount permitted to create Pods in <code>EPHEMERAL_DAEMON_NAMESPACE</code>, or a Pod-spec validation error. Check the operator RBAC and the <code>daemon-secrets</code> reference.</li>
+<li><code>kind: "api-unavailable"</code>: the K8s API was unreachable (5xx / network). Usually transient control-plane unavailability.</li>
+</ul>
+<p><code>api_call_ms</code> on <code>k8s.spawn.succeeded</code> / <code>k8s.spawn.failed</code> (api-* kinds) gives the <code>createNamespacedPod</code> round-trip latency; a rising trend with no failures suggests control-plane pressure. A high <code>k8s.spawn.decision_skipped reason=cooldown</code> rate means the cooldown guard (<code>EPHEMERAL_DAEMON_SPAWN_COOLDOWN_MS</code>) is throttling spawns under sustained heavy traffic, consider scaling the persistent pool.</p>
 <h2 id="implementation-references">Implementation references<a class="headerlink" href="#implementation-references" title="Permanent link">&para;</a></h2>
 <p><code>src/daemon/main.ts</code>, <code>src/orchestrator/ws-server.ts</code>, <code>src/orchestrator/ephemeral-daemon-scaler.ts</code>, <code>src/k8s/ephemeral-daemon-spawner.ts</code>, <code>src/core/pipeline.ts</code>, <code>src/shared/ws-messages.ts</code>.</p>
 

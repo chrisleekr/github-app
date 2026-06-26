@@ -2163,6 +2163,11 @@
 <td>unset</td>
 <td>Lifts Context7 MCP rate limiting. No other effect.</td>
 </tr>
+<tr>
+<td><code>GITHUB_API_SLOW_REQUEST_MS</code></td>
+<td><code>3000</code></td>
+<td>Latency floor (ms) above which an octokit request emits a <code>github.api.slow</code> warn line (<code>src/utils/octokit-observability.ts</code>). <code>duration_ms</code> is threaded onto every <code>github.api.*</code> line regardless. See <a href="../observability/"><code>observability.md</code></a>.</td>
+</tr>
 </tbody>
 </table>
 <h2 id="postgres">Postgres<a class="headerlink" href="#postgres" title="Permanent link">&para;</a></h2>
