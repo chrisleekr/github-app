@@ -6,8 +6,8 @@
 # Wired into CI via the `trivyignores:` input on aquasecurity/trivy-action
 # (see .github/workflows/docker-build.yml). The action does NOT auto-discover
 # this file: it is only read when passed explicitly. See:
-#   https://github.com/aquasecurity/trivy-action/blob/v0.35.0/action.yaml
-#   https://github.com/aquasecurity/trivy-action/blob/v0.35.0/entrypoint.sh
+#   https://github.com/aquasecurity/trivy-action/blob/v0.36.0/action.yaml
+#   https://github.com/aquasecurity/trivy-action/blob/v0.36.0/entrypoint.sh
 #
 # POLICY: every entry MUST have a `statement` explaining reachability and an
 # `expired_at` forcing a re-review. No permanent ignores. Scope each entry
@@ -15,93 +15,22 @@
 # future occurrences of the same CVE in a different location (e.g. if the
 # Claude Code CLI later ships its own vulnerable copy).
 
-vulnerabilities:
-  # HIGH: picomatch ReDoS via crafted extglob patterns (`+(...)` / `*(...)`).
-  # Present at: /usr/lib/node_modules/npm/node_modules/tinyglobby/node_modules/picomatch@4.0.3
-  # Shipped by npm's bundled tinyglobby@0.2.15 dep. Fix floor: picomatch@4.0.4.
-  # npm@11 latest (11.12.1 as of 2026-04-12) has NOT yet released a version
-  # that rebundles tinyglobby with the patched picomatch: verified by
-  # inspecting the npm-11.12.1.tgz tarball on 2026-04-12.
+vulnerabilities: []
+  # No active ignores. Explicit empty list (not bare `vulnerabilities:`, which
+  # parses as null) so the key unambiguously represents "no ignores".
   #
-  # Reachability: the npm CLI is not invoked by the runtime ENTRYPOINT
-  # (`bun run dist/app.js`). It runs only during image build under
-  # developer-controlled inputs (e.g. `npm install -g @anthropic-ai/claude-code`).
-  # The Claude Code CLI subprocess spawned at runtime loads its own bundled
-  # JavaScript directly via node and does not re-enter the npm CLI; if it
-  # needs picomatch it resolves to a different path outside `usr/lib/node_modules/npm/`,
-  # so this path-scoped ignore does not mask that copy.
+  # Retired 2026-06-30 (all expired AND fixed upstream, per each entry's own
+  # "delete when fixed" instruction):
+  #   - CVE-2026-33671 (picomatch ReDoS): npm@11.18.0 now bundles
+  #     tinyglobby@0.2.17 -> picomatch@4.0.4. The orchestrator image no longer
+  #     ships the vulnerable 4.0.3.
+  #   - CVE-2026-33810 / CVE-2026-32282 / CVE-2026-32280 (Go stdlib in the
+  #     static `docker` client copied from docker:29-cli): docker:29-cli now
+  #     ships Go 1.26.4 (>= the 1.26.2 fix floor).
   #
-  # Action: re-evaluate on 2026-05-12. If npm@11 has released an unbundled
-  # tinyglobby by then, delete this entry and let the CI gate reassert.
-  - id: CVE-2026-33671
-    paths:
-      - "usr/lib/node_modules/npm/node_modules/tinyglobby/node_modules/picomatch/package.json"
-    statement: >-
-      npm-bundled picomatch@4.0.3. npm@11.12.1 has not yet re-released
-      tinyglobby with the 4.0.4 fix. Not reachable from the runtime entrypoint;
-      npm CLI only runs at image build time under trusted inputs.
-    expired_at: 2026-05-12
-
-  # HIGH: Go stdlib CVEs in the static `docker` client binary copied from
-  # `docker:29.4.0-cli` (see Dockerfile:106, src/k8s/job-spawner.ts). Upstream
-  # Go has released 1.25.9 / 1.26.2 with the fixes, but the docker image has
-  # not yet been rebuilt: docker:29.4.0-cli pushed 2026-04-16 still ships
-  # Go 1.26.1. Verified via
-  # `docker run --rm docker:29.4.0-cli docker version --format '{{.Client.GoVersion}}'`.
-  #
-  # Short 2-week expiry because Docker typically rebuilds within ~1–2 weeks
-  # of a Go security release. When docker:29-cli has picked up Go 1.26.2+,
-  # delete these three entries and let the CI gate reassert.
-  #
-  # Reachability rationale applies to all three entries below:
-  # - The `docker` CLI in the runtime image is invoked **only inside
-  #   isolated-job pods** by the Claude agent against a dind sidecar at
-  #   `tcp://localhost:2375` (plain TCP, no TLS) for `docker build` /
-  #   `docker compose`. CVEs in crypto/x509 chain validation are not
-  #   exercised on that code path.
-  # - The only TLS code path is `docker login` against trusted public
-  #   registries (Docker Hub / GHCR) whose certificate chains are signed
-  #   by well-known public CAs we configure: no attacker-supplied
-  #   intermediates or wildcard SANs reach the CLI.
-  # - `os.Root.Chmod` (CVE-2026-32282) is not called by the docker CLI on
-  #   any agent-triggered flow; the isolated-job pod filesystem is not
-  #   writable by any external actor who could race a symlink replacement.
-
-  - id: CVE-2026-33810
-    paths:
-      - "usr/local/bin/docker"
-    statement: >-
-      Go 1.26.1 stdlib in docker:29.4.0-cli (crypto/x509 wildcard SAN case
-      bypass on excluded DNS constraints). Fix requires Go 1.26.2, docker
-      image lag. CLI's only TLS path is `docker login` against trusted public
-      registries, not attacker-supplied cert chains.
-    expired_at: 2026-05-23
-
-  - id: CVE-2026-32282
-    paths:
-      - "usr/local/bin/docker"
-    statement: >-
-      Go 1.26.1 stdlib in docker:29.4.0-cli (os.Root.Chmod symlink TOCTOU on
-      Linux). Fix in Go 1.25.9 / 1.26.2, docker image lag. docker CLI does
-      not invoke Root.Chmod on any agent-triggered flow; isolated-job pod
-      filesystem is not writable by any external attacker who could race a
-      symlink replacement.
-    expired_at: 2026-05-23
-
-  - id: CVE-2026-32280
-    paths:
-      - "usr/local/bin/docker"
-    statement: >-
-      Go 1.26.1 stdlib in docker:29.4.0-cli (crypto/x509 chain-building DoS
-      via unbounded intermediates). Fix in Go 1.25.9 / 1.26.2, docker image
-      lag. Only TLS path is `docker login` against trusted public
-      registries; no attacker-supplied intermediate certificate chains
-      reach x509 chain-building.
-    expired_at: 2026-05-23
-
   # NOTE: prior entries for CVE-2026-33672 (MEDIUM picomatch) and
   # CVE-2026-33750 (MEDIUM brace-expansion) were removed when
   # `limit-severities-for-sarif: true` was added in docker-build.yml. With
-  # that flag set the trivy-action now honors `severity: CRITICAL,HIGH` at
-  # the exit-code stage, so MEDIUMs are no longer blocking and the ignores
-  # were dead entries. If the severity filter is ever dropped, re-add them.
+  # that flag set the trivy-action honors `severity: CRITICAL,HIGH` at the
+  # exit-code stage, so MEDIUMs are no longer blocking. If the severity filter
+  # is ever dropped, re-add them.
