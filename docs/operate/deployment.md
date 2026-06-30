@@ -85,13 +85,13 @@ Verify before pulling into production. `gh attestation verify` checks the attest
 ```bash
 # Provenance: fails if missing or signed by anything other than this repo's workflow
 gh attestation verify \
-  oci://chrisleekr/github-app:1.3.0-orchestrator \
+  oci://chrisleekr/github-app:<version>-orchestrator \
   --repo chrisleekr/github-app \
   --predicate-type https://slsa.dev/provenance/v1
 
 # SBOM: same shape, different predicate
 gh attestation verify \
-  oci://chrisleekr/github-app:1.3.0-orchestrator \
+  oci://chrisleekr/github-app:<version>-orchestrator \
   --repo chrisleekr/github-app \
   --predicate-type https://cyclonedx.org/bom
 ```
@@ -102,11 +102,11 @@ You can also pull the BuildKit-emitted SPDX SBOM and SLSA provenance attached to
 
 ```bash
 # Provenance JSON (per platform)
-docker buildx imagetools inspect chrisleekr/github-app:1.3.0-orchestrator \
+docker buildx imagetools inspect chrisleekr/github-app:<version>-orchestrator \
   --format '{{ json .Provenance }}'
 
 # SBOM JSON (per platform: SPDX 2.3, distinct from the CycloneDX one above)
-docker buildx imagetools inspect chrisleekr/github-app:1.3.0-orchestrator \
+docker buildx imagetools inspect chrisleekr/github-app:<version>-orchestrator \
   --format '{{ json .SBOM }}'
 ```
 
