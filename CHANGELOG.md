@@ -1,3 +1,38 @@
+# [1.14.0](https://github.com/chrisleekr/github-app/compare/v1.13.0...v1.14.0) (2026-06-30)
+
+
+### Bug Fixes
+
+* **agent-sdk:** pass settingSources [] so SDK ignores cloned PR .claude/settings.json ([#195](https://github.com/chrisleekr/github-app/issues/195)) ([153fef3](https://github.com/chrisleekr/github-app/commit/153fef359cf88fa47dfc841716b6a1dfd95285d5))
+* **check:** derive scoped-executor scan set from filesystem (dead guard) ([#208](https://github.com/chrisleekr/github-app/issues/208)) ([8b0e8ef](https://github.com/chrisleekr/github-app/commit/8b0e8ef496f166d65bcf873df2a72f44f373a72e))
+* **daemon:** sweep full workspace triple on startup and crash exit ([#239](https://github.com/chrisleekr/github-app/issues/239)) ([56fa714](https://github.com/chrisleekr/github-app/commit/56fa714492c45433a0bac4889e735cafb097b157))
+* **idempotency:** gate side-effecting handlers with Valkey claim to prevent redelivery duplicates ([#212](https://github.com/chrisleekr/github-app/issues/212)) ([68dacdb](https://github.com/chrisleekr/github-app/commit/68dacdbd9102246015f0cceb8ca2cdfbfaa8c209))
+* **infrastructure:** patch krb5 HIGH CVE-2026-40356 in shared Docker base ([#180](https://github.com/chrisleekr/github-app/issues/180)) ([1d1bc3b](https://github.com/chrisleekr/github-app/commit/1d1bc3b0aaac0c4dbb4b3b939f7b640744243814))
+* **mcp:** redact Octokit error tool-results and widen GitHub token regex ([#238](https://github.com/chrisleekr/github-app/issues/238)) ([675d610](https://github.com/chrisleekr/github-app/commit/675d610741eba78414d8b442b9f290cef129af67))
+* **mcp:** wrap GitHub-touching MCP servers + state-fetchers in retryWithBackoff ([#205](https://github.com/chrisleekr/github-app/issues/205)) ([319beb9](https://github.com/chrisleekr/github-app/commit/319beb985eb3c0b6ff5d077482ac29a97776366f))
+* **observability:** canonicalise child-logger entity id under entityNumber ([#178](https://github.com/chrisleekr/github-app/issues/178)) ([808ca46](https://github.com/chrisleekr/github-app/commit/808ca46e7b67741d8aacd5161c2bf425aca5e51c))
+* **security:** gate LLM scanner redacted_body to deletion-only ([#206](https://github.com/chrisleekr/github-app/issues/206)) ([d52cf78](https://github.com/chrisleekr/github-app/commit/d52cf780b39fe9735aa86e829c5b1cd83bedf74a))
+* **security:** set strictMcpConfig to block cloned-PR .mcp.json auto-load ([#210](https://github.com/chrisleekr/github-app/issues/210)) ([2c58ec1](https://github.com/chrisleekr/github-app/commit/2c58ec1b32fd377f2b24eb9b5bde66d53ffc2169))
+* **testing:** run colocated src/**/*.test.ts in CI + add drift guard ([#204](https://github.com/chrisleekr/github-app/issues/204)) ([5990e0d](https://github.com/chrisleekr/github-app/commit/5990e0df98545e107ebea117b3532f51507e86cd))
+
+
+### Features
+
+* **agent-sdk:** block destructive Bash at runtime via PreToolUse hook ([#241](https://github.com/chrisleekr/github-app/issues/241)) ([f3132f2](https://github.com/chrisleekr/github-app/commit/f3132f2e2dd18c2c836a8fb4618c39487bbd5755))
+* **observability:** add 12 structured Pino event families with Zod-strict schemas ([#251](https://github.com/chrisleekr/github-app/issues/251)) ([eaad36b](https://github.com/chrisleekr/github-app/commit/eaad36bfe43c5cb43f0f57d757c290484e332e71))
+* **observability:** add queue_wait_ms to dispatcher offer/no-daemon logs ([#207](https://github.com/chrisleekr/github-app/issues/207)) ([7a5cfb0](https://github.com/chrisleekr/github-app/commit/7a5cfb09b642f9dd55df1ca1a68ea33bc970da99))
+* **observability:** add structured retry.* events ([#225](https://github.com/chrisleekr/github-app/issues/225)) ([6713cbf](https://github.com/chrisleekr/github-app/commit/6713cbf6dd6446eab9756a3567b1e8440f63de95))
+* **observability:** emit failed_stage and failed_stage_delta_ms on pipeline.failed ([#244](https://github.com/chrisleekr/github-app/issues/244)) ([4f2483c](https://github.com/chrisleekr/github-app/commit/4f2483cbf165f690506e83a63f25ea96d351034c))
+* **observability:** emit structured idempotency events on all 4 claimDelivery outcomes ([#242](https://github.com/chrisleekr/github-app/issues/242)) ([e1e7f9e](https://github.com/chrisleekr/github-app/commit/e1e7f9eda2700aeaf01fba6055ff8f1bb6a8e172))
+* **observability:** installationId on loggers + config-free MCP retry ([#189](https://github.com/chrisleekr/github-app/issues/189)) ([ba09f76](https://github.com/chrisleekr/github-app/commit/ba09f76d3a49901ac0da10ca75c76660d38d2e17)), closes [#177](https://github.com/chrisleekr/github-app/issues/177) [#184](https://github.com/chrisleekr/github-app/issues/184)
+* **observability:** log + persist SDK token usage on executions ([#209](https://github.com/chrisleekr/github-app/issues/209)) ([5407dcd](https://github.com/chrisleekr/github-app/commit/5407dcdb96e3f97f8f96dc041f3903fcd32402cb))
+* **observability:** log octokit rate-limit headers via hook.after ([#183](https://github.com/chrisleekr/github-app/issues/183)) ([30e1715](https://github.com/chrisleekr/github-app/commit/30e1715e865f0d4ebe1d1bed8f0e3e47920ca77b))
+* **observability:** periodic fleet-state gauge snapshot ([#186](https://github.com/chrisleekr/github-app/issues/186)) ([7429460](https://github.com/chrisleekr/github-app/commit/7429460fbd896cc025cdcbabb508489455167523))
+* **observability:** redact crash logs via uncaughtException/unhandledRejection handlers ([#181](https://github.com/chrisleekr/github-app/issues/181)) ([d4248f4](https://github.com/chrisleekr/github-app/commit/d4248f4719863c8754ce5673a01378c5e28e7419))
+* **observability:** structured dispatcher + heartbeat log events ([#188](https://github.com/chrisleekr/github-app/issues/188)) ([c615bc4](https://github.com/chrisleekr/github-app/commit/c615bc432affda68ce947627f133af850562cbfe))
+* **observability:** structured pino logger for stdio MCP servers ([#185](https://github.com/chrisleekr/github-app/issues/185)) ([5244e8a](https://github.com/chrisleekr/github-app/commit/5244e8a0859e77299f65f6e0d3beffdea86b691b))
+* **observability:** structured pipeline.stage timing events with delta_ms ([#182](https://github.com/chrisleekr/github-app/issues/182)) ([4125971](https://github.com/chrisleekr/github-app/commit/4125971adc502f3e54da4c566e95b50b52588214))
+
 # [1.13.0](https://github.com/chrisleekr/github-app-playground/compare/v1.12.2...v1.13.0) (2026-05-21)
 
 
