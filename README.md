@@ -1,4 +1,4 @@
-# GitHub App Playground: @chrisleekr-bot
+# GitHub App: @chrisleekr-bot
 
 A GitHub App that responds to `@chrisleekr-bot` mentions on pull requests and issues, powered by the Claude Agent SDK. Every event is handed to a daemon for execution; when triage flags a job as heavy or the queue overflows, the orchestrator spawns an ephemeral daemon Pod on demand so one deployment can serve both trivial chores and long-running refactors.
 
