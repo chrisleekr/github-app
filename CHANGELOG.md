@@ -1,4 +1,6 @@
-# [1.14.0](https://github.com/chrisleekr/github-app/compare/v1.13.0...v1.14.0) (2026-06-30)
+# Changelog
+
+## [1.14.0](https://github.com/chrisleekr/github-app/compare/v1.13.0...v1.14.0) (2026-06-30)
 
 
 ### Bug Fixes
@@ -33,7 +35,7 @@
 * **observability:** structured pino logger for stdio MCP servers ([#185](https://github.com/chrisleekr/github-app/issues/185)) ([5244e8a](https://github.com/chrisleekr/github-app/commit/5244e8a0859e77299f65f6e0d3beffdea86b691b))
 * **observability:** structured pipeline.stage timing events with delta_ms ([#182](https://github.com/chrisleekr/github-app/issues/182)) ([4125971](https://github.com/chrisleekr/github-app/commit/4125971adc502f3e54da4c566e95b50b52588214))
 
-# [1.13.0](https://github.com/chrisleekr/github-app-playground/compare/v1.12.2...v1.13.0) (2026-05-21)
+## [1.13.0](https://github.com/chrisleekr/github-app-playground/compare/v1.12.2...v1.13.0) (2026-05-21)
 
 
 ### Bug Fixes
@@ -68,7 +70,7 @@
 
 * **bot:** restore inline review comments on PRs ([#123](https://github.com/chrisleekr/github-app-playground/issues/123)) ([a5d0990](https://github.com/chrisleekr/github-app-playground/commit/a5d09906a8df2cee72ed0ac9d81060ecce6febda))
 
-# [1.12.0](https://github.com/chrisleekr/github-app-playground/compare/v1.11.1...v1.12.0) (2026-05-10)
+## [1.12.0](https://github.com/chrisleekr/github-app-playground/compare/v1.11.1...v1.12.0) (2026-05-10)
 
 
 ### Bug Fixes
@@ -90,7 +92,7 @@
 
 * **tracking-mirror:** idempotent setState with marker-based orphan adoption ([#109](https://github.com/chrisleekr/github-app-playground/issues/109)) ([#111](https://github.com/chrisleekr/github-app-playground/issues/111)) ([7e44417](https://github.com/chrisleekr/github-app-playground/commit/7e44417e9e4e9335f6ef95b5ba922df0ebda6dbf))
 
-# [1.11.0](https://github.com/chrisleekr/github-app-playground/compare/v1.10.2...v1.11.0) (2026-05-07)
+## [1.11.0](https://github.com/chrisleekr/github-app-playground/compare/v1.10.2...v1.11.0) (2026-05-07)
 
 
 ### Bug Fixes
@@ -116,7 +118,7 @@
 
 * **executor:** capture Claude CLI stderr via SDK callback ([#105](https://github.com/chrisleekr/github-app-playground/issues/105)) ([3482443](https://github.com/chrisleekr/github-app-playground/commit/348244354ad291d3b633e75bb0a32ebc7ce1c866))
 
-# [1.10.0](https://github.com/chrisleekr/github-app-playground/compare/v1.9.1...v1.10.0) (2026-05-05)
+## [1.10.0](https://github.com/chrisleekr/github-app-playground/compare/v1.9.1...v1.10.0) (2026-05-05)
 
 
 ### Bug Fixes
@@ -135,7 +137,7 @@
 
 * **workflow:** revert SLSA provenance + SBOM attestations ([#99](https://github.com/chrisleekr/github-app-playground/issues/99)) ([9696492](https://github.com/chrisleekr/github-app-playground/commit/96964920a490e076b3866ba0916687ccb8bfd055))
 
-# [1.9.0](https://github.com/chrisleekr/github-app-playground/compare/v1.8.0...v1.9.0) (2026-05-03)
+## [1.9.0](https://github.com/chrisleekr/github-app-playground/compare/v1.8.0...v1.9.0) (2026-05-03)
 
 
 ### Bug Fixes
@@ -150,7 +152,7 @@
 
 * **workflows:** publish SLSA provenance + SBOM attestations on every release tag (closes [#58](https://github.com/chrisleekr/github-app-playground/issues/58)) ([#94](https://github.com/chrisleekr/github-app-playground/issues/94)) ([95856bc](https://github.com/chrisleekr/github-app-playground/commit/95856bc2768694ed7b6da8103f5e8261b199bfa6))
 
-# [1.8.0](https://github.com/chrisleekr/github-app-playground/compare/v1.7.0...v1.8.0) (2026-05-02)
+## [1.8.0](https://github.com/chrisleekr/github-app-playground/compare/v1.7.0...v1.8.0) (2026-05-02)
 
 
 ### Bug Fixes
@@ -163,7 +165,7 @@
 
 * **workflows:** unify bot reply format and harden research/resolve guards ([#91](https://github.com/chrisleekr/github-app-playground/issues/91)) ([7d39fb4](https://github.com/chrisleekr/github-app-playground/commit/7d39fb498fa9fd60079d57a564d44ec3345589e5))
 
-# [1.7.0](https://github.com/chrisleekr/github-app-playground/compare/v1.6.1...v1.7.0) (2026-05-01)
+## [1.7.0](https://github.com/chrisleekr/github-app-playground/compare/v1.6.1...v1.7.0) (2026-05-01)
 
 
 ### Bug Fixes
@@ -184,7 +186,7 @@
 
 * **triage:** raise verdict details cap to 50k sanity bound ([#67](https://github.com/chrisleekr/github-app-playground/issues/67)) ([4634ff7](https://github.com/chrisleekr/github-app-playground/commit/4634ff7cc8f0dd8c92541500781b706b2c6d2d80))
 
-# [1.6.0](https://github.com/chrisleekr/github-app-playground/compare/v1.5.0...v1.6.0) (2026-04-26)
+## [1.6.0](https://github.com/chrisleekr/github-app-playground/compare/v1.5.0...v1.6.0) (2026-04-26)
 
 
 ### Bug Fixes
@@ -196,14 +198,14 @@
 
 * **triage:** tighten bug reproduction methodology in agent prompt ([#64](https://github.com/chrisleekr/github-app-playground/issues/64)) ([5416bb9](https://github.com/chrisleekr/github-app-playground/commit/5416bb9c6674fbc0edb2ac10cc5864281ed90a97))
 
-# [1.5.0](https://github.com/chrisleekr/github-app-playground/compare/v1.4.0...v1.5.0) (2026-04-26)
+## [1.5.0](https://github.com/chrisleekr/github-app-playground/compare/v1.4.0...v1.5.0) (2026-04-26)
 
 
 ### Features
 
 * **workflows:** cascade PR retargeting + bounded review/resolve loop ([#63](https://github.com/chrisleekr/github-app-playground/issues/63)) ([3079014](https://github.com/chrisleekr/github-app-playground/commit/3079014a21b5c7a4a22e077caa0b23d23b21a9dc))
 
-# [1.4.0](https://github.com/chrisleekr/github-app-playground/compare/v1.3.2...v1.4.0) (2026-04-26)
+## [1.4.0](https://github.com/chrisleekr/github-app-playground/compare/v1.3.2...v1.4.0) (2026-04-26)
 
 
 ### Features
@@ -224,7 +226,7 @@
 
 * **auth:** prevent empty ANTHROPIC_API_KEY from shadowing real OAuth token ([#59](https://github.com/chrisleekr/github-app-playground/issues/59)) ([d7001ef](https://github.com/chrisleekr/github-app-playground/commit/d7001efc0e4ea6125b86dfda93fba08b9e8464b5))
 
-# [1.3.0](https://github.com/chrisleekr/github-app-playground/compare/v1.2.2...v1.3.0) (2026-04-25)
+## [1.3.0](https://github.com/chrisleekr/github-app-playground/compare/v1.2.2...v1.3.0) (2026-04-25)
 
 
 ### Bug Fixes
@@ -251,7 +253,7 @@
 
 * **ci:** resolve gitleaks false positives and add dedicated secrets-scan workflow ([#36](https://github.com/chrisleekr/github-app-playground/issues/36)) ([a27df4b](https://github.com/chrisleekr/github-app-playground/commit/a27df4bb58524d732b86cbfb43d13a94a53cf19f))
 
-# [1.2.0](https://github.com/chrisleekr/github-app-playground/compare/v1.1.1...v1.2.0) (2026-04-19)
+## [1.2.0](https://github.com/chrisleekr/github-app-playground/compare/v1.1.1...v1.2.0) (2026-04-19)
 
 
 ### Features
@@ -265,7 +267,7 @@
 
 * **deploy:** set NODE_ENV=production during build and bundle daemon entrypoint ([#31](https://github.com/chrisleekr/github-app-playground/issues/31)) ([87ae7e2](https://github.com/chrisleekr/github-app-playground/commit/87ae7e2b2a3b30bca3401121346f50ddfded059f))
 
-# [1.1.0](https://github.com/chrisleekr/github-app-playground/compare/v1.0.0...v1.1.0) (2026-04-17)
+## [1.1.0](https://github.com/chrisleekr/github-app-playground/compare/v1.0.0...v1.1.0) (2026-04-17)
 
 
 ### Bug Fixes
@@ -287,7 +289,7 @@
 * **triage:** slice E part 2 — isolated-job completion watcher (T042/T046–T049) ([#22](https://github.com/chrisleekr/github-app-playground/issues/22)) ([c0e86dd](https://github.com/chrisleekr/github-app-playground/commit/c0e86dd897dba34133b87ba9cd1e97c15936e161))
 * **triage:** slice F — US4 telemetry aggregates + log contract (T050–T054) ([#24](https://github.com/chrisleekr/github-app-playground/issues/24)) ([bb7fa9f](https://github.com/chrisleekr/github-app-playground/commit/bb7fa9f7f9df76e20cc2608c06f28b892383d2ff))
 
-# 1.0.0 (2026-02-19)
+## 1.0.0 (2026-02-19)
 
 
 ### Bug Fixes
