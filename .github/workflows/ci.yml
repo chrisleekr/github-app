@@ -124,6 +124,14 @@ jobs:
         # is actually enforced. See issue #203.
         run: bun run check:no-destructive
 
+      - name: Env-contract guard
+        # Fails on a stale env-contract.json (vs src/config.ts's loadConfig),
+        # an env var undocumented in docs/operate/configuration.md, or a
+        # secret-shaped name not classified in SECRET_ENV_VARS. chrisleekr/helm-charts
+        # consumes env-contract.json (at v<appVersion>) for its ConfigMap/Secret
+        # parity gate, so this keeps config.ts, the contract, and the docs aligned.
+        run: bun run check:env-contract
+
       - name: Docs-sync guard (bot workflows, FR-019)
         if: github.event_name == 'pull_request'
         env:

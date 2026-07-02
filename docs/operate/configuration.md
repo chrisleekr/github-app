@@ -113,14 +113,15 @@ The orchestrator also expects a pre-existing `daemon-secrets` Kubernetes Secret 
 
 ## Triage
 
-| Variable                      | Default     | Notes                                                                                                  |
-| ----------------------------- | ----------- | ------------------------------------------------------------------------------------------------------ |
-| `TRIAGE_ENABLED`              | `true`      | Kill-switch. When `false`, triage returns `heavy=false` and the job routes to `persistent-daemon`.     |
-| `TRIAGE_MODEL`                | `haiku-3-5` | Alias resolved at runtime.                                                                             |
-| `TRIAGE_CONFIDENCE_THRESHOLD` | `1.0`       | Below this, triage is treated as sub-threshold and the job routes to `persistent-daemon`.              |
-| `TRIAGE_MAX_TOKENS`           | `256`       | Cap on the JSON response. Above ~100 is wasted budget.                                                 |
-| `TRIAGE_TIMEOUT_MS`           | `5000`      | Per-call wall clock. Beyond this, the circuit-breaker counter increments.                              |
-| `INTENT_CONFIDENCE_THRESHOLD` | `0.75`      | Range `[0, 1]`. Below this, a mention-driven comment gets a clarification reply instead of a dispatch. |
+| Variable                      | Default      | Notes                                                                                                                 |
+| ----------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `TRIAGE_ENABLED`              | `true`       | Kill-switch. When `false`, triage returns `heavy=false` and the job routes to `persistent-daemon`.                    |
+| `TRIAGE_TOOLS_ENABLED`        | `true`       | Kill-switch for the tool-driven triage classifier. When `false`, triage runs without the on-demand state-fetch tools. |
+| `TRIAGE_MODEL`                | `sonnet-4-6` | Alias resolved at runtime.                                                                                            |
+| `TRIAGE_CONFIDENCE_THRESHOLD` | `1.0`        | Below this, triage is treated as sub-threshold and the job routes to `persistent-daemon`.                             |
+| `TRIAGE_MAX_TOKENS`           | `256`        | Cap on the JSON response. Above ~100 is wasted budget.                                                                |
+| `TRIAGE_TIMEOUT_MS`           | `5000`       | Per-call wall clock. Beyond this, the circuit-breaker counter increments.                                             |
+| `INTENT_CONFIDENCE_THRESHOLD` | `0.75`       | Range `[0, 1]`. Below this, a mention-driven comment gets a clarification reply instead of a dispatch.                |
 
 ## Discussion digest
 
@@ -134,6 +135,17 @@ workflow prompt consumes in place of the raw thread. It is fail-open (any LLM or
 parse error falls back to body-only / raw-comment context) and has no comment-count
 cap, so there is nothing else to tune.
 
+## Chat-thread executor
+
+Tunables for the conversational scoped-intent path (`src/workflows/ship/scoped/chat-thread.ts`).
+
+| Variable                         | Default | Notes                                                                                                                  |
+| -------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `CHAT_THREAD_EXECUTE_THRESHOLD`  | `0.8`   | Range `[0, 1]`. Minimum classifier confidence before a chat-thread proposal is auto-executed rather than left pending. |
+| `CHAT_THREAD_PROPOSAL_TTL_HOURS` | `24`    | Hours a pending chat-thread proposal stays valid before it expires.                                                    |
+| `CHAT_THREAD_MAX_TURNS`          | `8`     | Cap on conversational turns within a single chat-thread session.                                                       |
+| `CHAT_THREAD_TOOLS_ENABLED`      | `true`  | Kill-switch for the chat-thread agent's on-demand state-fetch tools.                                                   |
+
 ## Ship
 
 | Variable                          | Default            | Notes                                                                                                                                           |
@@ -145,6 +157,7 @@ cap, so there is nothing else to tune.
 | `REVIEW_BARRIER_SAFETY_MARGIN_MS` | `1200000` (20 min) | Minimum elapsed time since the last bot push before the bot may declare `ready` without a non-bot review on the current head SHA.               |
 | `FIX_ATTEMPTS_PER_SIGNATURE_CAP`  | `3`                | Max attempts per failure signature within a single intent. Cap firing terminates with `terminal_blocker_category='flake-cap'`.                  |
 | `SHIP_FORBIDDEN_TARGET_BRANCHES`  | empty              | Comma-separated branches the bot refuses to shepherd PRs against.                                                                               |
+| `REVIEW_RESOLVE_MAX_ITERATIONS`   | `2`                | Range `[1, 5]`. Max review/resolve loop iterations in the composite ship flow before the intent yields.                                         |
 
 ## Scheduled actions
 

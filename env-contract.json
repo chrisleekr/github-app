@@ -1,0 +1,457 @@
+[
+  {
+    "env": "GITHUB_APP_ID",
+    "group": "Group 1",
+    "kind": "secret"
+  },
+  {
+    "env": "GITHUB_APP_PRIVATE_KEY",
+    "group": "Group 1",
+    "kind": "secret"
+  },
+  {
+    "env": "GITHUB_WEBHOOK_SECRET",
+    "group": "Group 1",
+    "kind": "secret"
+  },
+  {
+    "env": "CLAUDE_PROVIDER",
+    "group": "Group 2",
+    "kind": "config"
+  },
+  {
+    "env": "CLAUDE_MODEL",
+    "group": "Group 2",
+    "kind": "config"
+  },
+  {
+    "env": "ANTHROPIC_API_KEY",
+    "group": "Group 3",
+    "kind": "secret"
+  },
+  {
+    "env": "CLAUDE_CODE_OAUTH_TOKEN",
+    "group": "Group 3",
+    "kind": "secret"
+  },
+  {
+    "env": "GITHUB_PERSONAL_ACCESS_TOKEN",
+    "group": "Group 3",
+    "kind": "secret"
+  },
+  {
+    "env": "AWS_REGION",
+    "group": "Group 4",
+    "kind": "config"
+  },
+  {
+    "env": "AWS_PROFILE",
+    "group": "Group 4",
+    "kind": "config"
+  },
+  {
+    "env": "AWS_ACCESS_KEY_ID",
+    "group": "Group 4",
+    "kind": "secret"
+  },
+  {
+    "env": "AWS_SECRET_ACCESS_KEY",
+    "group": "Group 4",
+    "kind": "secret"
+  },
+  {
+    "env": "AWS_SESSION_TOKEN",
+    "group": "Group 4",
+    "kind": "secret"
+  },
+  {
+    "env": "AWS_BEARER_TOKEN_BEDROCK",
+    "group": "Group 4",
+    "kind": "secret"
+  },
+  {
+    "env": "ANTHROPIC_BEDROCK_BASE_URL",
+    "group": "Group 4",
+    "kind": "config"
+  },
+  {
+    "env": "CONTEXT7_API_KEY",
+    "group": "Group 5",
+    "kind": "secret"
+  },
+  {
+    "env": "CLONE_BASE_DIR",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "WORKSPACE_STALE_TTL_MS",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "CLONE_DEPTH",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "TRIGGER_PHRASE",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "BOT_APP_LOGIN",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "PORT",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "LOG_LEVEL",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "NODE_ENV",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "MAX_CONCURRENT_REQUESTS",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "MAX_FETCHED_COMMENTS",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "MAX_FETCHED_REVIEWS",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "MAX_FETCHED_REVIEW_COMMENTS",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "MAX_FETCHED_FILES",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "AGENT_TIMEOUT_MS",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "AGENT_MAX_TURNS",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "CLAUDE_CODE_PATH",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "ALLOWED_OWNERS",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
+    "env": "VALKEY_URL",
+    "group": "Group 6",
+    "kind": "secret"
+  },
+  {
+    "env": "DATABASE_URL",
+    "group": "Group 6",
+    "kind": "secret"
+  },
+  {
+    "env": "WS_PORT",
+    "group": "Group 7",
+    "kind": "config"
+  },
+  {
+    "env": "DAEMON_AUTH_TOKEN",
+    "group": "Group 8",
+    "kind": "secret"
+  },
+  {
+    "env": "DAEMON_AUTH_TOKEN_PREVIOUS",
+    "group": "Group 8",
+    "kind": "secret"
+  },
+  {
+    "env": "ORCHESTRATOR_URL",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "HEARTBEAT_INTERVAL_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "HEARTBEAT_TIMEOUT_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "FLEET_SNAPSHOT_INTERVAL_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "STALE_EXECUTION_THRESHOLD_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "DAEMON_DRAIN_TIMEOUT_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "JOB_MAX_RETRIES",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "OFFER_TIMEOUT_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "QUEUE_WORKER_BACKOFF_MAX_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "LIVENESS_REAPER_INTERVAL_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "DAEMON_UPDATE_STRATEGY",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "DAEMON_UPDATE_DELAY_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "DAEMON_MEMORY_FLOOR_MB",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "DAEMON_DISK_FLOOR_MB",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "DAEMON_EPHEMERAL",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "EPHEMERAL_DAEMON_IDLE_TIMEOUT_MS",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "EPHEMERAL_DAEMON_SPAWN_COOLDOWN_MS",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "EPHEMERAL_DAEMON_SPAWN_QUEUE_THRESHOLD",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "EPHEMERAL_DAEMON_NAMESPACE",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "DAEMON_IMAGE",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "ORCHESTRATOR_PUBLIC_URL",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "TRIAGE_ENABLED",
+    "group": "Group 10",
+    "kind": "config"
+  },
+  {
+    "env": "TRIAGE_TOOLS_ENABLED",
+    "group": "Group 10",
+    "kind": "config"
+  },
+  {
+    "env": "TRIAGE_MODEL",
+    "group": "Group 10",
+    "kind": "config"
+  },
+  {
+    "env": "DISCUSSION_DIGEST_MODEL",
+    "group": "Group 10",
+    "kind": "config"
+  },
+  {
+    "env": "TRIAGE_CONFIDENCE_THRESHOLD",
+    "group": "Group 10",
+    "kind": "config"
+  },
+  {
+    "env": "TRIAGE_MAX_TOKENS",
+    "group": "Group 10",
+    "kind": "config"
+  },
+  {
+    "env": "TRIAGE_TIMEOUT_MS",
+    "group": "Group 10",
+    "kind": "config"
+  },
+  {
+    "env": "INTENT_CONFIDENCE_THRESHOLD",
+    "group": "Group 10",
+    "kind": "config"
+  },
+  {
+    "env": "CHAT_THREAD_EXECUTE_THRESHOLD",
+    "group": "Group 10a",
+    "kind": "config"
+  },
+  {
+    "env": "CHAT_THREAD_PROPOSAL_TTL_HOURS",
+    "group": "Group 10a",
+    "kind": "config"
+  },
+  {
+    "env": "CHAT_THREAD_MAX_TURNS",
+    "group": "Group 10a",
+    "kind": "config"
+  },
+  {
+    "env": "CHAT_THREAD_TOOLS_ENABLED",
+    "group": "Group 10a",
+    "kind": "config"
+  },
+  {
+    "env": "LLM_OUTPUT_SCANNER_ENABLED",
+    "group": "Group 10b",
+    "kind": "config"
+  },
+  {
+    "env": "LLM_OUTPUT_SCANNER_MODEL",
+    "group": "Group 10b",
+    "kind": "config"
+  },
+  {
+    "env": "LLM_OUTPUT_SCANNER_TIMEOUT_MS",
+    "group": "Group 10b",
+    "kind": "config"
+  },
+  {
+    "env": "DEFAULT_MAXTURNS",
+    "group": "Group 11",
+    "kind": "config"
+  },
+  {
+    "env": "REVIEW_RESOLVE_MAX_ITERATIONS",
+    "group": "Group 12",
+    "kind": "config"
+  },
+  {
+    "env": "PROMPT_CACHE_LAYOUT",
+    "group": "Group 12a",
+    "kind": "config"
+  },
+  {
+    "env": "MAX_WALL_CLOCK_PER_SHIP_RUN",
+    "group": "Group 13",
+    "kind": "config"
+  },
+  {
+    "env": "MAX_SHIP_ITERATIONS",
+    "group": "Group 13",
+    "kind": "config"
+  },
+  {
+    "env": "CRON_TICKLE_INTERVAL_MS",
+    "group": "Group 13",
+    "kind": "config"
+  },
+  {
+    "env": "MERGEABLE_NULL_BACKOFF_MS_LIST",
+    "group": "Group 13",
+    "kind": "config"
+  },
+  {
+    "env": "REVIEW_BARRIER_SAFETY_MARGIN_MS",
+    "group": "Group 13",
+    "kind": "config"
+  },
+  {
+    "env": "FIX_ATTEMPTS_PER_SIGNATURE_CAP",
+    "group": "Group 13",
+    "kind": "config"
+  },
+  {
+    "env": "SHIP_FORBIDDEN_TARGET_BRANCHES",
+    "group": "Group 13",
+    "kind": "config"
+  },
+  {
+    "env": "SCHEDULER_ENABLED",
+    "group": "Group 14",
+    "kind": "config"
+  },
+  {
+    "env": "REVIEW_LEARNINGS_ENABLED",
+    "group": "Group 14",
+    "kind": "config"
+  },
+  {
+    "env": "REVIEW_LEARNINGS_RAG_ENABLED",
+    "group": "Group 14",
+    "kind": "config"
+  },
+  {
+    "env": "SCHEDULER_SCAN_INTERVAL_MS",
+    "group": "Group 14",
+    "kind": "config"
+  },
+  {
+    "env": "SCHEDULER_ALLOW_AUTO_MERGE",
+    "group": "Group 14",
+    "kind": "config"
+  },
+  {
+    "env": "SCHEDULER_CONFIG_FILE",
+    "group": "Group 14",
+    "kind": "config"
+  },
+  {
+    "env": "GITHUB_API_SLOW_REQUEST_MS",
+    "group": "Group 15",
+    "kind": "config"
+  }
+]
