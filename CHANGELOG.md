@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.15.0](https://github.com/chrisleekr/github-app/compare/v1.14.0...v1.15.0) (2026-07-02)
+
+
+### Features
+
+* add env-var contract + CI gate for helm-charts sync ([#258](https://github.com/chrisleekr/github-app/issues/258)) ([9aefe66](https://github.com/chrisleekr/github-app/commit/9aefe668d098ed2b8d2781f48cef239f0425efb9))
+
+
+### Bug Fixes
+
+* patch three HIGH CVEs blocking orchestrator Trivy scan ([#254](https://github.com/chrisleekr/github-app/issues/254)) ([0cb6d12](https://github.com/chrisleekr/github-app/commit/0cb6d12ad81bdc1c090cc1bdce2a6c67c12f1e81))
+
 ## [1.14.0](https://github.com/chrisleekr/github-app/compare/v1.13.0...v1.14.0) (2026-06-30)
 
 
