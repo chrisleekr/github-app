@@ -77,3 +77,39 @@ jobs:
     secrets:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+
+  notify-helm-charts:
+    name: Notify helm-charts
+    # Also after docker: the chart PR bumps appVersion (the image tag), so the
+    # dispatch must not fire until that image is pushed. A failed image build
+    # therefore also suppresses the sync (no chart PR for a broken release).
+    needs: [release-please, docker]
+    # Stable channel only: beta prereleases do not sync the chart (chart tracks
+    # stable v<x.y.z>). Fires only when this push actually cut a release.
+    if: needs.release-please.outputs.release_created == 'true' && github.ref_name == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # No GITHUB_TOKEN scopes: the cross-repo dispatch is authenticated with
+    # RELEASE_TOKEN (a PAT), the only credential that can reach another repo.
+    permissions: {}
+    steps:
+      - name: Dispatch chart sync to helm-charts
+        # repository_dispatch into chrisleekr/helm-charts wakes its
+        # github-app-sync workflow (which opens the chart bump PR). The version
+        # is passed in client_payload so the sync targets this exact release
+        # rather than re-resolving releases/latest. A 403 here fails this job
+        # loudly (the release + image build already completed and are
+        # unaffected). NOTE: a dispatch only runs a workflow present on
+        # helm-charts' DEFAULT branch, and the POST returns 204 even when nothing
+        # listens, so a dropped delivery is silent. The receiver change must
+        # already be on helm-charts main; confirm a run appears in its Actions.
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          gh api -X POST repos/chrisleekr/helm-charts/dispatches \
+            -f event_type=github-app-released \
+            -f "client_payload[version]=$ver"
+          echo "dispatched github-app-released version=$ver to chrisleekr/helm-charts"
