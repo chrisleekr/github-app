@@ -1855,7 +1855,7 @@
 <li>Inline GHSA allowlist in <code>IGNORED</code> array; each entry has <code>ghsa</code>, <code>reason</code>, and <code>expires</code> (ISO date). Expired entries become warnings on next run.</li>
 </ul>
 <h2 id="ci-pipeline">CI pipeline<a class="headerlink" href="#ci-pipeline" title="Permanent link">&para;</a></h2>
-<p>Five workflow files form the pipeline; each owns one responsibility.</p>
+<p>Four workflow files form the pipeline; each owns one responsibility.</p>
 <table>
 <thead>
 <tr>
@@ -1876,14 +1876,9 @@
 <td>Standalone gitleaks scan, decoupled so every push (incl. chore/docs) is gated</td>
 </tr>
 <tr>
-<td><code>.github/workflows/dev-release.yml</code></td>
-<td><code>push: branches-ignore: [main, v*]</code> + <code>workflow_dispatch</code></td>
-<td>Calls <code>ci.yml</code> → semantic-release dev (pre-release tag) → <code>docker-build.yml</code></td>
-</tr>
-<tr>
-<td><code>.github/workflows/release.yml</code></td>
-<td><code>workflow_dispatch</code> only (manual)</td>
-<td>Calls <code>ci.yml</code> → semantic-release prod → <code>docker-build.yml</code></td>
+<td><code>.github/workflows/release-please.yml</code></td>
+<td><code>push: [main, beta]</code></td>
+<td>release-please maintains a Release PR per branch; merging it cuts the release then calls <code>docker-build.yml</code></td>
 </tr>
 <tr>
 <td><code>.github/workflows/docker-build.yml</code></td>
@@ -1897,7 +1892,7 @@
 <li><strong>Multi-arch images.</strong> amd64 builds on <code>ubuntu-24.04</code>, arm64 builds natively on <code>ubuntu-24.04-arm</code> (free for public repos). Both runners are explicitly pinned (not <code>ubuntu-latest</code>) so the rolling alias cannot silently flip to a new major. Manifest assembled by <code>docker buildx imagetools create</code>. GHA cache scoped per arch.</li>
 <li><strong>Runners pinned repo-wide.</strong> Every <code>runs-on:</code> across <code>.github/workflows/</code> targets an explicit image (<code>ubuntu-24.04</code>), never a <code>*-latest</code> rolling alias. <code>ci.yml</code> runs <code>bun run check:runner-pins</code> (<code>scripts/check-runner-pins.ts</code>), which fails the build if any <code>runs-on:</code> is on a <code>*-latest</code> alias; matrix expressions are exempt. See issue #173.</li>
 <li><strong>Defense in depth.</strong> Every dynamic input flowing into a <code>run:</code> block is passed via <code>env:</code> first.</li>
-<li><strong>Prod releases are manual.</strong> Push to main triggers only <code>ci.yml</code>. Cut a release with <code>gh workflow run release.yml</code>.</li>
+<li><strong>Releases run on release-please.</strong> Push to <code>main</code> opens/updates a stable Release PR; merging it tags <code>v&lt;x.y.z&gt;</code>, updates <code>CHANGELOG.md</code> + <code>package.json</code>, creates the GitHub release, and builds the prod image (<code>latest</code>). The <code>beta</code> branch does the same for prereleases (<code>v&lt;x.y.z&gt;-beta</code>, no <code>latest</code>). Only <code>feat</code>/<code>fix</code>/<code>!</code> commits bump the version. Branch selection uses two source-controlled config + manifest pairs (<code>release-please-config.json</code> / <code>.release-please-manifest.json</code> on main, the <code>.beta</code> variants on beta); <code>release-please-action</code> runs with the <code>RELEASE_TOKEN</code> PAT so Release PRs trigger CI.</li>
 </ul>
 <h2 id="documentation-discipline">Documentation discipline<a class="headerlink" href="#documentation-discipline" title="Permanent link">&para;</a></h2>
 <p>When a PR touches any of these surfaces, update the matching page under <code>docs/</code>:</p>

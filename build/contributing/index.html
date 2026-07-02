@@ -1727,11 +1727,15 @@
 <tbody>
 <tr>
 <td><code>main</code></td>
-<td>Always green. Push triggers <code>ci.yml</code> only, production releases are manual.</td>
+<td>Always green. Stable channel: release-please opens a Release PR on push; merging it cuts the release.</td>
+</tr>
+<tr>
+<td><code>beta</code></td>
+<td>Long-lived prerelease channel. release-please opens a beta Release PR; merging it cuts <code>v&lt;x.y.z&gt;-beta</code> and a beta image.</td>
 </tr>
 <tr>
 <td>Feature branches</td>
-<td>Any name <strong>other</strong> than <code>main</code> and <code>v*</code>. Triggers <code>dev-release.yml</code> (CI → dev semantic-release → multi-arch image build).</td>
+<td>Any name <strong>other</strong> than <code>main</code>, <code>beta</code>, and <code>v*</code>. CI runs on the PR; no per-branch release (the semantic-release dev rail is retired).</td>
 </tr>
 </tbody>
 </table>
