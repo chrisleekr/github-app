@@ -417,6 +417,22 @@ The ephemeral-daemon spawn lifecycle (the orchestrator's only horizontal-scaling
 
 `api_call_ms` is the `createNamespacedPod` round-trip wall-clock; present on `succeeded` and on `api-rejected`/`api-unavailable` failures, absent on `infra-absent`/`auth-load-failed` (which throw before any K8s call). `kind` (`EphemeralSpawnErrorKind`): `infra-absent`, `auth-load-failed`, `api-rejected` (4xx), `api-unavailable` (5xx/network). These events add the by-kind and by-latency breakdown that the `dispatch_reason=ephemeral-spawn-failed` aggregate lacks.
 
+## Socket health watchdog events
+
+The orchestrator runs a CLOSE_WAIT socket-spin watchdog on the HTTP listener (`src/orchestrator/socket-health.ts`, cadence `SOCKET_HEALTH_INTERVAL_MS`, default 30s). It exists because of issue #264: the process once burned exactly 1.000 CPU core for 14 days in an EPOLLRDHUP storm over ~7 CLOSE_WAIT sockets, then died with `reason=Error` and left nothing to read.
+
+This watchdog does **not** fix #264. It detects the signature and logs it structurally so the next occurrence is diagnosable from logs alone, and optionally self-heals. The discriminator is **persistent CLOSE_WAIT sockets**, not CPU: a pinned core alone is never sufficient, because a 13.5s `scheduler.scan` legitimately burns a core. CPU only escalates an already-persistent leak from detection to a suspected spin. Event-key constants live in `src/orchestrator/socket-health-log-fields.ts:21#SOCKET_HEALTH_LOG_EVENTS`, and the co-located test pins each event's fields against `.strict()` Zod schemas so a field rename cannot go unnoticed.
+
+| Event                              | Level | Meaning                                                                                                                                                                                                   |
+| ---------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `socket.close_wait.detected`       | warn  | CLOSE_WAIT sockets survived `SOCKET_HEALTH_LEAK_SAMPLES` samples. Carries `close_wait_sockets`, `window_ms`, `cpu_cores_used`, and up to 20 `sockets[]` with `inode`/`local`/`remote`/`age_ms`/`samples`. |
+| `socket.close_wait.spin_suspected` | warn  | The full #264 signature: a persistent leak plus CPU at or above `SOCKET_HEALTH_CPU_PERCENT`. Adds `self_heal_enabled`.                                                                                    |
+| `socket.close_wait.self_heal_exit` | error | Emitted immediately before a deliberate self-heal exit (only when self-heal is enabled).                                                                                                                  |
+| `socket.watchdog.sample_failed`    | warn  | A sample could not read procfs. Logged at most once per watchdog lifetime so a persistent fault cannot bury the leak.                                                                                     |
+| `socket.watchdog.disabled`         | info  | The watchdog armed no timer, either `SOCKET_HEALTH_INTERVAL_MS=0` or no readable `/proc/net/tcp` (non-Linux dev host).                                                                                    |
+
+When `SOCKET_HEALTH_SELF_HEAL_ENABLED=true`, a suspected spin exits the process with code **75 (EX_TEMPFAIL)** so k8s restarts the pod and bounds the burn. The code is deliberately not `1`: it lets `lastState.terminated.exitCode` distinguish a deliberate self-heal from a real crash, exactly the ambiguity that made the original #264 death undiagnosable.
+
 ## Aggregate reporting
 
 When `DATABASE_URL` is set, helpers in `src/db/queries/dispatch-stats.ts` expose the most operator-relevant aggregates:
@@ -437,6 +453,7 @@ Call them from an internal admin endpoint, a scheduled job, or `bun repl`.
 - **Heartbeat drift.** Daemons missing heartbeats past `HEARTBEAT_TIMEOUT_MS` get evicted; sustained eviction points at network or resource-floor issues. A `daemon.heartbeat.timeout` rate above baseline is the log-side signal.
 - **Daemons refusing work.** A sustained `event:"dispatcher.offer.rejected"` rate (group by `reason`) means daemons are bouncing offers, a capacity or capability mismatch, before the queue visibly backs up.
 - **Offer round-trip latency.** A p99 regression on `offer_latency_ms` for `event:"dispatcher.offer.accepted"` flags a daemon that is responding but slow (GC pause, capability rescan stall, WebSocket back-pressure), eating dispatch headroom without tripping the heartbeat timeout.
+- **Socket spin (issue #264).** Any `event:"socket.close_wait.spin_suspected"` is the EPOLLRDHUP-storm signature, persistent CLOSE_WAIT plus a pinned core. Page on it; a `socket.close_wait.self_heal_exit` (or a pod restart with `exitCode=75`) means the watchdog bounded the burn for you, but the root cause is still unfixed.
 - **OOM / crash loops.** Standard infra alerts. Durable idempotency means a restart will not replay a processed event.
 - **Ship terminal-blocker rate.** A spike in `ship.intent.transition` events with `to_status:human_took_over` and `terminal_blocker_category:flake-cap` points at PR-flake regressions, not bot misbehaviour.
 - **Circuit breaker trips.** Alert on `event:"circuit.failure" AND consecutive_failures >= 3` for a pre-trip head start; facet `circuit.opened` by `latency_tripped` (`true` ⇒ raise timeouts, `false` ⇒ page on-call); chart `open_ms` from `circuit.closed` for MTTR.

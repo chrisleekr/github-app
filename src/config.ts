@@ -341,6 +341,28 @@ const configSchema = z
     // at the sampler so a typo cannot busy-loop or stall visibility. Default 30s.
     fleetSnapshotIntervalMs: z.coerce.number().int().nonnegative().default(30_000),
 
+    // Socket-health watchdog knobs (issue #265). Detects the #264 CLOSE_WAIT
+    // spin signature and structurally logs it; optionally self-heals by exiting.
+    // Like fleetSnapshotIntervalMs, bounds are clamped at the consumer
+    // (`socket-health.ts`), not in zod, so `0` can pass through to disable the
+    // watchdog rather than being rejected or floored.
+    //
+    // Sample cadence. 0 disables. Non-zero values are clamped to [5s, 300s].
+    socketHealthIntervalMs: z.coerce.number().int().nonnegative().default(30_000),
+    // Consecutive samples a socket must survive before it counts as leaked.
+    // Clamped to [2, 100] at the consumer (1 would flag every transient socket).
+    // `nonnegative` not `positive`: a typo'd `0` floors to the safe minimum at
+    // the consumer rather than crashing the orchestrator over a diagnostic knob.
+    socketHealthLeakSamples: z.coerce.number().int().nonnegative().default(3),
+    // Consecutive samples before a leak plus a pinned core is treated as a spin.
+    // Clamped to [2, 1000] at the consumer.
+    socketHealthSelfHealSamples: z.coerce.number().int().nonnegative().default(10),
+    // CPU floor for a spin, as a percentage of one core. Clamped to [50, 100].
+    socketHealthCpuPercent: z.coerce.number().int().nonnegative().default(90),
+    // Whether a suspected spin exits the process (exit 75) for a k8s restart.
+    // Off by default: detection ships first, self-heal is opt-in.
+    socketHealthSelfHealEnabled: z.boolean().default(false),
+
     // How long an execution may sit in status="running" before the watcher treats
     // it as abandoned and marks it failed. Should generally be ≥ agentTimeoutMs
     // so a legitimate long run isn't reaped mid-flight; the built-in default
@@ -961,6 +983,14 @@ function loadConfig(): Config {
     heartbeatIntervalMs: process.env["HEARTBEAT_INTERVAL_MS"],
     heartbeatTimeoutMs: process.env["HEARTBEAT_TIMEOUT_MS"],
     fleetSnapshotIntervalMs: process.env["FLEET_SNAPSHOT_INTERVAL_MS"],
+    socketHealthIntervalMs: process.env["SOCKET_HEALTH_INTERVAL_MS"],
+    socketHealthLeakSamples: process.env["SOCKET_HEALTH_LEAK_SAMPLES"],
+    socketHealthSelfHealSamples: process.env["SOCKET_HEALTH_SELF_HEAL_SAMPLES"],
+    socketHealthCpuPercent: process.env["SOCKET_HEALTH_CPU_PERCENT"],
+    socketHealthSelfHealEnabled: parseBooleanEnv(
+      "SOCKET_HEALTH_SELF_HEAL_ENABLED",
+      process.env["SOCKET_HEALTH_SELF_HEAL_ENABLED"],
+    ),
     staleExecutionThresholdMs: process.env["STALE_EXECUTION_THRESHOLD_MS"],
     daemonDrainTimeoutMs: process.env["DAEMON_DRAIN_TIMEOUT_MS"],
     jobMaxRetries: process.env["JOB_MAX_RETRIES"],

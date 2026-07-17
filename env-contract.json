@@ -210,6 +210,31 @@
     "kind": "config"
   },
   {
+    "env": "SOCKET_HEALTH_INTERVAL_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "SOCKET_HEALTH_LEAK_SAMPLES",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "SOCKET_HEALTH_SELF_HEAL_SAMPLES",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "SOCKET_HEALTH_CPU_PERCENT",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
+    "env": "SOCKET_HEALTH_SELF_HEAL_ENABLED",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
     "env": "STALE_EXECUTION_THRESHOLD_MS",
     "group": "Group 8",
     "kind": "config"
