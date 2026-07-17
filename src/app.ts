@@ -764,6 +764,14 @@ function shutdown(signal: string): void {
   logger.info({ signal }, "Received shutdown signal");
   isReady = false;
 
+  // Disarm the socket-health watchdog BEFORE server.close(). Stuck CLOSE_WAIT
+  // sockets (the exact condition the watchdog detects) can block server.close()
+  // from ever completing, so its callback below may never run. Left armed, the
+  // watchdog would keep sampling through the force-exit window and could
+  // exit(75) during a normal shutdown, polluting the "deliberate self-heal"
+  // signal. Disarm here so a graceful shutdown never trips it.
+  stopSocketHealthWatchdog();
+
   server.close(() => {
     void (async (): Promise<void> => {
       try {
@@ -789,7 +797,6 @@ function shutdown(signal: string): void {
         await stopQueueWorker();
         stopLivenessReaper();
         stopFleetSnapshot();
-        stopSocketHealthWatchdog();
         await stopWebSocketServer();
         await stopInstanceHeartbeat();
         closeValkey();

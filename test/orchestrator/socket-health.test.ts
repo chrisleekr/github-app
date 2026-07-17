@@ -370,6 +370,21 @@ describe("readProcNetAt (C5)", () => {
     }
     expect(threw).toBe(true);
   });
+
+  it("rejects on a non-ENOENT tcp6 error rather than silently emptying it", async () => {
+    // Symmetric to the tcp4 case: a readable tcp4 plus a tcp6 that fails with a
+    // non-ENOENT error (here EISDIR from a directory) must reject, so a real
+    // IPv6-side fault surfaces as `sample_failed` instead of dropping IPv6
+    // leaks under an "IPv6 disabled" guise.
+    const dir = fileURLToPath(new URL("./fixtures", import.meta.url));
+    let threw = false;
+    try {
+      await readProcNetAt(TCP4_PATH, dir);
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+  });
 });
 
 // The root logger writes JSON to stdout (no transport in NODE_ENV=test).
@@ -748,5 +763,70 @@ describe("startSocketHealthWatchdog: self-heal (C7, C8, C9)", () => {
     expect(source).not.toMatch(/from\s+"\.\.\/config"/);
     expect(source).not.toMatch(/\bserver\s*\.\s*close\s*\(/);
     expect(source).not.toMatch(/\bcloseAllConnections\s*\(/);
+  });
+});
+
+describe("stopSocketHealthWatchdog: in-flight sample (CR3b)", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    stopSocketHealthWatchdog();
+    jest.useRealTimers();
+  });
+
+  it("a sample still awaiting when the watchdog is stopped neither logs nor exits", async () => {
+    // The self-heal mechanism's own hazard: an async sample already past its
+    // read when stop() fires could otherwise complete and log or exit(75)
+    // against a torn-down watchdog. The generation guard must suppress it.
+    let resolvePending: (() => void) | null = null;
+    let calls = 0;
+    const exitCodes: number[] = [];
+    const deps: SocketHealthDeps = {
+      readProcNet: () => {
+        calls += 1;
+        // Probe (call 1) plus the first two ticks resolve immediately, building
+        // the fixture sockets toward the 3-sample leak threshold. The third
+        // sample stays pending so we can stop the watchdog mid-flight; without
+        // the stop it would be the first `detected` emit.
+        if (calls <= 3) return Promise.resolve({ tcp4, tcp6 });
+        return new Promise<{ tcp4: string; tcp6: string }>((resolve) => {
+          resolvePending = () => {
+            resolve({ tcp4, tcp6 });
+          };
+        });
+      },
+      cpuUsage: () => 0,
+      now: () => calls * TICK_MS,
+      exit: (code: number) => {
+        exitCodes.push(code);
+      },
+    };
+
+    const out = await captureStdout(async () => {
+      await startSocketHealthWatchdog({
+        intervalMs: TICK_MS,
+        port: WATCHED_PORT,
+        ...THRESHOLDS,
+        selfHealEnabled: true,
+        deps,
+      });
+      jest.advanceTimersByTime(TICK_MS); // tick 1 (call 2), quiet
+      await flush();
+      jest.advanceTimersByTime(TICK_MS); // tick 2 (call 3), quiet
+      await flush();
+      jest.advanceTimersByTime(TICK_MS); // tick 3 (call 4), read stays pending
+      await flush();
+      stopSocketHealthWatchdog();
+      resolvePending?.();
+      await flush();
+    });
+
+    // Without the guard this resolved sample would be the first leak (3rd
+    // consecutive) and log `detected`; the stop must make it a no-op.
+    expect(linesFor(out, SOCKET_HEALTH_LOG_EVENTS.closeWaitDetected)).toHaveLength(0);
+    expect(linesFor(out, SOCKET_HEALTH_LOG_EVENTS.closeWaitSpinSuspected)).toHaveLength(0);
+    expect(exitCodes).toEqual([]);
   });
 });

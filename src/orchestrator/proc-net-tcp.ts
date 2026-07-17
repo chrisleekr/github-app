@@ -51,14 +51,6 @@ const CLOSE_WAIT_STATE = "08";
  */
 const NO_INODE = "0";
 
-/**
- * Upper bound on rows scanned per table. `/proc/net/tcp` is the whole netns
- * table, so under many connections each 30s tick would otherwise allocate an
- * unbounded string+array. The CLOSE_WAIT-on-our-port set is tiny, so this
- * generous cap bounds worst-case allocation while losing zero real signal.
- */
-const MAX_ROWS = 5_000;
-
 const ADDRESS = /^(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{32}):[0-9A-Fa-f]{4}$/;
 const STATE = /^[0-9A-Fa-f]{2}$/;
 const QUEUES = /^[0-9A-Fa-f]{8}:([0-9A-Fa-f]{8})$/;
@@ -140,6 +132,53 @@ export function formatProcNetAddress(hexAddr: string, hexPort: string): string {
   return `[${formatIpv6(hexAddr)}]:${port}`;
 }
 
+/** Parse one table line into a row, or null if it is a header, blank, or malformed. */
+function parseRow(line: string): ProcNetTcpRow | null {
+  const trimmed = line.trim();
+  if (trimmed === "") return null;
+  const tokens = trimmed.split(/\s+/);
+  if (tokens.length < 10) return null;
+
+  const local = tokens[1] ?? "";
+  const remote = tokens[2] ?? "";
+  const st = tokens[3] ?? "";
+  const inode = tokens[9] ?? "";
+  const queues = QUEUES.exec(tokens[4] ?? "");
+  if (!ADDRESS.test(local) || !ADDRESS.test(remote)) return null;
+  if (!STATE.test(st) || !INODE.test(inode) || queues === null) return null;
+
+  const [localHex = "", localPortHex = ""] = local.split(":");
+  const [remoteHex = "", remotePortHex = ""] = remote.split(":");
+  return {
+    local: formatProcNetAddress(localHex, localPortHex),
+    localPort: parseInt(localPortHex, 16),
+    remote: formatProcNetAddress(remoteHex, remotePortHex),
+    st,
+    rx_queue: parseInt(queues[1] ?? "0", 16),
+    inode,
+  };
+}
+
+/**
+ * Iterate a table's lines by scanning for `\n` with `indexOf`, slicing one line
+ * at a time. Deliberately NOT `text.split("\n")`: the split would materialize a
+ * single array of every line up front, unbounded in the pod-netns-wide table.
+ * A positional cap on that array is not an option either, since the watched
+ * CLOSE_WAIT rows can sit anywhere in the table (the many-connections storm is
+ * exactly when they would fall past a cap). This scan visits every line while
+ * holding only one line slice at a time.
+ */
+function* iterateLines(text: string): Generator<string> {
+  const len = text.length;
+  let start = 0;
+  while (start < len) {
+    let nl = text.indexOf("\n", start);
+    if (nl === -1) nl = len;
+    yield text.slice(start, nl);
+    start = nl + 1;
+  }
+}
+
 /**
  * Parse a whole /proc/net/tcp or /proc/net/tcp6 table.
  *
@@ -150,32 +189,9 @@ export function formatProcNetAddress(hexAddr: string, hexPort: string): string {
  */
 export function parseProcNetTcp(text: string): ProcNetTcpRow[] {
   const rows: ProcNetTcpRow[] = [];
-  // `split` with a limit caps the returned array at MAX_ROWS entries, bounding
-  // the allocation regardless of how large the table grows.
-  for (const line of text.split("\n", MAX_ROWS)) {
-    const trimmed = line.trim();
-    if (trimmed === "") continue;
-    const tokens = trimmed.split(/\s+/);
-    if (tokens.length < 10) continue;
-
-    const local = tokens[1] ?? "";
-    const remote = tokens[2] ?? "";
-    const st = tokens[3] ?? "";
-    const inode = tokens[9] ?? "";
-    const queues = QUEUES.exec(tokens[4] ?? "");
-    if (!ADDRESS.test(local) || !ADDRESS.test(remote)) continue;
-    if (!STATE.test(st) || !INODE.test(inode) || queues === null) continue;
-
-    const [localHex = "", localPortHex = ""] = local.split(":");
-    const [remoteHex = "", remotePortHex = ""] = remote.split(":");
-    rows.push({
-      local: formatProcNetAddress(localHex, localPortHex),
-      localPort: parseInt(localPortHex, 16),
-      remote: formatProcNetAddress(remoteHex, remotePortHex),
-      st,
-      rx_queue: parseInt(queues[1] ?? "0", 16),
-      inode,
-    });
+  for (const line of iterateLines(text)) {
+    const row = parseRow(line);
+    if (row !== null) rows.push(row);
   }
   return rows;
 }
@@ -198,17 +214,25 @@ export function collectCloseWaitSockets(
   port: number,
 ): CloseWaitSocket[] {
   const byInode = new Map<string, CloseWaitSocket>();
-  for (const row of [...parseProcNetTcp(tcp4), ...parseProcNetTcp(tcp6)]) {
-    if (row.st.toLowerCase() !== CLOSE_WAIT_STATE) continue;
-    if (row.localPort !== port) continue;
-    if (row.inode === NO_INODE) continue;
-    if (byInode.has(row.inode)) continue;
-    byInode.set(row.inode, {
-      inode: row.inode,
-      local: row.local,
-      remote: row.remote,
-      rx_queue: row.rx_queue,
-    });
+  // Scan both tables line by line and retain only matching rows, so the hot
+  // path (run every tick) never materializes a full-table rows array. The
+  // filter is applied inside the scan, so worst-case retained size is the tiny
+  // CLOSE_WAIT-on-our-port set, not the whole netns table.
+  for (const text of [tcp4, tcp6]) {
+    for (const line of iterateLines(text)) {
+      const row = parseRow(line);
+      if (row === null) continue;
+      if (row.st.toLowerCase() !== CLOSE_WAIT_STATE) continue;
+      if (row.localPort !== port) continue;
+      if (row.inode === NO_INODE) continue;
+      if (byInode.has(row.inode)) continue;
+      byInode.set(row.inode, {
+        inode: row.inode,
+        local: row.local,
+        remote: row.remote,
+        rx_queue: row.rx_queue,
+      });
+    }
   }
   return [...byInode.values()];
 }

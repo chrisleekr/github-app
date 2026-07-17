@@ -324,3 +324,57 @@ describe("collectCloseWaitSockets: defensive cases", () => {
     expect(collectCloseWaitSockets("junk", "junk", 8080)).toEqual([]);
   });
 });
+
+describe("collectCloseWaitSockets: large table (no positional truncation)", () => {
+  // Regression for the MAX_ROWS positional cap: the watched CLOSE_WAIT sockets
+  // can sit anywhere in the pod-netns-wide table, exactly past the first N rows
+  // during the many-connections storm this watchdog exists to catch. A cap on
+  // the first N rows would silently drop them. Build a table with far more than
+  // any plausible cap of noise, then the watched row LAST.
+  const NOISE_ROWS = 6_000;
+
+  function bigTableWithWatchedRowLast(): string {
+    const lines: string[] = [HEADER];
+    for (let i = 0; i < NOISE_ROWS; i += 1) {
+      // ESTABLISHED (st=01) on port 9999 (0x270F): does not match st=08 + 8080.
+      lines.push(
+        dataRow({
+          sl: i,
+          local: "0100007F:270F",
+          remote: "0100007F:C000",
+          st: "01",
+          rxHex: "00000000",
+          inode: String(40_000_000 + i),
+        }),
+      );
+    }
+    // The one watched row, dead last so any first-N cap would miss it.
+    lines.push(
+      dataRow({
+        sl: NOISE_ROWS,
+        local: "0100007F:1F90",
+        remote: "0100007F:A582",
+        st: "08",
+        rxHex: "00000017",
+        inode: "31099999",
+      }),
+    );
+    return lines.join("\n");
+  }
+
+  it("parses every row of a table far larger than any positional cap", () => {
+    expect(parseProcNetTcp(bigTableWithWatchedRowLast())).toHaveLength(NOISE_ROWS + 1);
+  });
+
+  it("detects a watched CLOSE_WAIT row sitting past row 5000", () => {
+    const sockets = collectCloseWaitSockets(bigTableWithWatchedRowLast(), "", 8080);
+    expect(sockets).toEqual([
+      {
+        inode: "31099999",
+        local: "127.0.0.1:8080",
+        remote: "127.0.0.1:42370",
+        rx_queue: 23,
+      },
+    ]);
+  });
+});

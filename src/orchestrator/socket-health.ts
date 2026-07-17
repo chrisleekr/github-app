@@ -230,8 +230,13 @@ export async function readProcNetAt(
   let tcp6: string;
   try {
     tcp6 = await readFile(tcp6Path, "utf8");
-  } catch {
-    tcp6 = "";
+  } catch (err) {
+    // Same split as tcp4: ENOENT means an IPv6-disabled kernel, which has no
+    // tcp6 file and no IPv6 sockets, so an empty table is correct. Any other
+    // error (EACCES, EMFILE) is a real fault that would otherwise silently drop
+    // IPv6 leaks, so rethrow and let `sampleOnce` log `sample_failed`.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") tcp6 = "";
+    else throw err;
   }
   return { tcp4, tcp6 };
 }
@@ -257,6 +262,13 @@ export interface SocketHealthOptions extends WatchdogThresholds {
 // Module singletons, mirroring `fleet-snapshot.ts` / `instance-liveness.ts`.
 let timer: ReturnType<typeof setInterval> | null = null;
 let sampleFailedLogged = false;
+// Bumped by every stop(). A sample captures the value it was armed under and
+// re-checks it after its await, so a sample still in flight when the watchdog
+// is stopped cannot log or exit(75) against a torn-down watchdog.
+let generation = 0;
+// Re-entrancy guard: a sample that outlives the interval must not overlap the
+// next tick.
+let sampling = false;
 
 function clamp(value: number, min: number, max: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
@@ -291,24 +303,47 @@ async function sampleOnce(
   state: WatchdogState,
   opts: SocketHealthOptions,
   deps: SocketHealthDeps,
+  armedGeneration: number,
 ): Promise<void> {
-  let tables: { tcp4: string; tcp6: string } | null;
+  // Skip if a prior sample is still awaiting: never overlap two samples.
+  if (sampling) return;
+  sampling = true;
   try {
-    tables = await deps.readProcNet();
-  } catch (err) {
-    // Once per lifetime: a procfs that fails once tends to fail every tick,
-    // and a warn line every 30s would bury the leak this exists to surface.
-    if (!sampleFailedLogged) {
-      sampleFailedLogged = true;
-      log.warn(
-        { event: SOCKET_HEALTH_LOG_EVENTS.watchdogSampleFailed, err },
-        "Socket health sample failed, watchdog continues",
-      );
+    let tables: { tcp4: string; tcp6: string } | null;
+    try {
+      tables = await deps.readProcNet();
+    } catch (err) {
+      // Stopped mid-read: do not log against a torn-down watchdog.
+      if (armedGeneration !== generation) return;
+      // Once per lifetime: a procfs that fails once tends to fail every tick,
+      // and a warn line every 30s would bury the leak this exists to surface.
+      if (!sampleFailedLogged) {
+        sampleFailedLogged = true;
+        log.warn(
+          { event: SOCKET_HEALTH_LOG_EVENTS.watchdogSampleFailed, err },
+          "Socket health sample failed, watchdog continues",
+        );
+      }
+      return;
     }
-    return;
-  }
-  if (tables === null) return;
+    // The read is the only await, so one generation check here covers every
+    // emit/exit path below: a stop() during the read invalidates this sample.
+    if (armedGeneration !== generation) return;
+    if (tables === null) return;
 
+    emitVerdict(state, opts, deps, tables);
+  } finally {
+    // eslint-disable-next-line require-atomic-updates -- single-threaded re-entrancy latch; the reset cannot interleave
+    sampling = false;
+  }
+}
+
+function emitVerdict(
+  state: WatchdogState,
+  opts: SocketHealthOptions,
+  deps: SocketHealthDeps,
+  tables: { tcp4: string; tcp6: string },
+): void {
   const sockets = collectCloseWaitSockets(tables.tcp4, tables.tcp6, opts.port);
   const verdict = evaluateSample(
     state,
@@ -382,6 +417,8 @@ export async function startSocketHealthWatchdog(opts: SocketHealthOptions): Prom
 
   const state = createWatchdogState();
   sampleFailedLogged = false;
+  sampling = false;
+  const armedGeneration = generation;
   const intervalMs = clampInterval(opts.intervalMs);
   const effectiveOpts: SocketHealthOptions = { ...opts, ...clampThresholds(opts) };
   // Cannot arm before the await like instance-liveness does: the procfs probe
@@ -389,7 +426,7 @@ export async function startSocketHealthWatchdog(opts: SocketHealthOptions): Prom
   // read-then-write of `timer` across the await cannot actually double-arm.
   // eslint-disable-next-line require-atomic-updates -- single-threaded, one boot-time caller
   timer = setInterval(() => {
-    void sampleOnce(state, effectiveOpts, deps);
+    void sampleOnce(state, effectiveOpts, deps, armedGeneration);
   }, intervalMs);
   log.info({ intervalMs, port: opts.port }, "Socket health watchdog started");
 }
@@ -400,6 +437,10 @@ export function stopSocketHealthWatchdog(): void {
     clearInterval(timer);
     timer = null;
   }
+  // Invalidate any sample already in flight so it cannot log or exit(75) after
+  // teardown, and clear the re-entrancy latch so a later start is not wedged.
+  generation += 1;
+  sampling = false;
   // Reset with the handle so a later start reports its first failure again.
   sampleFailedLogged = false;
 }
