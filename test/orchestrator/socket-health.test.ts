@@ -388,18 +388,20 @@ describe("readProcNetAt (C5)", () => {
 });
 
 // The root logger writes JSON to stdout (no transport in NODE_ENV=test).
-function captureStdout(fn: () => Promise<void>): Promise<string> {
+async function captureStdout(fn: () => Promise<void>): Promise<string> {
   const chunks: string[] = [];
   const original = process.stdout.write.bind(process.stdout);
   process.stdout.write = ((chunk: unknown): boolean => {
     chunks.push(String(chunk));
     return true;
   }) as unknown as typeof process.stdout.write;
-  return fn()
-    .then(() => chunks.join(""))
-    .finally(() => {
-      process.stdout.write = original;
-    });
+  try {
+    await fn();
+    return chunks.join("");
+  } finally {
+    // eslint-disable-next-line require-atomic-updates -- single-threaded test helper restoring a stubbed global
+    process.stdout.write = original;
+  }
 }
 
 function linesFor(out: string, event: string): Record<string, unknown>[] {
