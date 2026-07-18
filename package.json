@@ -2,7 +2,7 @@
   "name": "@chrisleekr/github-app",
   "description": "A GitHub App that listens for @chrisleekr-bot mentions on PRs and issues, then autonomously responds using the Claude Agent SDK (@anthropic-ai/claude-agent-sdk) with MCP servers",
   "author": "Chris Lee <git@chrislee.kr>",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "main": "dist/app.js",
   "bin": {
     "github-app": "dist/app.js"
