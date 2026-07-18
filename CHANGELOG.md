@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/chrisleekr/github-app/compare/v1.15.0...v1.16.0) (2026-07-18)
+
+
+### Features
+
+* **orchestrator:** add CLOSE_WAIT socket-spin watchdog for [#264](https://github.com/chrisleekr/github-app/issues/264) signature ([#266](https://github.com/chrisleekr/github-app/issues/266)) ([8990ee0](https://github.com/chrisleekr/github-app/commit/8990ee0cef8333eaf07ff012af5604c1f3b99d65))
+
 ## [1.15.0](https://github.com/chrisleekr/github-app/compare/v1.14.0...v1.15.0) (2026-07-02)
 
 
