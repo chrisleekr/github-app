@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.1](https://github.com/chrisleekr/github-app/compare/v1.16.0...v1.16.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **deps:** pin transitive adm-zip to 0.6.0 for CVE-2026-39244 ([#268](https://github.com/chrisleekr/github-app/issues/268)) ([a4db980](https://github.com/chrisleekr/github-app/commit/a4db980751eed6764373e503bafaf82efef73a87))
+
 ## [1.16.0](https://github.com/chrisleekr/github-app/compare/v1.15.0...v1.16.0) (2026-07-18)
 
 
