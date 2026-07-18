@@ -206,6 +206,99 @@ describe("configSchema: ephemeral-daemon defaults", () => {
   });
 });
 
+describe("configSchema: socket-health watchdog defaults (#265)", () => {
+  it("has documented defaults for all five socket-health vars", () => {
+    const result = configSchema.safeParse({ ...ANTHROPIC_BASE });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.socketHealthIntervalMs).toBe(30_000);
+      expect(result.data.socketHealthLeakSamples).toBe(3);
+      expect(result.data.socketHealthSelfHealSamples).toBe(10);
+      expect(result.data.socketHealthCpuPercent).toBe(90);
+      expect(result.data.socketHealthSelfHealEnabled).toBe(false);
+    }
+  });
+
+  it("accepts explicit overrides and coerces numeric strings", () => {
+    const result = configSchema.safeParse({
+      ...ANTHROPIC_BASE,
+      socketHealthIntervalMs: "60000",
+      socketHealthLeakSamples: "5",
+      socketHealthSelfHealSamples: "20",
+      socketHealthCpuPercent: "95",
+      socketHealthSelfHealEnabled: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.socketHealthIntervalMs).toBe(60_000);
+      expect(result.data.socketHealthLeakSamples).toBe(5);
+      expect(result.data.socketHealthSelfHealSamples).toBe(20);
+      expect(result.data.socketHealthCpuPercent).toBe(95);
+      expect(result.data.socketHealthSelfHealEnabled).toBe(true);
+    }
+  });
+
+  it("allows interval 0 through zod so the consumer can treat it as disabled", () => {
+    // Bounds are clamped in socket-health.ts, not here, so `0` must survive
+    // validation rather than being floored to the 5s minimum.
+    const result = configSchema.safeParse({ ...ANTHROPIC_BASE, socketHealthIntervalMs: 0 });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.socketHealthIntervalMs).toBe(0);
+  });
+
+  it("does not clamp out-of-range numbers in zod (clamp is at the consumer)", () => {
+    // A leakSamples of 1 is unsafe but must pass schema validation; the
+    // socket-health arming path is the single place that clamps it to >= 2.
+    const result = configSchema.safeParse({
+      ...ANTHROPIC_BASE,
+      socketHealthLeakSamples: 1,
+      socketHealthCpuPercent: 10,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.socketHealthLeakSamples).toBe(1);
+      expect(result.data.socketHealthCpuPercent).toBe(10);
+    }
+  });
+
+  it("rejects negative numbers but accepts 0 for the fail-open threshold knobs", () => {
+    // Negatives are nonsense and rejected. A `0` (typo) is accepted by the
+    // schema and floored to the safe minimum at the consumer (`clampThresholds`)
+    // rather than crashing the orchestrator over a diagnostic knob.
+    expect(configSchema.safeParse({ ...ANTHROPIC_BASE, socketHealthIntervalMs: -1 }).success).toBe(
+      false,
+    );
+    expect(configSchema.safeParse({ ...ANTHROPIC_BASE, socketHealthLeakSamples: -1 }).success).toBe(
+      false,
+    );
+    expect(configSchema.safeParse({ ...ANTHROPIC_BASE, socketHealthCpuPercent: -1 }).success).toBe(
+      false,
+    );
+
+    const zeroed = configSchema.safeParse({
+      ...ANTHROPIC_BASE,
+      socketHealthLeakSamples: 0,
+      socketHealthSelfHealSamples: 0,
+      socketHealthCpuPercent: 0,
+    });
+    expect(zeroed.success).toBe(true);
+    if (zeroed.success) {
+      expect(zeroed.data.socketHealthLeakSamples).toBe(0);
+      expect(zeroed.data.socketHealthCpuPercent).toBe(0);
+    }
+  });
+
+  it("rejects a non-integer cpu percent", () => {
+    expect(
+      configSchema.safeParse({ ...ANTHROPIC_BASE, socketHealthCpuPercent: 90.5 }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an unparseable boolean via parseBooleanEnv", () => {
+    expect(() => parseBooleanEnv("SOCKET_HEALTH_SELF_HEAL_ENABLED", "maybe")).toThrow();
+  });
+});
+
 describe("parseBooleanEnv", () => {
   it("accepts true/false, 1/0, yes/no case-insensitively", () => {
     for (const v of ["true", "TRUE", "1", "yes", "YES"]) {

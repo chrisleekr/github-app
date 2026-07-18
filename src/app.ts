@@ -35,6 +35,7 @@ import {
 } from "./orchestrator/liveness-reaper";
 import { type ProposalPollerHandle, startProposalPoller } from "./orchestrator/proposal-poller";
 import { startQueueWorker, stopQueueWorker } from "./orchestrator/queue-worker";
+import { startSocketHealthWatchdog, stopSocketHealthWatchdog } from "./orchestrator/socket-health";
 import {
   closeValkey,
   connectValkey,
@@ -503,6 +504,21 @@ async function runStartupChecks(): Promise<void> {
   // even when no webhook is arriving to trigger an on-demand read (issue #174).
   startFleetSnapshot(config.fleetSnapshotIntervalMs);
 
+  // CLOSE_WAIT socket-spin watchdog for the HTTP listener (issue #265). Does
+  // not fix #264, it detects the signature and structurally logs it, and
+  // optionally self-heals by exiting. Fire-and-forget: the probe reads procfs
+  // and must never delay startup or the listener.
+  void startSocketHealthWatchdog({
+    intervalMs: config.socketHealthIntervalMs,
+    port: config.port,
+    leakSamples: config.socketHealthLeakSamples,
+    selfHealSamples: config.socketHealthSelfHealSamples,
+    cpuPercent: config.socketHealthCpuPercent,
+    selfHealEnabled: config.socketHealthSelfHealEnabled,
+  }).catch((err: unknown) => {
+    logger.error({ err }, "Socket health watchdog failed to start, continuing");
+  });
+
   startWebSocketServer();
   logger.info({ wsPort: config.wsPort }, "Orchestrator WebSocket server started");
 
@@ -747,6 +763,14 @@ async function handleSchedulerRun(
 function shutdown(signal: string): void {
   logger.info({ signal }, "Received shutdown signal");
   isReady = false;
+
+  // Disarm the socket-health watchdog BEFORE server.close(). Stuck CLOSE_WAIT
+  // sockets (the exact condition the watchdog detects) can block server.close()
+  // from ever completing, so its callback below may never run. Left armed, the
+  // watchdog would keep sampling through the force-exit window and could
+  // exit(75) during a normal shutdown, polluting the "deliberate self-heal"
+  // signal. Disarm here so a graceful shutdown never trips it.
+  stopSocketHealthWatchdog();
 
   server.close(() => {
     void (async (): Promise<void> => {
