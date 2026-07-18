@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -2279,6 +2279,31 @@
 <td>Cadence of the periodic <code>fleet.snapshot</code> gauge log (queue depth / daemon counts / free + busy slots). <code>0</code> disables it (inline-mode local dev). See <a href="../observability/#fleet-snapshot-fields">Fleet snapshot fields</a>.</td>
 </tr>
 <tr>
+<td><code>SOCKET_HEALTH_INTERVAL_MS</code></td>
+<td><code>30000</code> (clamp 5000-300000; <code>0</code> disables)</td>
+<td>Cadence of the CLOSE_WAIT socket-spin watchdog (issue #265). <code>0</code> disables it (e.g. no procfs in local dev). Does not fix #264, it detects and structurally logs the signature. See <a href="../observability/#socket-health-watchdog-events">Socket health watchdog events</a>.</td>
+</tr>
+<tr>
+<td><code>SOCKET_HEALTH_LEAK_SAMPLES</code></td>
+<td><code>3</code> (clamp 2-100)</td>
+<td>Consecutive samples a CLOSE_WAIT socket must survive before it is logged as a leak. Lower is noisier; the floor of 2 stops a transient socket from being flagged.</td>
+</tr>
+<tr>
+<td><code>SOCKET_HEALTH_SELF_HEAL_SAMPLES</code></td>
+<td><code>10</code> (clamp 2-1000)</td>
+<td>Consecutive samples a leak must persist, alongside a pinned core, before it is treated as a spin.</td>
+</tr>
+<tr>
+<td><code>SOCKET_HEALTH_CPU_PERCENT</code></td>
+<td><code>90</code> (clamp 50-100)</td>
+<td>CPU floor for a spin, as a percentage of one core. CPU alone is never sufficient: a 13.5s <code>scheduler.scan</code> legitimately burns a core. Only persistent CLOSE_WAIT plus this floor escalates to a spin.</td>
+</tr>
+<tr>
+<td><code>SOCKET_HEALTH_SELF_HEAL_ENABLED</code></td>
+<td><code>false</code></td>
+<td>When <code>true</code>, a suspected spin exits the process with code <code>75</code> (EX_TEMPFAIL) so k8s restarts the pod and bounds the burn. The distinct code lets <code>lastState.terminated.exitCode</code> tell a self-heal from a real crash.</td>
+</tr>
+<tr>
 <td><code>STALE_EXECUTION_THRESHOLD_MS</code></td>
 <td><code>3600000</code></td>
 <td>How long a <code>running</code> execution may sit before the watcher fails it. Set <code>≥ AGENT_TIMEOUT_MS</code>.</td>
@@ -2612,7 +2637,7 @@ before committing:</p>
    no schema change needed.</li>
 </ol>
 <h2 id="prompt-cache-layout">Prompt cache layout<a class="headerlink" href="#prompt-cache-layout" title="Permanent link">&para;</a></h2>
-<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:582#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:208</code> for the runtime guard.</p>
+<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:604#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:208</code> for the runtime guard.</p>
 <table>
 <thead>
 <tr>
@@ -2830,7 +2855,7 @@ before committing:</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tabs", "navigation.sections", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.select", "content.code.annotate", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

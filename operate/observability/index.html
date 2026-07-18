@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1455,6 +1455,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#socket-health-watchdog-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Socket health watchdog events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#aggregate-reporting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2271,6 +2282,17 @@
     <span class="md-ellipsis">
       
         K8s spawn log fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#socket-health-watchdog-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Socket health watchdog events
       
     </span>
   </a>
@@ -3498,6 +3520,46 @@ daemon executor.</p>
 </tbody>
 </table>
 <p><code>api_call_ms</code> is the <code>createNamespacedPod</code> round-trip wall-clock; present on <code>succeeded</code> and on <code>api-rejected</code>/<code>api-unavailable</code> failures, absent on <code>infra-absent</code>/<code>auth-load-failed</code> (which throw before any K8s call). <code>kind</code> (<code>EphemeralSpawnErrorKind</code>): <code>infra-absent</code>, <code>auth-load-failed</code>, <code>api-rejected</code> (4xx), <code>api-unavailable</code> (5xx/network). These events add the by-kind and by-latency breakdown that the <code>dispatch_reason=ephemeral-spawn-failed</code> aggregate lacks.</p>
+<h2 id="socket-health-watchdog-events">Socket health watchdog events<a class="headerlink" href="#socket-health-watchdog-events" title="Permanent link">&para;</a></h2>
+<p>The orchestrator runs a CLOSE_WAIT socket-spin watchdog on the HTTP listener (<code>src/orchestrator/socket-health.ts</code>, cadence <code>SOCKET_HEALTH_INTERVAL_MS</code>, default 30s). It exists because of issue #264: the process once burned exactly 1.000 CPU core for 14 days in an EPOLLRDHUP storm over ~7 CLOSE_WAIT sockets, then died with <code>reason=Error</code> and left nothing to read.</p>
+<p>This watchdog does <strong>not</strong> fix #264. It detects the signature and logs it structurally so the next occurrence is diagnosable from logs alone, and optionally self-heals. The discriminator is <strong>persistent CLOSE_WAIT sockets</strong>, not CPU: a pinned core alone is never sufficient, because a 13.5s <code>scheduler.scan</code> legitimately burns a core. CPU only escalates an already-persistent leak from detection to a suspected spin. Event-key constants live in <code>src/orchestrator/socket-health-log-fields.ts:21#SOCKET_HEALTH_LOG_EVENTS</code>, and the co-located test pins each event's fields against <code>.strict()</code> Zod schemas so a field rename cannot go unnoticed.</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Level</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>socket.close_wait.detected</code></td>
+<td>warn</td>
+<td>CLOSE_WAIT sockets survived <code>SOCKET_HEALTH_LEAK_SAMPLES</code> samples. Carries <code>close_wait_sockets</code>, <code>window_ms</code>, <code>cpu_cores_used</code>, and up to 20 <code>sockets[]</code> with <code>inode</code>/<code>local</code>/<code>remote</code>/<code>age_ms</code>/<code>samples</code>.</td>
+</tr>
+<tr>
+<td><code>socket.close_wait.spin_suspected</code></td>
+<td>warn</td>
+<td>The full #264 signature: a persistent leak plus CPU at or above <code>SOCKET_HEALTH_CPU_PERCENT</code>. Adds <code>self_heal_enabled</code>.</td>
+</tr>
+<tr>
+<td><code>socket.close_wait.self_heal_exit</code></td>
+<td>error</td>
+<td>Emitted immediately before a deliberate self-heal exit (only when self-heal is enabled).</td>
+</tr>
+<tr>
+<td><code>socket.watchdog.sample_failed</code></td>
+<td>warn</td>
+<td>A sample could not read procfs. Logged at most once per watchdog lifetime so a persistent fault cannot bury the leak.</td>
+</tr>
+<tr>
+<td><code>socket.watchdog.disabled</code></td>
+<td>info</td>
+<td>The watchdog armed no timer, either <code>SOCKET_HEALTH_INTERVAL_MS=0</code> or no readable <code>/proc/net/tcp</code> (non-Linux dev host).</td>
+</tr>
+</tbody>
+</table>
+<p>When <code>SOCKET_HEALTH_SELF_HEAL_ENABLED=true</code>, a suspected spin exits the process with code <strong>75 (EX_TEMPFAIL)</strong> so k8s restarts the pod and bounds the burn. The code is deliberately not <code>1</code>: it lets <code>lastState.terminated.exitCode</code> distinguish a deliberate self-heal from a real crash, exactly the ambiguity that made the original #264 death undiagnosable.</p>
 <h2 id="aggregate-reporting">Aggregate reporting<a class="headerlink" href="#aggregate-reporting" title="Permanent link">&para;</a></h2>
 <p>When <code>DATABASE_URL</code> is set, helpers in <code>src/db/queries/dispatch-stats.ts</code> expose the most operator-relevant aggregates:</p>
 <table>
@@ -3534,6 +3596,7 @@ daemon executor.</p>
 <li><strong>Heartbeat drift.</strong> Daemons missing heartbeats past <code>HEARTBEAT_TIMEOUT_MS</code> get evicted; sustained eviction points at network or resource-floor issues. A <code>daemon.heartbeat.timeout</code> rate above baseline is the log-side signal.</li>
 <li><strong>Daemons refusing work.</strong> A sustained <code>event:"dispatcher.offer.rejected"</code> rate (group by <code>reason</code>) means daemons are bouncing offers, a capacity or capability mismatch, before the queue visibly backs up.</li>
 <li><strong>Offer round-trip latency.</strong> A p99 regression on <code>offer_latency_ms</code> for <code>event:"dispatcher.offer.accepted"</code> flags a daemon that is responding but slow (GC pause, capability rescan stall, WebSocket back-pressure), eating dispatch headroom without tripping the heartbeat timeout.</li>
+<li><strong>Socket spin (issue #264).</strong> Any <code>event:"socket.close_wait.spin_suspected"</code> is the EPOLLRDHUP-storm signature, persistent CLOSE_WAIT plus a pinned core. Page on it; a <code>socket.close_wait.self_heal_exit</code> (or a pod restart with <code>exitCode=75</code>) means the watchdog bounded the burn for you, but the root cause is still unfixed.</li>
 <li><strong>OOM / crash loops.</strong> Standard infra alerts. Durable idempotency means a restart will not replay a processed event.</li>
 <li><strong>Ship terminal-blocker rate.</strong> A spike in <code>ship.intent.transition</code> events with <code>to_status:human_took_over</code> and <code>terminal_blocker_category:flake-cap</code> points at PR-flake regressions, not bot misbehaviour.</li>
 <li><strong>Circuit breaker trips.</strong> Alert on <code>event:"circuit.failure" AND consecutive_failures &gt;= 3</code> for a pre-trip head start; facet <code>circuit.opened</code> by <code>latency_tripped</code> (<code>true</code> ⇒ raise timeouts, <code>false</code> ⇒ page on-call); chart <code>open_ms</code> from <code>circuit.closed</code> for MTTR.</li>
@@ -3718,7 +3781,7 @@ daemon executor.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tabs", "navigation.sections", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.select", "content.code.annotate", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
