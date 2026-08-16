@@ -138,7 +138,7 @@
     "hono": "4.12.29",
     "path-to-regexp": "8.4.2",
     "picomatch": "4.0.5",
-    "protobufjs": "7.6.4",
+    "protobufjs": "7.6.5",
     "ws": "8.21.0",
     "yaml": "2.9.0"
   }
