@@ -127,7 +127,7 @@
     ]
   },
   "overrides": {
-    "@anthropic-ai/sdk": "0.117.1",
+    "@anthropic-ai/sdk": "0.120.0",
     "@hono/node-server": "2.1.1",
     "adm-zip": "0.6.0",
     "express-rate-limit": "8.5.2",
