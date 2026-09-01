@@ -2,14 +2,20 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
+import picomatch from "picomatch";
+
 import { config } from "../config";
 import { resolveMcpServers } from "../mcp/registry";
-import type { BotContext, EnrichedBotContext, ExecutionResult } from "../types";
+import type { AgentPolicy } from "../shared/ws-messages";
+import type { BotContext, EnrichedBotContext, ExecutionResult, FetchedData } from "../types";
+import { resolveSelfLogin } from "../utils/bot-identity";
 import { retryWithBackoff } from "../utils/retry";
 import {
+  isSafeGlob,
   pickApplicableLearnings,
   renderReviewLearningsBlock,
 } from "../utils/review-learnings-filter";
+import { applyAgentPolicy } from "./agent-policy";
 import { checkoutRepo } from "./checkout";
 import { executeAgent } from "./executor";
 import { fetchGitHubData } from "./fetcher";
@@ -68,10 +74,13 @@ function readDaemonActionsFile(
         },
         "Read daemon actions",
       );
-      const result: DaemonActionsResult = { learnings, deletions };
-      if (reviewLearningSaves.length > 0) result.reviewLearningSaves = reviewLearningSaves;
-      if (reviewLearningDeletes.length > 0) result.reviewLearningDeletes = reviewLearningDeletes;
-      return result;
+      const result = {
+        learnings,
+        deletions,
+        ...(reviewLearningSaves.length > 0 ? { reviewLearningSaves } : {}),
+        ...(reviewLearningDeletes.length > 0 ? { reviewLearningDeletes } : {}),
+      };
+      return result as DaemonActionsResult;
     }
   } catch (err) {
     log.warn({ err }, "Failed to read daemon actions file");
@@ -133,13 +142,25 @@ async function readCapturedFiles(
  * properties: we must omit them instead. Extracted so the conditional
  * branches don't count against runPipeline's cyclomatic complexity budget.
  */
-function buildFinalOpts(result: ExecutionResult): {
+function buildFinalOpts(
+  result: ExecutionResult,
+  configWarning: string | undefined,
+): {
   success: boolean;
   durationMs?: number;
   costUsd?: number;
+  configWarning?: string;
 } {
-  const opts: { success: boolean; durationMs?: number; costUsd?: number } = {
+  const opts: {
+    success: boolean;
+    durationMs?: number;
+    costUsd?: number;
+    configWarning?: string;
+  } = {
     success: result.success,
+    // Re-append the invalid-config banner: the agent's update_claude_comment
+    // replaces the whole body, so the create-time banner is usually gone.
+    ...(configWarning !== undefined ? { configWarning } : {}),
   };
   if (result.durationMs !== undefined) {
     opts.durationMs = result.durationMs;
@@ -152,21 +173,20 @@ function buildFinalOpts(result: ExecutionResult): {
   // upstream error string can carry credentials (octokit error stacks
   // include the request URL with the installation token), file paths, or
   // other sensitive context. The error message is still propagated to the
-  // caller via the returned `ExecutionResult` for operator-side surfaces
-  // (logs, DB `state.failedReason`, orchestrator quota-retry detection).
+  // caller via the returned `ExecutionResult` for classification. Worker
+  // boundaries must redact it before logs, persistence, or transport.
   return opts;
 }
 
 /**
- * Optional overrides for the daemon (via `job:payload`) to honor
- * orchestrator-provided execution limits and to track the workspace path.
+ * Optional worker overrides for execution limits and workspace tracking.
  */
 export interface RunPipelineOverrides {
   maxTurns?: number;
   allowedTools?: string[];
   /**
    * Fires once the pipeline has cloned the repo and knows the workspace path.
-   * Used by the daemon to track workDir for cancellation and SIGKILL cleanup.
+   * Used by a shared daemon to track workDir for cancellation and cleanup.
    */
   onWorkDirReady?: (workDir: string) => void;
   /**
@@ -191,7 +211,7 @@ export interface RunPipelineOverrides {
    * the Claude Agent SDK's `query()` via its `abortController` option). When
    * fired, the SDK iterator is torn down, the Claude Code subprocess and MCP
    * servers exit, and the pipeline returns `success: false`. Used by the
-   * daemon to make `handleJobCancel` actually terminate the agent.
+   * worker to terminate the agent on a shared-daemon cancel or runner fence.
    */
   signal?: AbortSignal;
   /**
@@ -240,6 +260,16 @@ export interface RunPipelineOverrides {
    * orchestrator's full pre-loaded set.
    */
   unfilteredReviewLearnings?: boolean;
+  /**
+   * Per-repo agent policy resolved from `.github-app.yaml` ("Gate 2"), shipped
+   * on the job payload and already clamped against the server ceilings by
+   * `src/repo-config/effective.ts`. Absent for repos with no config file, in
+   * which case every knob below keeps its pre-Gate-2 behaviour.
+   *
+   * `maxTurns` is deliberately not here: it rides the existing top-level
+   * `maxTurns` override so the cap keeps one source of truth.
+   */
+  policy?: AgentPolicy;
 }
 
 /**
@@ -262,8 +292,45 @@ function writeEnvFile(
 }
 
 /**
- * Claude Agent SDK execution pipeline. Every dispatched job runs through this
- * function: currently only invoked by the daemon job-executor.
+ * Drop changed files matching any `review.path_filters` glob.
+ *
+ * Exclusion semantics, matching the schema docs: a file is hidden from the
+ * agent when it matches ANY filter. Applied to the fetched data once, so the
+ * prompt, the review-learnings applicability filter, and the `🧠 Learnings
+ * used` footer all agree on which files this review covers.
+ *
+ * Only `changedFiles` is filtered. Inline review comments are deliberately
+ * left alone: `resolve` answers threads, and hiding a thread would leave the
+ * bot unable to reply to a maintainer who asked about a generated file.
+ *
+ * Callers pass the `isSafeGlob`-accepted list. The filter runs on that same
+ * list the prompt's skip instruction is built from, so the file list and the
+ * instruction cannot disagree about which globs applied.
+ */
+function applyPathFilters(
+  data: FetchedData,
+  pathFilters: readonly string[],
+  log: { info: (obj: object, msg: string) => void },
+): FetchedData {
+  if (pathFilters.length === 0) return data;
+  const matchers = pathFilters.map((g) => picomatch(g, { dot: true }));
+  const kept = data.changedFiles.filter((f) => !matchers.some((m) => m(f.filename)));
+  if (kept.length === data.changedFiles.length) return data;
+  log.info(
+    {
+      event: "repo_config.path_filters_applied",
+      filterCount: pathFilters.length,
+      excludedCount: data.changedFiles.length - kept.length,
+      keptCount: kept.length,
+    },
+    "Excluded changed files matching review.path_filters",
+  );
+  return { ...data, changedFiles: kept };
+}
+
+/**
+ * Claude Agent SDK execution pipeline used by the shared-daemon direct rail
+ * and by isolated workflow handlers that need repository execution.
  *
  * Pipeline:
  * 1. Create tracking comment ("Working...")
@@ -297,6 +364,7 @@ export async function runPipeline(
 
   try {
     ctx.log.info({ event: CORE_PIPELINE_LOG_EVENTS.started }, "Pipeline started");
+    overrides.signal?.throwIfAborted();
 
     if (callerOwnsTrackingComment) {
       trackingCommentId = overrides.trackingCommentId;
@@ -321,6 +389,7 @@ export async function runPipeline(
       );
     }
     const resolvedTrackingCommentId = trackingCommentId;
+    overrides.signal?.throwIfAborted();
 
     const installationToken = await timeStage(
       ctx.log,
@@ -329,7 +398,11 @@ export async function runPipeline(
       stageTracker,
     );
 
-    const data = await timeStage(
+    // Who our GitHub writes are attributed to, for the inline-comment dedup.
+    const selfLogin = await resolveSelfLogin();
+    overrides.signal?.throwIfAborted();
+
+    const fetched = await timeStage(
       ctx.log,
       "github.fetch",
       () =>
@@ -341,11 +414,44 @@ export async function runPipeline(
         }),
       stageTracker,
     );
+    // One accepted list for both consumers: the changed-file filter and the
+    // prompt's skip instruction. A glob `isSafeGlob` rejects filters nothing
+    // (config is owner-trusted, and a run showing too many files beats a run
+    // that never happens), so it must not reach the prompt either.
+    const requestedFilters = overrides.policy?.pathFilters ?? [];
+    const acceptedFilters = requestedFilters.filter(isSafeGlob);
+    if (acceptedFilters.length < requestedFilters.length) {
+      // Count only: a rejected glob is attacker-adjacent repo config and its
+      // text buys an operator nothing the count does not.
+      ctx.log.warn(
+        {
+          event: "repo_config.path_filters_rejected",
+          rejectedCount: requestedFilters.length - acceptedFilters.length,
+        },
+        "Ignored review.path_filters globs rejected by the glob-safety guard",
+      );
+    }
+    const data = applyPathFilters(fetched, acceptedFilters, ctx.log);
+    overrides.signal?.throwIfAborted();
 
     const enrichedCtx: EnrichedBotContext = {
       ...ctx,
       headBranch: data.headBranch ?? ctx.headBranch ?? ctx.defaultBranch,
       baseBranch: data.baseBranch ?? ctx.baseBranch ?? ctx.defaultBranch,
+      // No review-only gate here, unlike reviewLearnings below. The repo
+      // schema only accepts `instructions` under `workflows.review`, so the
+      // value cannot be authored for another workflow. That gate lives on the
+      // repo's YAML, not on the wire: `AgentPolicySchema.instructions` is
+      // workflow-agnostic, so a producer that sets it for a non-review
+      // workflow would land here unchallenged. reviewLearnings needs its own
+      // gate below because it is loaded uniformly into every job.
+      ...(overrides.policy?.instructions !== undefined
+        ? { reviewInstructions: overrides.policy.instructions }
+        : {}),
+      // Dropping the files from `changedFiles` only hides the list. The agent
+      // is told to run `git diff`, so the globs have to reach the prompt as an
+      // explicit skip instruction or the excluded files come back in full.
+      ...(acceptedFilters.length > 0 ? { reviewExcludedPaths: acceptedFilters } : {}),
     };
     // Handler-level gate: review_learnings are owner-loaded into every
     // job's ctx for uniform dispatch, but only the review/resolve handlers
@@ -406,6 +512,7 @@ export async function runPipeline(
       return { success: true, durationMs: 0, costUsd: 0, numTurns: 0, dryRun: true };
     }
 
+    overrides.signal?.throwIfAborted();
     const { workDir, cleanup } = await timeStage(
       enrichedCtx.log,
       "repo.clone",
@@ -438,6 +545,10 @@ export async function runPipeline(
         resolvedTrackingCommentId,
         installationToken,
         {
+          // Resolved here, not inside the registry: the MCP servers authenticate
+          // with `installationToken` above, which is the PAT when one is set, so
+          // their writes carry the PAT owner's login rather than the App bot's.
+          ...(selfLogin !== null ? { selfLogin } : {}),
           workDir,
           ...(enrichedCtx.repoMemory !== undefined ? { repoMemory: enrichedCtx.repoMemory } : {}),
           ...(enrichedCtx.reviewLearnings !== undefined
@@ -456,7 +567,7 @@ export async function runPipeline(
         overrides.enableResolveReviewThread === true && enrichedCtx.isPR
           ? [...baseAllowedTools, "mcp__resolve_review_thread__resolve_review_thread"]
           : baseAllowedTools;
-      const allowedTools = githubStateEnabled
+      const withGithubState = githubStateEnabled
         ? [
             ...withResolveTool,
             "mcp__github_state__get_pr_state_check_rollup",
@@ -469,28 +580,42 @@ export async function runPipeline(
           ]
         : withResolveTool;
 
-      const result = await timeStage(
-        enrichedCtx.log,
-        "executor.invoke",
-        () =>
-          executeAgent({
-            ctx: enrichedCtx,
-            prompt,
-            mcpServers,
-            workDir,
-            artifactsDir,
-            allowedTools,
-            installationToken,
-            ...(overrides.maxTurns !== undefined ? { maxTurns: overrides.maxTurns } : {}),
-            ...(overrides.signal !== undefined ? { signal: overrides.signal } : {}),
-            ...(promptParts !== undefined ? { promptParts } : {}),
-          }),
-        stageTracker,
-      );
+      // Shared with `plan` / `triage`, which bypass the pipeline, so they cannot drift.
+      const appliedPolicy = applyAgentPolicy({
+        baseAllowedTools: withGithubState,
+        ...(overrides.policy !== undefined ? { policy: overrides.policy } : {}),
+        ...(overrides.maxTurns !== undefined ? { maxTurns: overrides.maxTurns } : {}),
+        ...(overrides.signal !== undefined ? { signal: overrides.signal } : {}),
+      });
+
+      // `finally`, because a raw setTimeout keeps Bun's event loop alive for
+      // the rest of the deadline (AbortSignal.timeout did not).
+      let result: ExecutionResult;
+      try {
+        result = await timeStage(
+          enrichedCtx.log,
+          "executor.invoke",
+          () =>
+            executeAgent({
+              ctx: enrichedCtx,
+              prompt,
+              mcpServers,
+              workDir,
+              artifactsDir,
+              installationToken,
+              ...appliedPolicy.options,
+              ...(promptParts !== undefined ? { promptParts } : {}),
+            }),
+          stageTracker,
+        );
+      } finally {
+        appliedPolicy.dispose();
+      }
+      appliedPolicy.options.signal?.throwIfAborted();
 
       if (resolvedTrackingCommentId !== undefined && !callerOwnsTrackingComment) {
         try {
-          const finalOpts = buildFinalOpts(result);
+          const finalOpts = buildFinalOpts(result, overrides.policy?.warning);
           await timeStage(
             enrichedCtx.log,
             "trackingComment.finalize",
@@ -616,7 +741,11 @@ export async function runPipeline(
       "Request processing failed",
     );
 
-    if (trackingCommentId !== undefined && !callerOwnsTrackingComment) {
+    if (
+      overrides.signal?.aborted !== true &&
+      trackingCommentId !== undefined &&
+      !callerOwnsTrackingComment
+    ) {
       const commentId = trackingCommentId;
       try {
         await retryWithBackoff(
@@ -627,6 +756,11 @@ export async function runPipeline(
               // out via the returned ExecutionResult.errorMessage for
               // operator-side surfaces only.
               error: "An internal error occurred. Check server logs for details.",
+              // Mirrors the success path's `buildFinalOpts(result, warning)`:
+              // the config banner must survive a failed run too.
+              ...(overrides.policy?.warning !== undefined
+                ? { configWarning: overrides.policy.warning }
+                : {}),
             }),
           {
             maxAttempts: 3,

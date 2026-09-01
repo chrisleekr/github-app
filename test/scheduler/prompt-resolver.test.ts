@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import type { Octokit } from "octokit";
 import type { Logger } from "pino";
 
-import { promptRefSchema } from "./config-schema";
-import { resolvePrompt } from "./prompt-resolver";
+import { promptRefSchema } from "../../src/repo-config/schema";
+import { resolvePrompt } from "../../src/scheduler/prompt-resolver";
 
 const noopLog = {
   warn: () => undefined,

@@ -159,7 +159,7 @@ The agent executor (`src/core/executor.ts:208`) supports two prompt-layout strat
 
 The `cacheable` layout splits the prompt by trust:
 
-- **Trusted scaffolding** (`security_directive`, `freshness_directive`, workflow steps, commit / CAPABILITIES boilerplate) → `systemPrompt.append`. Built by `buildPromptParts()` in `src/core/prompt-builder.ts:448#buildPromptParts`. Byte-identical across jobs of the same shape, so the system-prompt prefix becomes a stable cache key.
+- **Trusted scaffolding** (`security_directive`, `freshness_directive`, workflow steps, commit / CAPABILITIES boilerplate) → `systemPrompt.append`. Built by `buildPromptParts()` in `src/core/prompt-builder.ts:481#buildPromptParts`. Byte-identical across jobs of the same shape, so the system-prompt prefix becomes a stable cache key.
 - **Attacker-influenceable data** (`formatted_context` with title / body / comments, `<untrusted_*>` spotlight blocks with per-call nonce, per-call metadata like delivery ID) → user-role message.
 - **Dynamic preset sections** stripped via `excludeDynamicSections: true`.
 

@@ -1,4 +1,9 @@
-import { type ModelUsage, query, type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import {
+  type ModelUsage,
+  type Query,
+  query,
+  type SDKResultMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 
 import { config } from "../config";
 import type { BotContext, ExecutionResult, McpServerConfig, ModelUsageEntry } from "../types";
@@ -96,10 +101,16 @@ const ENV_DENY_KEYS = new Set<string>([
   "GITHUB_PERSONAL_ACCESS_TOKEN",
   "DAEMON_AUTH_TOKEN",
   "DAEMON_AUTH_TOKEN_PREVIOUS",
+  "WORKFLOW_RUNNER_CAPABILITY_SECRET",
+  "WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS",
   "DATABASE_URL",
   "VALKEY_URL",
   "REDIS_URL",
   "CONTEXT7_API_KEY",
+  "GH_ENTERPRISE_TOKEN",
+  "GITHUB_ENTERPRISE_TOKEN",
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
 ]);
 
 const ENV_DENY_PREFIXES = ["GITHUB_APP_", "GITHUB_WEBHOOK_"];
@@ -245,11 +256,19 @@ export async function executeAgent({
   // Cancellation controller plumbed into the SDK so the wall-clock timer and
   // any caller-supplied AbortSignal actually tear down the `query()` async
   // iterator (and the underlying Claude Code subprocess + MCP servers).
-  // Without this, the SDK keeps streaming tokens and writing to the workspace
-  // long after `executeAgent` returns, see issue #16.
+  // Without this, the SDK can keep streaming tokens and writing to the
+  // workspace after `executeAgent` returns.
   const controller = new AbortController();
+  let activeQuery: Query | undefined;
+  let queryClosed = false;
+  const closeActiveQuery = (): void => {
+    if (queryClosed || activeQuery === undefined) return;
+    queryClosed = true;
+    activeQuery.close();
+  };
   const onCallerAbort = (): void => {
     controller.abort(signal?.reason);
+    closeActiveQuery();
   };
   if (signal !== undefined) {
     if (signal.aborted) {
@@ -268,9 +287,10 @@ export async function executeAgent({
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
     allowedTools,
-    // ToolSearch enumerates only deferred (lazily-loaded) tools. Opus 4.7
-    // misreads its output as the authoritative tool catalog, then concludes
-    // that eagerly-loaded MCP tools (mcp__github_inline_comment__*,
+    // ToolSearch enumerates only deferred (lazily-loaded) tools. Observed on
+    // Opus 4.7, blocked for every model since the failure is not version
+    // specific: the model reads its output as the authoritative tool catalog,
+    // then concludes that eagerly-loaded MCP tools (mcp__github_inline_comment__*,
     // mcp__github_comment__*) are unavailable and silently downgrades to a
     // single fat tracking-comment dump. Block it so the model uses the eager
     // tool list delivered in the SDK init message instead.
@@ -375,6 +395,7 @@ export async function executeAgent({
   const timeoutError = new Error(`Agent execution timed out after ${config.agentTimeoutMs}ms`);
   const timer = setTimeout(() => {
     controller.abort(timeoutError);
+    closeActiveQuery();
   }, config.agentTimeoutMs);
 
   // Report tool_use blocks that never received their tool_result (#237). The
@@ -403,7 +424,9 @@ export async function executeAgent({
     const sdkPrompt =
       useCacheableLayout && promptParts !== undefined ? promptParts.userMessage : prompt;
     const agentLoop = (async (): Promise<void> => {
-      for await (const message of query({ prompt: sdkPrompt, options: queryOptions })) {
+      activeQuery = query({ prompt: sdkPrompt, options: queryOptions });
+      if (controller.signal.aborted) closeActiveQuery();
+      for await (const message of activeQuery) {
         const msg = message as Record<string, unknown>;
         const msgType = typeof msg["type"] === "string" ? msg["type"] : "unknown";
 
@@ -499,14 +522,18 @@ export async function executeAgent({
     })();
 
     await agentLoop;
+    if (controller.signal.aborted) {
+      const reason: unknown = controller.signal.reason;
+      throw reason instanceof Error ? reason : new Error("Agent execution aborted");
+    }
   } catch (error) {
     const durationMs = Date.now() - startTime;
-    // Identity comparison on the abort reason gives us the right answer even
-    // when a caller-supplied signal fires nanoseconds before the timer (the
-    // controller's first abort wins; subsequent calls are no-ops). The SDK
-    // rethrows the abort reason, so for timeout/caller-cancel paths `error`
-    // is the same instance held in controller.signal.reason.
-    const timedOut = controller.signal.reason === timeoutError;
+    // Read the reason off the controller: the SDK throws its own AbortError
+    // and discards the caller's, so a per-repo `timeout:` only survives here.
+    // Identity comparison stays correct when a caller signal fires just before
+    // the timer, since the controller's first abort wins.
+    const abortReason: unknown = controller.signal.aborted ? controller.signal.reason : undefined;
+    const timedOut = abortReason === timeoutError;
     log.error({ err: error, durationMs, timedOut }, "Claude Agent SDK execution failed");
 
     return {
@@ -514,12 +541,15 @@ export async function executeAgent({
       durationMs,
       errorMessage: timedOut
         ? `Agent execution timed out after ${String(durationMs)}ms`
-        : error instanceof Error
-          ? error.message
-          : String(error),
+        : abortReason instanceof Error
+          ? abortReason.message
+          : error instanceof Error
+            ? error.message
+            : String(error),
     };
   } finally {
     clearTimeout(timer);
+    closeActiveQuery();
     if (signal !== undefined) {
       signal.removeEventListener("abort", onCallerAbort);
     }

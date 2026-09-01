@@ -1,6 +1,6 @@
 /**
  * Resolve a scheduled action's `prompt` into the final prompt text the daemon
- * runs. Three forms (see `config-schema.ts`):
+ * runs. Three forms (see `../repo-config/schema.ts`):
  *
  *   - inline: the text is used verbatim.
  *   - file:   a single file is fetched and used verbatim.
@@ -17,8 +17,8 @@
 import type { Octokit } from "octokit";
 import type { Logger } from "pino";
 
+import type { PromptRef } from "../repo-config/schema";
 import { isOwnerAllowed } from "../webhook/authorize";
-import type { PromptRef } from "./config-schema";
 
 /** Folder bundles are capped so a pathological directory cannot blow the prompt. */
 const MAX_FOLDER_FILES = 20;

@@ -699,9 +699,20 @@ const configSchema = z
     // every possible merge path.
     schedulerAllowAutoMerge: z.boolean().default(false),
 
-    // Filename the scheduler reads from each installed repo's default
-    // branch root. Default `.github-app.yaml`.
-    schedulerConfigFile: z.string().default(".github-app.yaml"),
+    // Filename read from each installed repo's default-branch root. No
+    // longer scheduler-specific: it now also carries feature toggles, agent
+    // overrides, and trigger filters. Read from REPO_CONFIG_FILE, falling
+    // back to the former SCHEDULER_CONFIG_FILE.
+    //
+    // Trimmed: `blankToUndefined` passes a padded value through, and a stray
+    // space makes `getContent` 404 on every repo. A 404 is deliberately not
+    // logged, so the whole config surface (including `enabled: false` and
+    // `allowed_users`) would go dark fleet-wide with nothing saying why.
+    repoConfigFile: z
+      .string()
+      .transform((str) => str.trim())
+      .pipe(z.string().min(1))
+      .default(".github-app.yaml"),
 
     // --- 15. GitHub API observability (issue #223) ---
 
@@ -916,6 +927,15 @@ export function parseBooleanEnv(name: string, raw: string | undefined): boolean 
 }
 
 /**
+ * Treat a blank env var as unset, so `??` chains and zod `.default()` both
+ * fire. Helm renders an unset optional value as `""`, which is otherwise a
+ * "set" value that skips every fallback.
+ */
+export function blankToUndefined(raw: string | undefined): string | undefined {
+  return raw !== undefined && raw.trim().length > 0 ? raw : undefined;
+}
+
+/**
  * Parse and validate config from environment variables.
  * Throws on invalid/missing required values -- fail fast at startup.
  */
@@ -1074,7 +1094,17 @@ function loadConfig(): Config {
       "SCHEDULER_ALLOW_AUTO_MERGE",
       process.env["SCHEDULER_ALLOW_AUTO_MERGE"],
     ),
-    schedulerConfigFile: process.env["SCHEDULER_CONFIG_FILE"],
+    // SCHEDULER_CONFIG_FILE is the deprecated former name. Kept as a
+    // fallback so an existing deployment does not silently switch files on
+    // upgrade. A one-shot boot warning below flags it.
+    //
+    // Blank counts as unset, matching the warning's guard below. A chart that
+    // renders an unset optional key as "" would otherwise skip both the
+    // fallback and the zod default, leaving an empty path that resolves to
+    // the repo root and marks every repo's config invalid.
+    repoConfigFile:
+      blankToUndefined(process.env["REPO_CONFIG_FILE"]) ??
+      blankToUndefined(process.env["SCHEDULER_CONFIG_FILE"]),
 
     // Group 15, GitHub API observability
     githubApiSlowRequestMs: process.env["GITHUB_API_SLOW_REQUEST_MS"],
@@ -1082,6 +1112,19 @@ function loadConfig(): Config {
 
   assertOauthRequiresAllowlist(cfg);
   assertPatRequiresAllowlist(cfg);
+
+  // The file stopped being scheduler-specific once it grew feature toggles.
+  // The old name still works so an upgrade doesn't silently change which
+  // file is read, but say so once at boot.
+  if (
+    blankToUndefined(process.env["SCHEDULER_CONFIG_FILE"]) !== undefined &&
+    blankToUndefined(process.env["REPO_CONFIG_FILE"]) === undefined
+  ) {
+    console.warn(
+      "[config] SCHEDULER_CONFIG_FILE is deprecated, rename it to REPO_CONFIG_FILE. " +
+        "The old name is still honoured and will be removed in a future major.",
+    );
+  }
 
   if ((cfg.githubPersonalAccessToken?.trim().length ?? 0) > 0) {
     console.warn(

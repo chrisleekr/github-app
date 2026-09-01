@@ -5,9 +5,7 @@ import { buildProviderEnv } from "../../src/core/executor";
 // `buildProviderEnv` uses an explicit allowlist + prefix patterns + deny-set
 // (issue #102, defense layer 1a). Only enumerated keys (or keys matching an
 // allowlist prefix) reach the agent subprocess; explicit deny-keys override.
-// These tests assert BOTH "expected keys forwarded" AND "banned daemon
-// secrets are NEVER present", which is the security property the allowlist
-// was added to enforce.
+// These tests assert both expected keys and the direct-inheritance deny set.
 
 /**
  * Run `fn` with the given env vars set, restoring whatever values
@@ -105,16 +103,20 @@ describe("buildProviderEnv", () => {
     });
   });
 
-  it("never forwards DAEMON_AUTH_TOKEN[_PREVIOUS] to the subprocess", () => {
+  it("never forwards daemon or workflow-runner HMAC roots to the subprocess", () => {
     withEnv(
       {
         DAEMON_AUTH_TOKEN: "rotation-current",
         DAEMON_AUTH_TOKEN_PREVIOUS: "rotation-previous",
+        WORKFLOW_RUNNER_CAPABILITY_SECRET: "runner-capability-current-secret",
+        WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS: "runner-capability-previous-secret",
       },
       () => {
         const env = buildProviderEnv("ghs_token");
         expect(env["DAEMON_AUTH_TOKEN"]).toBeUndefined();
         expect(env["DAEMON_AUTH_TOKEN_PREVIOUS"]).toBeUndefined();
+        expect(env["WORKFLOW_RUNNER_CAPABILITY_SECRET"]).toBeUndefined();
+        expect(env["WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS"]).toBeUndefined();
       },
     );
   });
@@ -140,6 +142,20 @@ describe("buildProviderEnv", () => {
       const env = buildProviderEnv("ghs_token");
       expect(env["CONTEXT7_API_KEY"]).toBeUndefined();
     });
+  });
+
+  it("never forwards dynamic-loader controls to the subprocess", () => {
+    withEnv(
+      {
+        LD_PRELOAD: "/usr/local/lib/github-app/daemon-process-guard.so",
+        LD_LIBRARY_PATH: "/controller-only",
+      },
+      () => {
+        const env = buildProviderEnv("ghs_token");
+        expect(env["LD_PRELOAD"]).toBeUndefined();
+        expect(env["LD_LIBRARY_PATH"]).toBeUndefined();
+      },
+    );
   });
 
   it("never forwards GITHUB_PERSONAL_ACCESS_TOKEN by env name (PAT flows in via resolved GH_TOKEN only)", () => {
