@@ -1206,6 +1206,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-repo-config-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-repo config file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#review-learnings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1851,6 +1862,17 @@
     <span class="md-ellipsis">
       
         Scheduled actions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-repo-config-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-repo config file
       
     </span>
   </a>
@@ -2586,10 +2608,32 @@ for the file schema. Server mode only; a daemon process ignores these.</p>
 <td><code>false</code></td>
 <td>Hard kill-switch for unattended auto-merge. Effective auto-merge requires BOTH this AND a per-action <code>auto_merge: true</code>; otherwise no merge tool runs.</td>
 </tr>
+</tbody>
+</table>
+<h2 id="per-repo-config-file">Per-repo config file<a class="headerlink" href="#per-repo-config-file" title="Permanent link">&para;</a></h2>
+<p>Selects the file each installed repo is read from. Unlike the scheduler
+variables above this is <strong>not</strong> server-mode only: the same document carries
+feature toggles, agent overrides, and trigger filters, so any process that
+resolves repo policy reads it. Only the default branch's copy is ever applied.
+See <a href="../../use/repo-config/">Per-repo configuration</a> for the file schema.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>REPO_CONFIG_FILE</code></td>
+<td><code>.github-app.yaml</code></td>
+<td>Filename read from each installed repo's default-branch root. Trimmed at load: a stray space would 404 on every repo and silence the whole surface with nothing logged.</td>
+</tr>
 <tr>
 <td><code>SCHEDULER_CONFIG_FILE</code></td>
-<td><code>.github-app.yaml</code></td>
-<td>Filename read from each installed repo's default-branch root.</td>
+<td>(unset)</td>
+<td><strong>Deprecated</strong> former name for <code>REPO_CONFIG_FILE</code>. Still honoured as a fallback so an upgrade does not silently change which file is read; logs a one-shot boot warning.</td>
 </tr>
 </tbody>
 </table>
@@ -2655,8 +2699,8 @@ before committing:</p>
 </tbody>
 </table>
 <p><strong>Why this exists.</strong> The SDK's default systemPrompt (<code>{ type: "preset", preset: "claude_code" }</code>) embeds dynamic sections (cwd, platform, shell, OS) directly in the system-prompt prefix. Because each delivery clones to a unique <code>cwd</code> under <code>CLONE_BASE_DIR</code>, the system-prompt prefix is unique per job and the Anthropic prompt cache misses on every invocation, paying the 1-hour TTL <code>ephemeral_1h_input_tokens</code> cache-write surcharge (2× base price) with zero compensating reads.</p>
-<p><strong><code>legacy</code> (default).</strong> Single user-role string built by <code>buildPrompt()</code> in <code>src/core/prompt-builder.ts:155#buildPrompt</code>. SystemPrompt is the unmodified <code>claude_code</code> preset. Backwards-compatible; safe rollback target.</p>
-<p><strong><code>cacheable</code>.</strong> Static scaffolding (<code>security_directive</code>, <code>freshness_directive</code>, workflow steps, commit/CAPABILITIES boilerplate) is lifted into <code>systemPrompt.append</code>, and <code>excludeDynamicSections: true</code> strips cwd / platform / shell / OS from the preset. Built by <code>buildPromptParts()</code> in <code>src/core/prompt-builder.ts:448#buildPromptParts</code>. The user-role message keeps only the per-call dynamic blocks (<code>formatted_context</code>, <code>untrusted_*</code> with per-call nonce, per-call metadata). The append is byte-identical across jobs of the same shape (PR vs issue), so the system-prompt prefix becomes a stable cache key.</p>
+<p><strong><code>legacy</code> (default).</strong> Single user-role string built by <code>buildPrompt()</code> in <code>src/core/prompt-builder.ts:179#buildPrompt</code>. SystemPrompt is the unmodified <code>claude_code</code> preset. Backwards-compatible; safe rollback target.</p>
+<p><strong><code>cacheable</code>.</strong> Static scaffolding (<code>security_directive</code>, <code>freshness_directive</code>, workflow steps, commit/CAPABILITIES boilerplate) is lifted into <code>systemPrompt.append</code>, and <code>excludeDynamicSections: true</code> strips cwd / platform / shell / OS from the preset. Built by <code>buildPromptParts()</code> in <code>src/core/prompt-builder.ts:481#buildPromptParts</code>. The user-role message keeps only the per-call dynamic blocks (<code>formatted_context</code>, <code>untrusted_*</code> with per-call nonce, per-call metadata). The append is byte-identical across jobs of the same shape (PR vs issue), so the system-prompt prefix becomes a stable cache key.</p>
 <p><strong>Rollout.</strong> Flip the variable to <code>cacheable</code>, then verify cache hits by tailing the executor completion log for non-zero <code>cacheReadInputTokens</code>:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>event: Claude Agent SDK execution completed
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>cacheReadInputTokens: &lt;non-zero on the second job of the same shape within 1h&gt;

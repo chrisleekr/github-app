@@ -1,0 +1,2524 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A GitHub App webhook server powered by the Claude Agent SDK.">
+      
+      
+      
+        <link rel="canonical" href="https://chrisleekr.github.io/github-app/use/repo-config/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Per-repo configuration - GitHub App</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        
+        <link rel="stylesheet" href="../../assets/external/fonts.googleapis.com/css.49ea35f2.css">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Per-repo configuration - GitHub App" />
+<meta property="og:description" content="A GitHub App webhook server powered by the Claude Agent SDK." />
+<meta property="og:image" content="https://chrisleekr.github.io/github-app/assets/images/social/use/repo-config.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:url" content="https://chrisleekr.github.io/github-app/use/repo-config/" />
+<meta property="twitter:card" content="summary_large_image" />
+<meta property="twitter:title" content="Per-repo configuration - GitHub App" />
+<meta property="twitter:description" content="A GitHub App webhook server powered by the Claude Agent SDK." />
+<meta property="twitter:image" content="https://chrisleekr.github.io/github-app/assets/images/social/use/repo-config.png" />
+</head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#per-repo-configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="GitHub App" class="md-header__button md-logo" aria-label="GitHub App" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            GitHub App
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Per-repo configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/chrisleekr/github-app" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    chrisleekr/github-app
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../invoking/" class="md-tabs__link">
+          
+  
+  
+  Use the bot
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operate/setup/" class="md-tabs__link">
+          
+  
+  
+  Run the service
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../build/architecture/" class="md-tabs__link">
+          
+  
+  
+  Build on it
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="GitHub App" class="md-nav__button md-logo" aria-label="GitHub App" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    GitHub App
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/chrisleekr/github-app" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    chrisleekr/github-app
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use the bot
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Use the bot
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../invoking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Invoking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflows
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Workflows
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/ship/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bot:ship
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/triage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bot:triage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bot:plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/implement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bot:implement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/review/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bot:review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/resolve/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bot:resolve
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflows/remember/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bot:remember
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../review-learnings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Review learnings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../safety/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safety
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run the service
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Run the service
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/github-app/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub App creation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbooks/daemon-fleet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daemon fleet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbooks/triage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Triage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbooks/stuck-ship-intent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stuck bot:ship session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbooks/scheduled-actions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduled actions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build on it
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Build on it
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extending
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../build/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-one-rule-that-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The one rule that matters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-wired-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is wired today
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What is wired today">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-agent-knobs-behave" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the agent knobs behave
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trust-tier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trust tier
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#field-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Field reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Field reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#top-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top level
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-knobs-defaults-and-every-workflowsname-except-ship" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent knobs (defaults and every workflows.&lt;name&gt; except ship)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#triggers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        triggers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto review
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#precedence-and-clamping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence and clamping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authorization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authorization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-the-file-is-invalid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When the file is invalid
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="When the file is invalid">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fail-open-cuts-both-ways" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fail-open cuts both ways
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checking-a-file-before-pushing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checking a file before pushing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Checking a file before pushing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-editor-completion-via-the-json-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Editor completion via the JSON Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-the-local-validator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The local validator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-the-pull-request-validation-comment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The pull-request validation comment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#after-the-merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After the merge
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/chrisleekr/github-app/edit/main/docs/use/repo-config.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="per-repo-configuration">Per-repo configuration<a class="headerlink" href="#per-repo-configuration" title="Permanent link">&para;</a></h1>
+<p>A repo controls the bot with a single YAML file at its <strong>default-branch root</strong>:
+<code>.github-app.yaml</code>.</p>
+<p>It turns individual workflows on and off, tunes the agent per workflow, filters
+which events the bot responds to, and shapes the reviewer.</p>
+<h2 id="the-one-rule-that-matters">The one rule that matters<a class="headerlink" href="#the-one-rule-that-matters" title="Permanent link">&para;</a></h2>
+<p><strong>Only the copy on the default branch is ever read.</strong></p>
+<p>The bot fetches the file with <code>octokit.rest.repos.getContent({ owner, repo, path })</code>
+and deliberately passes <strong>no <code>ref</code></strong>, which GitHub resolves to the repository's
+default branch (<code>src/repo-config/fetcher.ts:126#fetchRepoConfig</code>). A regression
+test asserts the call carries no <code>ref</code>.</p>
+<p>Consequences worth internalising:</p>
+<ul>
+<li>Editing this file inside a pull request changes <strong>nothing</strong> for that pull
+  request. The bot still uses the default-branch copy for that PR's runs.</li>
+<li>The change takes effect the moment the PR merges, for every subsequent run.</li>
+<li>Reviewing a config change is therefore reviewing a change to the bot's
+  behaviour on the whole repo, not just on that branch.</li>
+</ul>
+<p>That property is the security boundary. Without it, a fork PR could grant
+itself extra tools or disable the reviewer by editing one file.</p>
+<h2 id="what-is-wired-today">What is wired today<a class="headerlink" href="#what-is-wired-today" title="Permanent link">&para;</a></h2>
+<p>The whole file below is <strong>validated</strong> today: a typo anywhere fails the file and
+falls back to defaults. Nearly every block now also changes behaviour.</p>
+<div class="admonition note">
+<p class="admonition-title"><code>workflows.ship</code> takes no agent knobs</p>
+<p><code>ship</code> accepts <code>enabled</code> only, and the schema rejects <code>model</code>,
+<code>max_turns</code>, <code>timeout</code>, or <code>extra_allowed_tools</code> under it. Its handler is
+a composite orchestrator that enqueues the child workflows and never
+invokes an agent, so those knobs could only ever be a no-op. Tune the
+agent with <code>defaults:</code> or the per-child entries instead: ship's children
+run under their own workflow names (<code>triage</code>, <code>plan</code>, <code>implement</code>,
+<code>review</code>, <code>resolve</code>) and resolve <code>workflows.&lt;child&gt;.*</code> over <code>defaults:</code>.</p>
+</div>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>enabled</code></td>
+<td><strong>Parsed and validated. Not yet enforced.</strong> Enforcement is Gate 1, wired with the isolated workflow runner.</td>
+</tr>
+<tr>
+<td><code>workflows.&lt;name&gt;.enabled</code></td>
+<td><strong>Parsed and validated. Not yet enforced.</strong> Same Gate 1 path.</td>
+</tr>
+<tr>
+<td><code>triggers.*</code></td>
+<td><strong>Parsed and validated. Not yet enforced.</strong> Same Gate 1 path.</td>
+</tr>
+<tr>
+<td><code>review_learnings</code>, <code>scheduled_actions</code>, <code>config</code></td>
+<td><strong>Applied.</strong> Pre-existing blocks, unchanged by this change.</td>
+</tr>
+<tr>
+<td><code>defaults</code> + <code>workflows.&lt;name&gt;</code> agent knobs</td>
+<td><strong>Resolved and clamped. Not yet on the wire.</strong> The <code>policy</code> key exists on the job payload; its producer lands with the runner.</td>
+</tr>
+<tr>
+<td><code>workflows.review.path_filters</code> / <code>.instructions</code></td>
+<td><strong>Consumer ready. Not yet reachable</strong>, since no producer sets <code>policy</code> yet.</td>
+</tr>
+<tr>
+<td><code>workflows.review.auto</code></td>
+<td><strong>Not yet applied.</strong> Dispatch-time knob; lands with the auto-review guard.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition warning">
+<p class="admonition-title">Status of this page</p>
+<p>Only <code>review_learnings</code>, <code>scheduled_actions</code> and <code>config</code> take effect today.
+Everything else on this page is parsed, schema-validated, resolved and
+clamped, but has no production call site yet: <code>checkRepoGate</code>,
+<code>loadRepoPolicy</code> and <code>runPrConfigCheck</code> are reachable only from tests. The
+dispatch chokepoints and the <code>pull_request</code> config-check handler that call
+them depend on database columns from a later migration, so they ship in the
+isolated-workflow-runner change rather than here. Authoring a config file
+now is safe and its schema is stable, but do not expect a repo-level
+<code>enabled: false</code> to stop the bot until that lands.</p>
+</div>
+<h3 id="how-the-agent-knobs-behave">How the agent knobs behave<a class="headerlink" href="#how-the-agent-knobs-behave" title="Permanent link">&para;</a></h3>
+<p>Resolution is owned by the controller: it merges the workflow block over
+<code>defaults</code>, clamps the result against the server ceilings, and ships it on the
+job payload as a <code>policy</code> object. <code>AgentPolicySchema</code> in
+<code>src/shared/ws-messages.ts</code> defines that wire shape, and
+<code>src/core/agent-policy.ts</code> is the consumer that applies it to an agent run.</p>
+<p>The producing side is not in place yet, so no <code>policy</code> key is sent today and
+the table below describes intended behaviour rather than current behaviour. A
+repo with no config file produces no <code>policy</code> key at all and runs exactly as it
+did before this file existed.</p>
+<table>
+<thead>
+<tr>
+<th>Knob</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td>Replaces the server's <code>CLAUDE_MODEL</code> for this run. Unlike <code>max_turns</code> and <code>timeout</code> it is <strong>not</strong> clamped against a server ceiling, and there is deliberately no operator-side model allowlist: the principal is already inside <code>ALLOWED_OWNERS</code>, and the pre-existing scheduled-action <code>model:</code> field is unclamped the same way. See the ceilings note below.</td>
+</tr>
+<tr>
+<td><code>max_turns</code></td>
+<td>Caps agent turns. Clamped to <code>AGENT_MAX_TURNS</code> when the server sets one.</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>Bounds the <strong>agent invocation</strong>, not the whole run. The timer is armed immediately before the agent is invoked, so the tracking comment, token resolution, GitHub data fetch, and repo clone all happen outside it. <code>AGENT_TIMEOUT_MS</code> stays an independent outer bound over the whole thing, so whichever fires first wins, and a daemon cancel still lands on top of both.</td>
+</tr>
+<tr>
+<td><code>extra_allowed_tools</code></td>
+<td>Appended to the tool list the handler resolved, then deduped. Strictly additive: it can never remove a tool a handler requires. It <strong>auto-approves</strong>, it is not a sandbox: the agent already runs with permission prompts bypassed, so this list widens what the agent will reach for without asking, and omitting a tool does not block it. Set under <code>defaults</code> it reaches every agent-running workflow (<code>review</code>, <code>resolve</code>, <code>implement</code>, <code>remember</code>, <code>plan</code>, <code>triage</code>), including read-only ones like <code>remember</code>; scope it under <code>workflows.&lt;name&gt;</code> to limit the blast radius. Destructive shell stays blocked no matter what is listed here, by the runtime forbidden-Bash hook (force-push, <code>git reset --hard</code>, <code>gh pr merge</code>, merge mutations), which repo config cannot disable.</td>
+</tr>
+<tr>
+<td><code>path_filters</code></td>
+<td><strong>Exclusions.</strong> A changed file matching any glob is dropped from the prompt the reviewer sees, and from the review-learnings applicability check. Inline review comments are left intact, so <code>resolve</code> can still answer a thread about an excluded file. <strong>Advisory, not a boundary</strong>: the exclusion is prompt prose only. The agent still has the full clone plus <code>Read</code> and <code>Bash</code>, so it can open an excluded file on its own initiative. Do not use this to hide secrets or sensitive paths from the model.</td>
+</tr>
+<tr>
+<td><code>instructions</code></td>
+<td>Injected as owner-trusted review policy that overrides the agent's default review heuristics. Sent in the <strong>per-request</strong> half of the prompt only, never in the cacheable prefix, so one repo's policy can never leak into another repo's cached prompt.</td>
+</tr>
+</tbody>
+</table>
+<p>Because only the default branch's copy of this file is ever read, a pull
+request cannot introduce or alter any of these knobs for its own review.</p>
+<p>An invalid file does not stop the run: the bot executes on built-in defaults and
+prepends a warning to the tracking comment so the ignored file is visible rather
+than silent.</p>
+<h2 id="trust-tier">Trust tier<a class="headerlink" href="#trust-tier" title="Permanent link">&para;</a></h2>
+<p>Everything in this file is <strong>owner-trusted config</strong>, the same tier as a
+<code>.github/workflows/</code> file: anyone with push access to the default branch can
+change it, so treat push access as equivalent to bot-configuration access.</p>
+<p>The server's <code>ALLOWED_OWNERS</code> allowlist gates every repo before any of this
+runs, and nothing in the file can widen what the server already permits. See
+<a href="#authorization">Authorization</a> below.</p>
+<h2 id="complete-example">Complete example<a class="headerlink" href="#complete-example" title="Permanent link">&para;</a></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Per-repo configuration for chrisleekr-bot.</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="c1">#</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># ONLY the copy on this repository's DEFAULT BRANCH is ever applied.</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Repo-wide master switch. `false` stops all work: no labels, no mentions, no</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1"># scheduled actions. A deliberate label or mention still gets a one-line</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># "disabled here" reply. Default: true.</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="nt">timezone</span><span class="p">:</span><span class="w"> </span><span class="s">"Australia/Melbourne"</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="c1"># Covers every agent run in this repo unless a workflow below overrides it.</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="c1"># Every value is clamped by the server ceilings (AGENT_TIMEOUT_MS, and</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1"># AGENT_MAX_TURNS falling back to DEFAULT_MAXTURNS); the config can lower a</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="c1"># ceiling, never raise one.</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="nt">defaults</span><span class="p">:</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">  </span><span class="c1"># Omit to inherit the server default (CLAUDE_MODEL, else claude-opus-5).</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="s">"claude-opus-5"</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span><span class="nt">max_turns</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">  </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">45m</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">  </span><span class="c1"># Additive only. Appended to the tools the workflow already needs, never a</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">  </span><span class="c1"># replacement, so a typo here cannot strip a handler's required tool. The</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">  </span><span class="c1"># runtime forbidden-Bash hook still denies force-push / reset --hard /</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">  </span><span class="c1"># gh pr merge regardless of what is listed.</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">  </span><span class="nt">extra_allowed_tools</span><span class="p">:</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Bash(bun</span><span class="nv"> </span><span class="s">run</span><span class="nv"> </span><span class="s">typecheck:*)"</span>
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Bash(bun</span><span class="nv"> </span><span class="s">run</span><span class="nv"> </span><span class="s">lint:*)"</span>
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="c1"># Per-workflow toggles and overrides. Keys are the workflow registry names.</span>
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="c1"># An omitted workflow inherits `enabled: true` plus the `defaults:` block.</span>
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="nt">workflows</span><span class="p">:</span>
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">  </span><span class="nt">triage</span><span class="p">:</span>
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">  </span><span class="nt">plan</span><span class="p">:</span>
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">  </span><span class="nt">implement</span><span class="p">:</span>
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">    </span><span class="nt">max_turns</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200</span>
+</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">    </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60m</span>
+</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">  </span><span class="nt">review</span><span class="p">:</span>
+</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="s">"claude-opus-5"</span>
+</span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">    </span><span class="c1"># Hides changed files matching any of these globs from the reviewer. Every entry is an exclusion; no leading "!"</span>
+</span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">    </span><span class="c1"># needed. picomatch, dot: true. Keep this to genuinely generated or</span>
+</span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">    </span><span class="c1"># vendored output. Docs are NOT filtered: prose drifting from the code is</span>
+</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">    </span><span class="c1"># what the reviewer should catch.</span>
+</span><span id="__span-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">    </span><span class="nt">path_filters</span><span class="p">:</span>
+</span><span id="__span-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"**/*.lock"</span>
+</span><span id="__span-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"bun.lock"</span>
+</span><span id="__span-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"dist/**"</span>
+</span><span id="__span-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"**/__snapshots__/**"</span>
+</span><span id="__span-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">    </span><span class="c1"># Run a review automatically when someone in the server's AUTO_REVIEW_USERS</span>
+</span><span id="__span-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">    </span><span class="c1"># allowlist pushes commits to an open PR. Both keys are required; this one</span>
+</span><span id="__span-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">    </span><span class="c1"># alone does nothing. Defaults to false, see "Auto review" below.</span>
+</span><span id="__span-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">    </span><span class="nt">auto</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">    </span><span class="c1"># Owner-trusted review policy, appended to the review prompt. Same trust tier as review learnings: NOT wrapped in</span>
+</span><span id="__span-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a><span class="w">    </span><span class="c1"># &lt;untrusted_*&gt; tags.</span>
+</span><span id="__span-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">    </span><span class="nt">instructions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">      </span><span class="no">Flag any new `process.env` read that bypasses src/config.ts.</span>
+</span><span id="__span-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a><span class="w">      </span><span class="no">Require a mirrored test/**/*.test.ts for every new file under src/.</span>
+</span><span id="__span-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a><span class="w">      </span><span class="no">Do not comment on formatting; prettier owns that.</span>
+</span><span id="__span-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a><span class="w">  </span><span class="nt">resolve</span><span class="p">:</span>
+</span><span id="__span-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a><span class="w">  </span><span class="nt">ship</span><span class="p">:</span>
+</span><span id="__span-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">  </span><span class="nt">remember</span><span class="p">:</span>
+</span><span id="__span-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-71"><a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a>
+</span><span id="__span-0-72"><a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a><span class="c1"># Pre-dispatch filters, evaluated before any run row, tracking comment, or</span>
+</span><span id="__span-0-73"><a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a><span class="c1"># queue job is created. These only ever narrow what the bot responds to.</span>
+</span><span id="__span-0-74"><a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a><span class="nt">triggers</span><span class="p">:</span>
+</span><span id="__span-0-75"><a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a><span class="w">  </span><span class="c1"># Logins whose issues, PRs, and comments never trigger the bot.</span>
+</span><span id="__span-0-76"><a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a><span class="w">  </span><span class="nt">ignore_authors</span><span class="p">:</span>
+</span><span id="__span-0-77"><a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"renovate[bot]"</span>
+</span><span id="__span-0-78"><a id="__codelineno-0-78" name="__codelineno-0-78" href="#__codelineno-0-78"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"dependabot[bot]"</span>
+</span><span id="__span-0-79"><a id="__codelineno-0-79" name="__codelineno-0-79" href="#__codelineno-0-79"></a><span class="w">  </span><span class="c1"># Skip PR-context workflows while the PR is a draft.</span>
+</span><span id="__span-0-80"><a id="__codelineno-0-80" name="__codelineno-0-80" href="#__codelineno-0-80"></a><span class="w">  </span><span class="nt">ignore_draft_prs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-81"><a id="__codelineno-0-81" name="__codelineno-0-81" href="#__codelineno-0-81"></a><span class="w">  </span><span class="c1"># Case-insensitive substring match on the issue or PR title.</span>
+</span><span id="__span-0-82"><a id="__codelineno-0-82" name="__codelineno-0-82" href="#__codelineno-0-82"></a><span class="w">  </span><span class="nt">ignore_title_keywords</span><span class="p">:</span>
+</span><span id="__span-0-83"><a id="__codelineno-0-83" name="__codelineno-0-83" href="#__codelineno-0-83"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"WIP"</span>
+</span><span id="__span-0-84"><a id="__codelineno-0-84" name="__codelineno-0-84" href="#__codelineno-0-84"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"[skip</span><span class="nv"> </span><span class="s">bot]"</span>
+</span><span id="__span-0-85"><a id="__codelineno-0-85" name="__codelineno-0-85" href="#__codelineno-0-85"></a><span class="w">  </span><span class="c1"># PR base-branch allowlist. Empty means every base branch.</span>
+</span><span id="__span-0-86"><a id="__codelineno-0-86" name="__codelineno-0-86" href="#__codelineno-0-86"></a><span class="w">  </span><span class="nt">base_branches</span><span class="p">:</span>
+</span><span id="__span-0-87"><a id="__codelineno-0-87" name="__codelineno-0-87" href="#__codelineno-0-87"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"main"</span>
+</span><span id="__span-0-88"><a id="__codelineno-0-88" name="__codelineno-0-88" href="#__codelineno-0-88"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"beta"</span>
+</span><span id="__span-0-89"><a id="__codelineno-0-89" name="__codelineno-0-89" href="#__codelineno-0-89"></a><span class="w">  </span><span class="c1"># Per-actor gate, layered ON TOP of the server's ALLOWED_OWNERS env</span>
+</span><span id="__span-0-90"><a id="__codelineno-0-90" name="__codelineno-0-90" href="#__codelineno-0-90"></a><span class="w">  </span><span class="c1"># allowlist. Intersection only: this can narrow who may trigger the bot</span>
+</span><span id="__span-0-91"><a id="__codelineno-0-91" name="__codelineno-0-91" href="#__codelineno-0-91"></a><span class="w">  </span><span class="c1"># here, never widen it. Empty (the default) preserves current behaviour.</span>
+</span><span id="__span-0-92"><a id="__codelineno-0-92" name="__codelineno-0-92" href="#__codelineno-0-92"></a><span class="w">  </span><span class="nt">allowed_users</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+</span><span id="__span-0-93"><a id="__codelineno-0-93" name="__codelineno-0-93" href="#__codelineno-0-93"></a>
+</span><span id="__span-0-94"><a id="__codelineno-0-94" name="__codelineno-0-94" href="#__codelineno-0-94"></a><span class="c1"># See docs/use/review-learnings.md. Server master gate: REVIEW_LEARNINGS_ENABLED.</span>
+</span><span id="__span-0-95"><a id="__codelineno-0-95" name="__codelineno-0-95" href="#__codelineno-0-95"></a><span class="nt">review_learnings</span><span class="p">:</span>
+</span><span id="__span-0-96"><a id="__codelineno-0-96" name="__codelineno-0-96" href="#__codelineno-0-96"></a><span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-97"><a id="__codelineno-0-97" name="__codelineno-0-97" href="#__codelineno-0-97"></a><span class="w">  </span><span class="nt">scope</span><span class="p">:</span><span class="w"> </span><span class="s">"local"</span>
+</span><span id="__span-0-98"><a id="__codelineno-0-98" name="__codelineno-0-98" href="#__codelineno-0-98"></a><span class="w">  </span><span class="nt">max_age_days</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">180</span>
+</span><span id="__span-0-99"><a id="__codelineno-0-99" name="__codelineno-0-99" href="#__codelineno-0-99"></a>
+</span><span id="__span-0-100"><a id="__codelineno-0-100" name="__codelineno-0-100" href="#__codelineno-0-100"></a><span class="c1"># See docs/use/scheduled-actions.md.</span>
+</span><span id="__span-0-101"><a id="__codelineno-0-101" name="__codelineno-0-101" href="#__codelineno-0-101"></a><span class="nt">scheduled_actions</span><span class="p">:</span>
+</span><span id="__span-0-102"><a id="__codelineno-0-102" name="__codelineno-0-102" href="#__codelineno-0-102"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">research</span>
+</span><span id="__span-0-103"><a id="__codelineno-0-103" name="__codelineno-0-103" href="#__codelineno-0-103"></a><span class="w">    </span><span class="nt">cron</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">19</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span>
+</span><span id="__span-0-104"><a id="__codelineno-0-104" name="__codelineno-0-104" href="#__codelineno-0-104"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-105"><a id="__codelineno-0-105" name="__codelineno-0-105" href="#__codelineno-0-105"></a><span class="w">    </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="s">"opus"</span>
+</span><span id="__span-0-106"><a id="__codelineno-0-106" name="__codelineno-0-106" href="#__codelineno-0-106"></a><span class="w">    </span><span class="nt">max_turns</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200</span>
+</span><span id="__span-0-107"><a id="__codelineno-0-107" name="__codelineno-0-107" href="#__codelineno-0-107"></a><span class="w">    </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60m</span>
+</span><span id="__span-0-108"><a id="__codelineno-0-108" name="__codelineno-0-108" href="#__codelineno-0-108"></a><span class="w">    </span><span class="nt">auto_merge</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-109"><a id="__codelineno-0-109" name="__codelineno-0-109" href="#__codelineno-0-109"></a><span class="w">    </span><span class="nt">allowed_tools</span><span class="p">:</span>
+</span><span id="__span-0-110"><a id="__codelineno-0-110" name="__codelineno-0-110" href="#__codelineno-0-110"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">WebSearch</span>
+</span><span id="__span-0-111"><a id="__codelineno-0-111" name="__codelineno-0-111" href="#__codelineno-0-111"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">WebFetch</span>
+</span><span id="__span-0-112"><a id="__codelineno-0-112" name="__codelineno-0-112" href="#__codelineno-0-112"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Read</span>
+</span><span id="__span-0-113"><a id="__codelineno-0-113" name="__codelineno-0-113" href="#__codelineno-0-113"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Glob</span>
+</span><span id="__span-0-114"><a id="__codelineno-0-114" name="__codelineno-0-114" href="#__codelineno-0-114"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Grep</span>
+</span><span id="__span-0-115"><a id="__codelineno-0-115" name="__codelineno-0-115" href="#__codelineno-0-115"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"Bash(gh</span><span class="nv"> </span><span class="s">issue</span><span class="nv"> </span><span class="s">create:*)"</span>
+</span><span id="__span-0-116"><a id="__codelineno-0-116" name="__codelineno-0-116" href="#__codelineno-0-116"></a><span class="w">    </span><span class="nt">prompt</span><span class="p">:</span>
+</span><span id="__span-0-117"><a id="__codelineno-0-117" name="__codelineno-0-117" href="#__codelineno-0-117"></a><span class="w">      </span><span class="nt">ref</span><span class="p">:</span><span class="w"> </span><span class="s">".github/skills/research.md"</span>
+</span></code></pre></div>
+<p>Every block is optional and every field has a default, so an existing file that
+only declares <code>version: 1</code> and <code>scheduled_actions:</code> stays valid.</p>
+<h2 id="field-reference">Field reference<a class="headerlink" href="#field-reference" title="Permanent link">&para;</a></h2>
+<h3 id="top-level">Top level<a class="headerlink" href="#top-level" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>version</code></td>
+<td><code>1</code></td>
+<td>none</td>
+<td>Required. The only accepted value.</td>
+</tr>
+<tr>
+<td><code>enabled</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Repo-wide master switch. See the note below the table.</td>
+</tr>
+<tr>
+<td><code>config.timezone</code></td>
+<td>IANA</td>
+<td><code>UTC</code></td>
+<td>Timezone for scheduled-action cron evaluation.</td>
+</tr>
+<tr>
+<td><code>defaults</code></td>
+<td>object</td>
+<td><code>{}</code></td>
+<td>Agent knobs applied to every workflow unless overridden.</td>
+</tr>
+<tr>
+<td><code>workflows</code></td>
+<td>object</td>
+<td><code>{}</code></td>
+<td>Per-workflow toggles and overrides.</td>
+</tr>
+<tr>
+<td><code>triggers</code></td>
+<td>object</td>
+<td><code>{}</code></td>
+<td>Pre-dispatch filters.</td>
+</tr>
+<tr>
+<td><code>review_learnings</code></td>
+<td>object</td>
+<td>on</td>
+<td>See <a href="../review-learnings/">Review learnings</a>.</td>
+</tr>
+<tr>
+<td><code>scheduled_actions</code></td>
+<td>array</td>
+<td><code>[]</code></td>
+<td>See <a href="../scheduled-actions/">Scheduled actions</a>.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition warning">
+<p class="admonition-title">Not enforced yet</p>
+<p>Gate 1 has no production call site on this change, so <code>enabled: false</code> does
+not stop label or mention triggers today. It already silences the scheduler,
+which reads the document directly. The rest of this section describes the
+behaviour once Gate 1 is wired.</p>
+</div>
+<p><code>enabled: false</code> will stop the bot doing any work in the repo: no workflow run,
+no queue job, no scheduled action. It is not a vow of silence. A deliberate <code>bot:*</code>
+label or <code>@chrisleekr-bot</code> mention still gets one short reply saying the bot is
+disabled here, so a teammate who tries is told why instead of being ignored.
+Passive triggers stay silent. If you need the bot to make no writes at all,
+uninstall the App from the repo.</p>
+<p>Two verbs are exempt: literal <code>bot:stop</code> and <code>bot:abort-ship</code> still run on a
+disabled repo. They only end work that is already in flight, and refusing them
+would let <code>enabled: false</code> strand the very run the owner set it to stop.
+<code>bot:resume</code> is not exempt, it starts work. The carve-out is keyed on the
+literal verb, so a stop phrased as a plain-English mention is refused like
+anything else.</p>
+<p>The exemption covers <code>enabled</code>, the per-workflow toggles, and the three passive
+<code>triggers.*</code> filters, not who may drive the bot. <code>ignore_authors</code> and
+<code>allowed_users</code> still apply to <code>bot:stop</code> and <code>bot:abort-ship</code>, so a login the
+repo excluded cannot kill someone else's in-flight run.</p>
+<h3 id="agent-knobs-defaults-and-every-workflowsname-except-ship">Agent knobs (<code>defaults</code> and every <code>workflows.&lt;name&gt;</code> except <code>ship</code>)<a class="headerlink" href="#agent-knobs-defaults-and-every-workflowsname-except-ship" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td>string</td>
+<td>server</td>
+<td>Model ID for this repo's runs. Falls back to <code>CLAUDE_MODEL</code>, else <code>claude-opus-5</code>. Max 128 chars. Not clamped, see below.</td>
+</tr>
+<tr>
+<td><code>max_turns</code></td>
+<td>int 1..500</td>
+<td>server</td>
+<td>Agent turn cap. Clamped down by <code>AGENT_MAX_TURNS ?? DEFAULT_MAXTURNS</code>, never up.</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>duration</td>
+<td>server</td>
+<td>Wall-clock cap, e.g. <code>45m</code>, <code>30s</code>, <code>2h</code>. Clamped down by <code>AGENT_TIMEOUT_MS</code>.</td>
+</tr>
+<tr>
+<td><code>extra_allowed_tools</code></td>
+<td>string[]</td>
+<td><code>[]</code></td>
+<td><strong>Additive.</strong> Appended to the workflow's own tool list; never a replacement. Max 50 entries.</td>
+</tr>
+</tbody>
+</table>
+<p><code>workflows.review</code> accepts three more:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path_filters</code></td>
+<td>glob[]</td>
+<td><code>[]</code></td>
+<td>Changed files matching any glob are hidden from the reviewer's prompt. Advisory only, the agent can still <code>Read</code> an excluded file from the clone. Max 100 entries, 200 chars each.</td>
+</tr>
+<tr>
+<td><code>instructions</code></td>
+<td>string</td>
+<td>none</td>
+<td>Owner-trusted review policy appended to the review prompt (max 10,000 chars).</td>
+</tr>
+<tr>
+<td><code>auto</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Let an <code>AUTO_REVIEW_USERS</code> login's push trigger <code>review</code>. Both keys are required; neither alone enables anything. See <a href="#auto-review">Auto review</a> for why this one defaults off.</td>
+</tr>
+</tbody>
+</table>
+<p><code>workflows.ship</code> accepts <code>enabled</code> and nothing else. Ship's handler enqueues
+child workflows and never runs an agent itself, so the knobs never had an
+effect.</p>
+<div class="admonition note">
+<p class="admonition-title"><code>workflows.ship</code> agent knobs are rejected</p>
+<p><code>workflows.ship.model</code> / <code>.max_turns</code> / <code>.timeout</code> /
+<code>.extra_allowed_tools</code> used to parse and do nothing. They are now
+rejected, and validation is whole-document, so one rejected key fails the
+entire file and the repo falls back to the built-in defaults until it is
+removed. Put the knob on <code>defaults:</code> or on the specific child (<code>triage</code>,
+<code>plan</code>, <code>implement</code>, <code>review</code>, <code>resolve</code>) instead, which is what ship's
+steps resolve against.</p>
+</div>
+<p>Workflow keys are enumerated explicitly, not open-ended, so a misspelled name
+(<code>revue:</code>) fails the whole file rather than being silently ignored. A test
+asserts the key set equals the workflow registry's names, so adding an eighth
+workflow fails CI until the schema is extended.</p>
+<h3 id="triggers"><code>triggers</code><a class="headerlink" href="#triggers" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ignore_authors</code></td>
+<td>login[]</td>
+<td><code>[]</code></td>
+<td>These logins never trigger the bot. Silent.</td>
+</tr>
+<tr>
+<td><code>ignore_draft_prs</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Skip PR-context workflows while the PR is a draft. Silent.</td>
+</tr>
+<tr>
+<td><code>ignore_title_keywords</code></td>
+<td>string[]</td>
+<td><code>[]</code></td>
+<td>Case-insensitive substring match on the issue/PR title. Silent.</td>
+</tr>
+<tr>
+<td><code>base_branches</code></td>
+<td>string[]</td>
+<td><code>[]</code></td>
+<td>PR base-branch allowlist. Empty means all. Silent. See the caveat below.</td>
+</tr>
+<tr>
+<td><code>allowed_users</code></td>
+<td>login[]</td>
+<td><code>[]</code></td>
+<td>Per-actor gate. Empty means today's behaviour. Refusal is <strong>explained</strong>.</td>
+</tr>
+</tbody>
+</table>
+<p>Every list here is capped: <code>ignore_authors</code> 50 entries, <code>ignore_title_keywords</code>
+20 entries of 64 chars, <code>base_branches</code> 20 entries of 244 chars,
+<code>allowed_users</code> 100 entries. Exceeding a cap fails the whole document, which
+means the repo silently reverts to permissive defaults, see
+<a href="#when-the-file-is-invalid">When the file is invalid</a>.</p>
+<p>"Silent" versus "explained" is deliberate. A filter the owner configured to keep
+the bot quiet must stay quiet, or the filter defeats its own purpose. A
+deliberate label or mention that is refused earns a one-line reply saying why.
+The explained reasons are all static strings; the silent ones are the only rules
+that interpolate user-controlled text, so nothing attacker-controlled is ever
+posted back.</p>
+<p>"Silent" means no comment, not no trace. A mention still gets the 👀
+acknowledgement reaction: the webhook handler adds it as soon as it sees the
+trigger phrase, before the gate runs. So a filtered mention looks like 👀
+followed by nothing, which is the intended shape, the reaction says the event
+arrived, not that a run started.</p>
+<p>A <code>bot:*</code> label filtered by one of the silent rules stays on the issue or PR.
+The gate runs before the label mutex, so nothing removes it, and no later event
+re-fires it: leaving draft sends <code>ready_for_review</code>, which the bot does not
+dispatch on, and editing the title sends <code>edited</code>. To run after the condition
+clears, remove the label and re-apply it.</p>
+<div class="admonition warning">
+<p class="admonition-title"><code>base_branches</code> does not cover comment triggers</p>
+<p>The rule needs the PR's base ref, and the gate reads trigger facts straight
+off the webhook payload rather than spending an API call. A <code>bot:*</code> label
+and an inline review comment both carry the base ref, so the rule applies
+there. A plain issue/PR comment does not: GitHub's <code>issue_comment</code> payload
+exposes only URL fields under <code>issue.pull_request</code>, no <code>base</code>. On that
+surface the rule is skipped, so a mention can still start a run on a PR
+whose base branch you excluded. Use <code>workflows.&lt;name&gt;.enabled</code> or
+<code>triggers.allowed_users</code> if you need a filter that holds on every surface.</p>
+</div>
+<h3 id="auto-review">Auto review<a class="headerlink" href="#auto-review" title="Permanent link">&para;</a></h3>
+<p><code>workflows.review.auto</code> runs the reviewer automatically when someone pushes
+commits to an open pull request, with no label and no mention.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>workflows.review.auto</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Allow pushes to trigger <code>review</code>, subject to the server allowlist below.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>It takes two keys.</strong> This one, and the server's <code>AUTO_REVIEW_USERS</code> env
+allowlist naming which logins may trigger it. Neither alone does anything. The
+env half exists because auto-review is the one setting in this file that
+<em>widens</em> what the bot does, and everything under <code>triggers:</code> is narrowing-only by
+contract; the repo half exists because <code>AUTO_REVIEW_USERS</code> is server-wide, so
+without it, setting the env var would switch auto-review on for every repository
+at once.</p>
+<div class="admonition note">
+<p class="admonition-title">This is the one toggle that defaults to <code>false</code></p>
+<p>Every other switch in this file defaults to on, because a missing or broken
+config falls back to "everything enabled". Auto-review cannot follow that
+rule: the fallback also applies when the file is merely <em>unreachable</em>, so a
+default of <code>true</code> would let a GitHub outage start spending tokens on every
+push in every repo. Defaulting off makes the failure mode "no auto-review".
+<code>scheduled_actions[].auto_merge</code> defaults off for the same reason.</p>
+</div>
+<p>Four further narrowings apply, all silent:</p>
+<ul>
+<li>The <strong>pusher</strong> is matched, not the commit author. The commit author comes from
+  the commit's author email, which anyone can set with <code>git config user.email</code>.</li>
+<li><strong>The bot's own pushes are skipped</strong>, so a <code>resolve</code> run that pushes fixes does
+  not trigger a review of its own work.</li>
+<li><strong>Content-free pushes are skipped.</strong> A rebase that leaves the PR's own diff
+  unchanged buys no review.</li>
+<li><strong>A review already running wins.</strong> A push landing mid-review is dropped rather
+  than queued, and nothing is posted about it.</li>
+</ul>
+<p>Gate 1 still applies on top, so <code>enabled: false</code>, <code>workflows.review.enabled:
+false</code>, and every <code>triggers.*</code> filter keep their veto. Because nobody asked for
+the run, a refusal is logged but never commented.</p>
+<div class="admonition tip">
+<p class="admonition-title">Pair it with <code>ignore_draft_prs</code></p>
+<p>The reviewer does not treat drafts specially, and <code>triggers.ignore_draft_prs</code>
+defaults to <code>false</code>, so without it every work-in-progress push gets a full
+review. Set <code>ignore_draft_prs: true</code> alongside <code>auto: true</code> unless you want
+drafts reviewed.</p>
+</div>
+<h2 id="precedence-and-clamping">Precedence and clamping<a class="headerlink" href="#precedence-and-clamping" title="Permanent link">&para;</a></h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>server env ceiling  -&gt;  defaults:  -&gt;  workflows.&lt;name&gt;:
+</span></code></pre></div>
+<ul>
+<li><code>model</code>: the workflow entry wins over <code>defaults</code>, which wins over
+  <code>CLAUDE_MODEL</code>, which falls back to <code>claude-opus-5</code>.</li>
+<li><code>max_turns</code>: <code>min(resolved value, AGENT_MAX_TURNS ?? DEFAULT_MAXTURNS)</code>. One
+  ceiling, picked the same way the runtime picks it: <code>AGENT_MAX_TURNS</code> overrides
+  <code>DEFAULT_MAXTURNS</code> when both are set, so clamping against both would enforce a
+  number the runtime has already discarded. If neither is set there is no cap and
+  the config value applies as written.</li>
+<li><code>timeout</code>: <code>min(resolved value, AGENT_TIMEOUT_MS)</code>.</li>
+<li><code>extra_allowed_tools</code>: the <strong>union</strong> of <code>defaults</code> and the workflow entry,
+  deduped.</li>
+</ul>
+<p>The two numeric ceilings are one-directional. On <code>max_turns</code> and <code>timeout</code> a
+repo owner can spend less of the operator's budget than the server allows,
+never more.</p>
+<p><code>model</code> is <strong>not</strong> clamped, because models carry no ordering to take a <code>min()</code>
+of. Leaving it unclamped with no operator-side allowlist is a deliberate
+decision, not an oversight: the principal editing this file already holds push
+access on a repo inside <code>ALLOWED_OWNERS</code>, and the pre-existing scheduled-action
+<code>model:</code> field has always been unclamped on the same reasoning. A repo can name
+any model string and it replaces <code>CLAUDE_MODEL</code> verbatim. That is consistent
+with the trust tier above,
+anyone with push access to the default branch already controls what the agent
+runs, but on a multi-tenant deployment it means one repo can raise the
+operator's per-run cost. Operators who need a hard cap should keep
+<code>ALLOWED_OWNERS</code> single-tenant.</p>
+<h2 id="authorization">Authorization<a class="headerlink" href="#authorization" title="Permanent link">&para;</a></h2>
+<p><code>ALLOWED_OWNERS</code> (server env) and <code>triggers.allowed_users</code> (repo YAML) answer
+different questions, and the env var is not applied uniformly across surfaces.
+The actual behaviour today:</p>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>What <code>ALLOWED_OWNERS</code> is matched against</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bot:*</code> label on an issue or PR</td>
+<td>the <strong>labeler</strong> (<code>sender.login</code>)</td>
+<td>Only allowlisted people can trigger by label.</td>
+</tr>
+<tr>
+<td><code>@chrisleekr-bot</code> mention in a comment</td>
+<td>the <strong>repo owner</strong></td>
+<td>Anyone who can comment on an allowlisted repo can trigger.</td>
+</tr>
+<tr>
+<td><code>bot:ship</code> eligibility check</td>
+<td>the <strong>triggering user</strong></td>
+<td>Only allowlisted people can ship.</td>
+</tr>
+<tr>
+<td>Scheduled actions</td>
+<td>the <strong>repo owner</strong></td>
+<td>Gates which repos the scheduler serves.</td>
+</tr>
+</tbody>
+</table>
+<p>So on a repo that passes the allowlist, <strong>anyone who can comment can trigger
+<code>triage</code>, <code>plan</code>, <code>implement</code>, <code>review</code>, <code>resolve</code>, and <code>remember</code> via a
+mention.</strong> <code>triggers.allowed_users</code> is the first per-actor gate for that
+surface.</p>
+<p>It is strictly an intersection:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ALLOWED_OWNERS  -&gt;  ignore_authors  -&gt;  allowed_users  -&gt;  dispatch
+</span></code></pre></div>
+<p><code>ignore_authors</code> is evaluated first on purpose: a bot login is normally listed
+there and absent from <code>allowed_users</code>, so the other order would answer every
+Renovate event with a public refusal comment.</p>
+<p>It can only narrow. A repo the server rejects is dropped in the webhook handler
+before the gate ever runs, so no YAML value can readmit it, and the gate never
+treats <code>allowed_users</code> as a reason to <em>allow</em> something another rule blocked.
+<code>test/repo-config/gate.test.ts</code> asserts that property.</p>
+<p>Left empty (the default), behaviour is exactly as it is today.</p>
+<h2 id="when-the-file-is-invalid">When the file is invalid<a class="headerlink" href="#when-the-file-is-invalid" title="Permanent link">&para;</a></h2>
+<p>The bot <strong>fails open</strong>. A missing, unreadable, or invalid file yields the
+built-in defaults, so a YAML typo never silently disables the bot.</p>
+<p>A <strong>missing</strong> file is not an error: having no config is the normal case, and the
+bot caches that fact briefly to avoid a lookup on every dispatch.</p>
+<p>An invalid file is logged with the failing paths (<code>repo-config: validation
+failed</code>), and the resolved policy carries a warning string for the tracking
+comment to surface. Rendering that warning to the user is not wired yet.</p>
+<h3 id="fail-open-cuts-both-ways">Fail-open cuts both ways<a class="headerlink" href="#fail-open-cuts-both-ways" title="Permanent link">&para;</a></h3>
+<p>Failing open means a broken file loses its <strong>deny-side</strong> rules too. If
+<code>enabled: false</code> or a non-empty <code>triggers.allowed_users</code> is sitting in a file
+that a later typo invalidates, the whole document is discarded and the bot goes
+back to responding to everyone. That is the deliberate tradeoff: a config error
+must not take the bot down, and the alternative (fail closed) turns any typo
+into a silent outage that looks identical to a broken deployment. Treat the
+<code>repo-config: validation failed</code> log line as actionable, and prefer removing the
+App's installation over relying on <code>enabled: false</code> when you want a hard stop.</p>
+<h2 id="checking-a-file-before-pushing">Checking a file before pushing<a class="headerlink" href="#checking-a-file-before-pushing" title="Permanent link">&para;</a></h2>
+<p>Three tools, in the order you meet them: your editor, a local CLI, and a
+pull-request comment. None of them changes what the bot applies, which is still
+only the default branch's copy.</p>
+<h3 id="1-editor-completion-via-the-json-schema">1. Editor completion via the JSON Schema<a class="headerlink" href="#1-editor-completion-via-the-json-schema" title="Permanent link">&para;</a></h3>
+<p><code>schema/github-app.schema.json</code> is generated from the same zod schema the
+runtime uses. Point your editor at it with a modeline on the first line of your
+<code>.github-app.yaml</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># yaml-language-server: $schema=https://raw.githubusercontent.com/chrisleekr/github-app/main/schema/github-app.schema.json</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span></code></pre></div>
+<p>The <a href="https://github.com/redhat-developer/yaml-language-server">YAML Language Server</a>
+(bundled with the VS Code YAML extension, and available in Neovim, JetBrains and
+Helix) then gives key completion, hover docs, and inline errors.</p>
+<div class="admonition warning">
+<p class="admonition-title">The JSON Schema is structural only</p>
+<p><code>z.toJSONSchema</code> cannot express zod's <code>.refine</code> / <code>.superRefine</code> checks, so
+the generated schema covers key names, types, enums and numeric bounds but
+<strong>not</strong> the cross-field rules the runtime still enforces:</p>
+<ul>
+<li>prompt-ref path traversal (<code>prompt.ref: ../../etc/passwd</code>)</li>
+<li>IANA timezone validity (<code>timezone: Mars/Olympus</code>)</li>
+<li>glob safety in <code>workflows.review.path_filters</code></li>
+<li>duplicate <code>scheduled_actions[].name</code></li>
+</ul>
+<p>A document your editor calls clean can still be rejected at runtime. Use the
+local validator below for the full check.</p>
+</div>
+<p>The generated file is regenerated with <code>bun run gen-config-schema</code> and gated in
+CI by <code>bun run check:config-schema</code>, which fails the build if the committed copy
+drifts from <code>src/repo-config/schema.ts</code> by a single byte.</p>
+<h3 id="2-the-local-validator">2. The local validator<a class="headerlink" href="#2-the-local-validator" title="Permanent link">&para;</a></h3>
+<p>Runs the real zod pipeline, so it covers the <code>.refine</code> rules the JSON Schema
+cannot express:</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="gp">$ </span>bun<span class="w"> </span>run<span class="w"> </span>validate-repo-config<span class="w"> </span>.github-app.yaml
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="go">.github-app.yaml: valid</span>
+</span></code></pre></div>
+<p><code>bun run validate-repo-config</code> is a package.json alias for
+<code>bun run scripts/validate-repo-config.ts</code>; either form works.</p>
+<p>Exit code 0 means valid. On a YAML syntax error or a schema violation it exits
+non-zero and prints the failing paths to stderr:</p>
+<div class="language-console highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="gp">$ </span>bun<span class="w"> </span>run<span class="w"> </span>scripts/validate-repo-config.ts<span class="w"> </span>.github-app.yaml
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="go">.github-app.yaml: 1 validation issue(s)</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="go">  - workflows: Unrecognized key: "revue"</span>
+</span></code></pre></div>
+<h3 id="3-the-pull-request-validation-comment">3. The pull-request validation comment<a class="headerlink" href="#3-the-pull-request-validation-comment" title="Permanent link">&para;</a></h3>
+<p>Open a pull request that touches <code>.github-app.yaml</code> and the bot posts a single
+sticky comment with the verdict, updated in place on every push rather than
+appended:</p>
+<ul>
+<li><strong>valid</strong>: the head-ref copy parses and matches the schema;</li>
+<li><strong>not valid</strong>: the failing paths, capped at ten with a count of the remainder;</li>
+<li><strong>too large to validate</strong>: files over 64 KB are never decoded, and none of the
+  file's contents are echoed back.</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Not wired yet</p>
+<p><code>runPrConfigCheck</code> has no production caller on this change, so no verdict
+comment is posted on a pull request today. The handler that invokes it
+ships with the isolated workflow runner. This section describes the
+behaviour once that lands.</p>
+</div>
+<p>Every verdict restates that only the default-branch copy is applied, so the
+change takes effect on merge. Reading the branch copy here is strictly
+read-only: it never becomes the policy the bot enforces, and it never enters the
+config cache the dispatch path reads from.</p>
+<p>Two limits worth knowing:</p>
+<ul>
+<li>A pull request that does <strong>not</strong> touch the config file gets no comment at all.
+  Silence therefore still is not a pass for anything other than "this PR did not
+  change the config".</li>
+<li>If a later push removes the config change from the pull request, the earlier
+  verdict comment stays as-is rather than being retracted.</li>
+<li>A repo whose default-branch config sets <code>enabled: false</code> gets no verdict
+  comment either: the master switch silences this surface too. The passive
+  <code>triggers.*</code> filters do <strong>not</strong> apply here, so a draft pull request, or one
+  whose title matches <code>ignore_title_keywords</code>, still gets its comment.</li>
+</ul>
+<h3 id="after-the-merge">After the merge<a class="headerlink" href="#after-the-merge" title="Permanent link">&para;</a></h3>
+<p>If a file was rejected at runtime, the server logs <code>repo-config: validation
+failed</code> with the failing paths and the run proceeds on built-in defaults, so a
+wrong file looks like a bot that ignored your config rather than one that broke.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tabs", "navigation.sections", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.select", "content.code.annotate", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
