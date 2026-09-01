@@ -64,6 +64,8 @@ export const REDACT_PATHS: readonly string[] = Object.freeze([
   "claudeCodeOauthToken",
   "daemonAuthToken",
   "daemonAuthTokenPrevious",
+  "workflowRunnerCapabilitySecret",
+  "workflowRunnerCapabilitySecretPrevious",
   "awsSecretAccessKey",
   "awsSessionToken",
   "awsBearerTokenBedrock",
@@ -89,6 +91,8 @@ const SENSITIVE_FIELD_NAMES_LC: ReadonlySet<string> = new Set([
   "claudecodeoauthtoken",
   "daemonauthtoken",
   "daemonauthtokenprevious",
+  "workflowrunnercapabilitysecret",
+  "workflowrunnercapabilitysecretprevious",
   "awssecretaccesskey",
   "awssessiontoken",
   "awsbearertokenbedrock",
@@ -117,12 +121,17 @@ export function redactErrorMessage(err: unknown): string {
   return redactSecrets(redactCredentialUrls(raw)).body;
 }
 
+export function redactErrorMessageOrFallback(err: unknown, fallback: string): string {
+  return redactErrorMessage(err).trim() || fallback;
+}
+
 /** Censor placeholder, matches pino's default so output is uniform. */
 const CENSOR = "[Redacted]";
 
 /** Compose all string-scrubbers applied to free-text fields. */
 function scrubString(value: string): string {
-  return redactCredentialUrls(redactGitHubTokens(value));
+  const withGitHubTokensMarked = redactCredentialUrls(redactGitHubTokens(value));
+  return redactSecrets(withGitHubTokensMarked).body;
 }
 
 /**
@@ -224,7 +233,7 @@ export function errSerializer(err: unknown): unknown {
   const serialized = pino.stdSerializers.err(err as Error);
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- pino types claim Error in / SerializedError out, but at runtime stdSerializers.err returns the input unchanged for non-error-likes (see pino-std-serializers/lib/err.js). Guard preserves that pass-through and lets callers feed in `unknown`.
   if (serialized === null || typeof serialized !== "object") {
-    return serialized;
+    return typeof serialized === "string" ? scrubString(serialized) : serialized;
   }
 
   const out: Record<string, unknown> = { ...(serialized as unknown as SerializedError) };

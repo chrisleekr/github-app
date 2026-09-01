@@ -66,15 +66,15 @@ export interface ReviewLearningsLoadFilter {
  *
  * Returns every `local` row for (owner, repo) plus, when `scope: 'global'`
  * is allowed, every owner-wide row (`repo_name = '*'`). Up to LOAD_CAP,
- * ordered by recency. The orchestrator calls this at job-accept time, when
- * the PR's changed-file list is not yet known, so this function does NOT
- * filter by `file_glob`. The daemon-side prompt-builder applies that filter
- * via `pickApplicableLearnings` once `data.changedFiles` is available.
+ * ordered by recency. The controller calls this while preparing the worker
+ * payload, before the PR's changed-file list is known, so this function does
+ * NOT filter by `file_glob`. The worker-side prompt-builder applies that
+ * filter via `pickApplicableLearnings` once `data.changedFiles` is available.
  *
  * **Pure read.** This function does NOT bump `use_count` / `last_used_at`.
  * Per 1.5.E, the bump moved to `bumpReviewLearningUsage`, which the
- * orchestrator calls with the IDs the daemon actually applied to a prompt
- * (reported back via `appliedReviewLearningIds` on `job:result`). That way
+ * orchestrator calls with the IDs the worker actually applied to a prompt
+ * (reported back as `appliedReviewLearningIds` in its terminal result). That way
  * `use_count` reflects directives that informed real review work, not
  * directives that merely shipped in the payload.
  */
@@ -303,9 +303,9 @@ export async function searchReviewLearningsByEmbedding(
 }
 
 /**
- * Bump `use_count` + `last_used_at` for the directives the daemon actually
+ * Bump `use_count` + `last_used_at` for the directives the worker actually
  * applied to a review/resolve prompt this run (1.5.E). Caller passes the
- * IDs the daemon reported via `appliedReviewLearningIds` on `job:result`.
+ * IDs the worker reported via `appliedReviewLearningIds` in its terminal result.
  *
  * Fail-open: a failure to bump must NOT cause the run to fail. The counter
  * is a signal for tuning, not load-bearing.
@@ -324,6 +324,12 @@ export async function bumpReviewLearningUsage(
   } catch (err) {
     logger.warn({ err, count: ids.length }, "Failed to bump review_learnings use_count");
   }
+}
+
+/** One row from the review-learnings upsert: the row id and whether it was new. */
+interface ReviewLearningInsertResult {
+  id: string;
+  inserted: boolean;
 }
 
 /**
@@ -377,17 +383,16 @@ export async function saveReviewLearnings(
     const emb = embeddings?.[i] ?? null;
     const embLiteral = emb !== null ? vectorLiteral(emb) : null;
 
-    try {
-      // ON CONFLICT against idx_review_learnings_dedup (migration 014) makes
-      // a re-save of the same (repo, scope, file_glob, directive) idempotent:
-      // we bump updated_at + (optionally) refresh nullable provenance/rationale
-      // when the new save carries values the old row didn't have. This keeps
-      // the prompt block bounded; without it, repeated saves would accumulate
-      // near-duplicates linearly. `embedding` is overwritten on conflict
-      // (the most recent embedding reflects the most recent text), but only
-      // when the incoming save brought one.
-      // eslint-disable-next-line no-await-in-loop -- sequential to keep error attribution simple; volume is tiny
-      const result: { id: string; inserted: boolean }[] = await db`
+    // ON CONFLICT against idx_review_learnings_dedup (migration 014) makes
+    // a re-save of the same (repo, scope, file_glob, directive) idempotent:
+    // we bump updated_at + (optionally) refresh nullable provenance/rationale
+    // when the new save carries values the old row didn't have. This keeps
+    // the prompt block bounded; without it, repeated saves would accumulate
+    // near-duplicates linearly. `embedding` is overwritten on conflict
+    // (the most recent embedding reflects the most recent text), but only
+    // when the incoming save brought one.
+    // eslint-disable-next-line no-await-in-loop -- bounded action list preserves result order
+    const result: ReviewLearningInsertResult[] = await db`
         INSERT INTO review_learnings
           (repo_owner, repo_name, scope, file_glob, directive, rationale,
            source_pr, source_thread, source_author, embedding)
@@ -405,18 +410,12 @@ export async function saveReviewLearnings(
             source_author = COALESCE(review_learnings.source_author, EXCLUDED.source_author),
             embedding     = COALESCE(EXCLUDED.embedding,              review_learnings.embedding)
         RETURNING id, (xmax = 0) AS inserted
-      `;
-      // `inserted = true` means a fresh row was created. `false` means a
-      // duplicate was upserted (existing row's updated_at bumped). Count
-      // only fresh inserts so the caller's "saved N" log reflects real
-      // additions, not silent dedups.
-      if (result[0]?.inserted === true) saved++;
-    } catch (err) {
-      logger.warn(
-        { err, owner, repo, scope: row.effectiveScope },
-        "Failed to save review learning",
-      );
-    }
+    `;
+    // `inserted = true` means a fresh row was created. `false` means a
+    // duplicate was upserted (existing row's updated_at bumped). Count
+    // only fresh inserts so the caller's "saved N" log reflects real
+    // additions, not silent dedups.
+    if (result[0]?.inserted === true) saved++;
   }
 
   return saved;

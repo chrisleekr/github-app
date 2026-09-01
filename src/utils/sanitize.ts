@@ -137,6 +137,12 @@ const SECRET_PATTERNS: SecretPattern[] = [
   { kind: "GITHUB_TOKEN", re: /\bghs_[A-Za-z0-9._-]{36,}/g },
   { kind: "GITHUB_TOKEN", re: /\bghr_[A-Za-z0-9._-]{36,}/g },
   { kind: "GITHUB_TOKEN", re: /\bgithub_pat_[A-Za-z0-9_]{11,221}\b/g },
+  // Per-attempt runner capabilities carry a signed millisecond expiry and an
+  // HMAC-SHA256 base64url digest.
+  {
+    kind: "WORKFLOW_RUNNER_CAPABILITY",
+    re: /\bwfr1\.[1-9][0-9]{12}\.[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g,
+  },
   // Anthropic API keys and OAuth tokens.
   { kind: "ANTHROPIC_API_KEY", re: /\bsk-ant-api03-[A-Za-z0-9_-]{80,}\b/g },
   { kind: "ANTHROPIC_OAUTH", re: /\bsk-ant-oat[0-9]{2}-[A-Za-z0-9_-]{80,}\b/g },
@@ -156,7 +162,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
   // does not swallow following prose.
   {
     kind: "DB_URL_WITH_PASSWORD",
-    re: /\b(?:postgres|postgresql|redis|valkey|rediss|mongodb|mongodb\+srv|mysql):\/\/[^\s:@/]+:[^\s@/]+@[^\s)\]"'`<>]+/g,
+    re: /\b(?:postgres|postgresql|redis|valkey|rediss|mongodb|mongodb\+srv|mysql):\/\/(?!\*{3}:\*{3}@)[^\s:@/]+:[^\s@/]+@[^\s)\]"'`<>]+/g,
   },
   // JWT must stay BELOW the GITHUB_TOKEN patterns: a new ghs_APPID_JWT stateless
   // token embeds a JWT, and the ghs_ pattern above must claim the whole run

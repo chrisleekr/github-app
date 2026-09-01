@@ -28,8 +28,8 @@ import {
  *     other workflows (the agent has no learnings to enumerate or update).
  *
  * Actions are accumulated in a JSON file (.daemon-actions.json) in the
- * workDir. After execution, the daemon reads this file and sends actions to
- * the orchestrator via job:result, which persists them to Postgres.
+ * workDir. After execution, the worker returns them in its terminal result,
+ * and the controller persists them to Postgres.
  *
  * Environment variables (passed by the executor):
  * - WORK_DIR: Path to the cloned repo working directory

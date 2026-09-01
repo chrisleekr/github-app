@@ -31,6 +31,7 @@ export const HTTP_LOG_EVENTS = {
   schedulerRunRejectedPayload: "http.scheduler.run.rejected_payload",
   schedulerRunEnqueued: "http.scheduler.run.enqueued",
   schedulerRunFailed: "http.scheduler.run.failed",
+  requestFailed: "http.request.failed",
 } as const;
 
 /**
@@ -132,6 +133,19 @@ export const HttpLogFieldsSchema = z.discriminatedUnion("event", [
     .object({
       event: z.literal(HTTP_LOG_EVENTS.schedulerRunFailed),
       status: z.literal(500),
+      err: z.unknown(),
+    })
+    .strict(),
+  /**
+   * Error: the request router itself threw, caught by the `Bun.serve` `error`
+   * hook. Distinct from `schedulerRunFailed`, which is one endpoint's own catch:
+   * this is the last-resort boundary for any route. Carries no request data, an
+   * unhandled throw may have been triggered by attacker-shaped input, so only
+   * the secret-scrubbed `err` is recorded.
+   */
+  z
+    .object({
+      event: z.literal(HTTP_LOG_EVENTS.requestFailed),
       err: z.unknown(),
     })
     .strict(),

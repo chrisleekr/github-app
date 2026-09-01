@@ -143,7 +143,7 @@ export interface LLMCreateParams {
   readonly messages: readonly LLMMessage[];
   /** Hard upper bound on generated tokens; prevents runaway cost on malformed responses. */
   readonly maxTokens: number;
-  /** Optional temperature; default 0 for classification determinism. */
+  /** Passed through only when set. Claude 5 models reject the field. */
   readonly temperature?: number;
 }
 
@@ -329,7 +329,10 @@ export function buildRequest(
     model: p.model,
     max_tokens: p.maxTokens,
     messages: p.messages.map((m) => ({ role: m.role, content: m.content })),
-    temperature: p.temperature ?? 0,
+    // Only sent when a caller asks for it. Claude 5 models reject the field
+    // outright ("`temperature` is deprecated for this model", 400), so
+    // defaulting it here made every single-turn call fail against them.
+    ...(p.temperature !== undefined ? { temperature: p.temperature } : {}),
   };
   if (system !== undefined) base["system"] = system;
   return base;
@@ -345,7 +348,10 @@ export function buildRichRequest(
     model: p.model,
     max_tokens: p.maxTokens,
     messages: p.messages.map((m) => ({ role: m.role, content: m.content })),
-    temperature: p.temperature ?? 0,
+    // Only sent when a caller asks for it. Claude 5 models reject the field
+    // outright ("`temperature` is deprecated for this model", 400), so
+    // defaulting it here made every single-turn call fail against them.
+    ...(p.temperature !== undefined ? { temperature: p.temperature } : {}),
   };
   if (system !== undefined) base["system"] = system;
   if (p.tools !== undefined && p.tools.length > 0) {

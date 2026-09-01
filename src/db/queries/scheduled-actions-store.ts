@@ -122,7 +122,7 @@ export async function releaseInFlight(
 
 /**
  * Clear the single-flight lock when a scheduled-action run completes.
- * Called from the scoped-job-completion handler so a finished run releases
+ * Called from the scoped-job:completion handler so a finished run releases
  * the lock immediately instead of waiting out the stale window: without this
  * any cron more frequent than the stale window would have its later slots
  * skipped even after the prior run finished. Scoped to `jobId` (the unique

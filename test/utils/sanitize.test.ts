@@ -256,6 +256,21 @@ describe("redactSecrets (output-side silent strip)", () => {
     expect(r.kinds).toContain("ANTHROPIC_OAUTH");
   });
 
+  it("strips per-attempt workflow runner capabilities", () => {
+    const capability = `wfr1.2000000000000.${"z".repeat(43)}`;
+    const r = redactSecrets(`capability=${capability}`);
+    expect(r.body).toBe("capability=");
+    expect(r.matchCount).toBe(1);
+    expect(r.kinds).toEqual(["WORKFLOW_RUNNER_CAPABILITY"]);
+  });
+
+  it("does not strip a capability-shaped prefix of a longer base64url value", () => {
+    const capability = `wfr1.2000000000000.${"z".repeat(43)}`;
+    const r = redactSecrets(`${capability}-suffix`);
+    expect(r.body).toBe(`${capability}-suffix`);
+    expect(r.matchCount).toBe(0);
+  });
+
   it("strips AWS access key IDs (long-lived + STS)", () => {
     const akia = `AKIA${"A".repeat(16)}`;
     const asia = `ASIA${"B".repeat(16)}`;

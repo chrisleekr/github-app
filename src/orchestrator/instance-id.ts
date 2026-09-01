@@ -1,26 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 
 let cached: string | undefined;
 
 /**
- * Stable identifier for this orchestrator process within the fleet.
- *
- * In Kubernetes the container's `hostname()` is the pod name (set by the
- * kubelet), which is unique across the fleet for the pod's lifetime. That's
- * what we want for namespacing the per-instance Valkey processing list and
- * the orchestrator liveness key.
- *
- * In non-production (local dev, tests) `pid` is appended so two `bun run start`
- * processes on the same host don't collide on those keys.
+ * Identifier for one orchestrator process incarnation.
+ * A container restart reuses its pod hostname, so every boot needs a new
+ * suffix or its heartbeat can make abandoned rows appear live again.
  */
 export function getInstanceId(): string {
   if (cached !== undefined) return cached;
-  const base = hostname();
-  cached = process.env.NODE_ENV === "production" ? base : `${base}-${String(process.pid)}`;
+  cached = `${hostname()}-${randomUUID()}`;
   return cached;
-}
-
-/** Test-only: clear the cached value so a fresh hostname/pid is read. */
-export function resetInstanceIdForTests(): void {
-  cached = undefined;
 }

@@ -76,6 +76,15 @@ export interface ReviewLearningPayload {
 }
 
 export interface ResolveMcpServersOptions {
+  /**
+   * Login our GitHub writes are attributed to, for the inline-comment server's
+   * duplicate check. Must be resolved by the caller (`resolveSelfLogin`), not
+   * defaulted to `config.botAppLogin` here: the MCP servers authenticate with
+   * `resolveGithubToken()`'s output, which is the PAT owner under
+   * `GITHUB_PERSONAL_ACCESS_TOKEN`, so assuming the App bot would mean the
+   * dedup never matches in that mode and every push re-posts every finding.
+   */
+  selfLogin?: string;
   daemonCapabilities?: DaemonCapabilities;
   workDir?: string;
   repoMemory?: RepoMemoryEntry[];
@@ -133,7 +142,13 @@ export function resolveMcpServers(
   }
 
   if (ctx.isPR) {
-    servers["github_inline_comment"] = inlineCommentServerDef(sharedEnv, ctx.entityNumber);
+    servers["github_inline_comment"] = inlineCommentServerDef(
+      sharedEnv,
+      ctx.entityNumber,
+      // Fail-open to the App bot login: an unresolved PAT owner costs a
+      // duplicate comment, which is the direction `isSelfActor` already takes.
+      opts?.selfLogin ?? config.botAppLogin,
+    );
     if (opts?.enableResolveReviewThread === true) {
       servers["resolve_review_thread"] = resolveReviewThreadServerDef(sharedEnv, ctx.entityNumber);
     }
@@ -195,15 +210,24 @@ function commentServerDef(
 /**
  * Inline comment server definition (stdio transport, PRs only).
  */
-function inlineCommentServerDef(sharedEnv: Record<string, string>, prNumber: number): McpServerDef {
+function inlineCommentServerDef(
+  sharedEnv: Record<string, string>,
+  prNumber: number,
+  selfLogin: string,
+): McpServerDef {
   const serverPath = resolveServerPath("inline-comment");
   return {
     type: "stdio",
     command: "bun",
     args: ["run", serverPath],
     env: {
+      // BOT_APP_LOGIN: the login the dedup check compares against. Passed in
+      // because `GET /user` 403s under an App installation token, so the
+      // subprocess cannot resolve its own identity. Same wiring as
+      // `mergeReadinessServerDef`.
       ...sharedEnv,
       PR_NUMBER: prNumber.toString(),
+      BOT_APP_LOGIN: selfLogin,
     },
   };
 }

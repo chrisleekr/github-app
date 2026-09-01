@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { access, constants } from "node:fs/promises";
-import http from "node:http";
 import { join } from "node:path";
 
-import { createNodeMiddleware } from "@octokit/webhooks";
+import { createWebMiddleware } from "@octokit/webhooks";
 import type {
   CheckRunEvent,
   CheckSuiteEvent,
@@ -21,6 +20,7 @@ import { config } from "./config";
 import { sweepStaleWorkspaces } from "./core/workspace-sweep";
 import { closeDb, getDb } from "./db";
 import { runMigrations } from "./db/migrate";
+import { createFetchHandler, TEXT_PLAIN, WEBHOOK_PATH } from "./http-router";
 import { installFatalHandlers, logger } from "./logger";
 import { startFleetSnapshot, stopFleetSnapshot } from "./orchestrator/fleet-snapshot";
 import { recoverStaleExecutions } from "./orchestrator/history";
@@ -234,123 +234,65 @@ function classifyWebhookError(error: unknown): {
 // Uses @octokit/webhooks directly (not @octokit/app's wrapper) to avoid
 // the OAuth dependency. Per official GitHub docs:
 // https://docs.github.com/en/apps/creating-github-apps/writing-code-for-a-github-app/building-a-github-app-that-responds-to-webhook-events
-const webhookMiddleware = createNodeMiddleware(app.webhooks, {
-  path: "/api/github/webhooks",
+// Web-standard middleware (Request -> Response), not the node:http variant.
+// `Bun.serve` is the runtime here; the node:http compat shim accepts
+// `requestTimeout`/`headersTimeout` but silently does not enforce them, so a
+// handler that never responds leaves the socket open forever with no backstop.
+const webhookMiddleware = createWebMiddleware(app.webhooks, {
+  path: WEBHOOK_PATH,
 });
+
+/**
+ * Idle timeout for `Bun.serve`, in seconds. This is the enforced backstop the
+ * node:http shim lacks: a connection with no activity for this long is closed
+ * by the runtime rather than accumulating as a wedged fd.
+ *
+ * Must stay above the slowest legitimate *response* path. octokit's own webhook
+ * middleware gives up at 9s and answers 202, so anything below that would cut
+ * live deliveries. `scheduler.scan` runs ~15s but is an internal cron, not a
+ * response path, so it does not constrain this value.
+ */
+const SERVER_IDLE_TIMEOUT_SECONDS = 30;
 
 // Readiness flag -- starts false until async startup checks pass.
 // Set to false again during shutdown to stop accepting new work.
 let isReady = false;
 
-const server = http.createServer((req, res) => {
-  if (req.url === "/healthz") {
-    // Liveness: is the process alive? (no external deps)
-    res.writeHead(200, { "Content-Type": "text/plain" }).end("ok");
-    return;
-  }
-  if (req.url === "/readyz") {
-    // Readiness: should we receive traffic?
-    // Server mode always needs Valkey (FM-7); daemon mode skips this file entirely.
-    const valkeyHealthy = isValkeyHealthy();
-    const ready = isReady && valkeyHealthy;
-    if (!ready) {
-      // Info-level (issue #247): a 503 means we are refusing traffic, an
-      // operator wants this at the LOG_LEVEL=info baseline to see startup
-      // races / Valkey reconnect storms. /healthz stays silent (k8s liveness
-      // hammers it). The two flags name which gate is false.
-      logger.info(
-        { event: HTTP_LOG_EVENTS.readyzUnready, is_ready: isReady, valkey_healthy: valkeyHealthy },
-        "/readyz returning 503",
-      );
-    }
-    res
-      .writeHead(ready ? 200 : 503, { "Content-Type": "text/plain" })
-      .end(ready ? "ready" : "not ready");
-    return;
-  }
-
-  // Reject non-health traffic until startup checks (including DB migrations) finish.
-  if (!isReady) {
-    res.writeHead(503, { "Content-Type": "text/plain" }).end("not ready");
-    return;
-  }
-
-  // Dev-only test endpoint: simulate a webhook event without HMAC verification.
-  // Builds a BotContext with a mock Octokit and skipTrackingComments: true,
-  // then feeds it into the normal processRequest() pipeline.
-  if (req.url === "/api/test/webhook" && req.method === "POST") {
-    if (config.nodeEnv === "production") {
-      res.writeHead(404, { "Content-Type": "text/plain" }).end("not found");
-      return;
-    }
-    void handleTestWebhook(req, res);
-    return;
-  }
-
-  // Operator endpoint: force one scheduled action to run now (the
-  // `workflow_dispatch` analogue). Authenticated with the daemon auth token
-  // since it triggers an agent run; 404 when the scheduler is disabled.
-  if (req.url === "/api/scheduler/run" && req.method === "POST") {
-    void handleSchedulerRun(req, res);
-    return;
-  }
-
-  // Webhook entry (issue #247). `http.webhook.received` records the inbound
-  // delivery with its GitHub-bounded delivery id + event name (header values,
-  // not body) and the HTTP-handler wall-clock around the middleware, which
-  // verifies HMAC and dispatches. A signature mismatch surfaces separately via
-  // `onError` -> `http.webhook.error`; this line is the per-receipt access log.
-  const deliveryId = headerString(req.headers["x-github-delivery"]);
-  const eventName = headerString(req.headers["x-github-event"]);
-  const startedAt = Date.now();
-  void webhookMiddleware(req, res).finally(() => {
-    if (deliveryId !== undefined && eventName !== undefined) {
-      logger.info(
-        {
-          event: HTTP_LOG_EVENTS.webhookReceived,
-          deliveryId,
-          event_name: eventName,
-          duration_ms: Date.now() - startedAt,
-        },
-        "Webhook received",
-      );
-    }
-  });
+const server = Bun.serve({
+  port: config.port,
+  idleTimeout: SERVER_IDLE_TIMEOUT_SECONDS,
+  fetch: createFetchHandler({
+    isReady: () => isReady,
+    isValkeyHealthy,
+    nodeEnv: config.nodeEnv,
+    // Only ever invoked on an exact path match, so the middleware's own
+    // non-matching branch (which answers an empty 200) is unreachable.
+    webhookMiddleware: async (request) => (await webhookMiddleware(request)) as Response,
+    handleTestWebhook,
+    handleSchedulerRun,
+  }),
+  // A throw inside the router would otherwise surface as Bun's default plaintext
+  // 500. Route it through pino so the failure is greppable, and still answer, so
+  // the connection is closed rather than left hanging.
+  error(err: Error): Response {
+    logger.error({ event: HTTP_LOG_EVENTS.requestFailed, err }, "Unhandled error in HTTP handler");
+    return new Response("internal error", { status: 500, headers: TEXT_PLAIN });
+  },
 });
 
-/** Narrow a Node header value (string | string[] | undefined) to a non-empty string. */
-function headerString(value: string | string[] | undefined): string | undefined {
-  const v = Array.isArray(value) ? value[0] : value;
-  return typeof v === "string" && v.length > 0 ? v : undefined;
-}
-
-server.listen(config.port, () => {
-  logger.info({ port: config.port }, "Server started");
-});
+logger.info({ port: config.port }, "Server started");
 
 /**
  * Dev-only test webhook handler. Parses a JSON body, builds a BotContext with
  * a mock Octokit (no real GitHub API calls), sets skipTrackingComments: true,
  * and feeds it into processRequest() to exercise the full orchestrator → daemon flow.
  */
-async function handleTestWebhook(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-): Promise<void> {
+async function handleTestWebhook(request: Request): Promise<Response> {
   const { createChildLogger } = await import("./logger");
   const { processRequest } = await import("./webhook/router");
 
   try {
-    const body = await new Promise<string>((resolve, reject) => {
-      let data = "";
-      req.on("data", (chunk: Buffer) => {
-        data += chunk.toString();
-      });
-      req.on("end", () => {
-        resolve(data);
-      });
-      req.on("error", reject);
-    });
+    const body = await request.text();
 
     const payload = JSON.parse(body) as {
       owner?: string;
@@ -408,16 +350,16 @@ async function handleTestWebhook(
       "[test-webhook] Dispatching",
     );
 
-    res.writeHead(202, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ accepted: true, deliveryId }));
-
+    // Kick the pipeline off without awaiting it, preserving the previous
+    // respond-first ordering: the 202 is the answer, the run is fire-and-forget.
     processRequest(ctx).catch((err: unknown) => {
       log.error({ err }, "[test-webhook] processRequest failed");
     });
+
+    return Response.json({ accepted: true, deliveryId }, { status: 202 });
   } catch (err) {
     logger.error({ err }, "[test-webhook] Failed to parse request");
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid JSON body" }));
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 }
 
@@ -632,62 +574,40 @@ function schedulerBearerOk(header: string | undefined): boolean {
  * bypassing the cron check. 404 when the scheduler is disabled, 401 on a
  * bad token.
  */
-async function handleSchedulerRun(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-): Promise<void> {
+async function handleSchedulerRun(request: Request): Promise<Response> {
   if (!config.schedulerEnabled || scheduledActionScheduler === null) {
     logger.warn(
       { event: HTTP_LOG_EVENTS.schedulerRunRejectedDisabled, status: 404 },
       "scheduler: manual run rejected (disabled)",
     );
-    res.writeHead(404, { "Content-Type": "text/plain" }).end("not found");
-    return;
+    return new Response("not found", { status: 404, headers: TEXT_PLAIN });
   }
-  if (!schedulerBearerOk(req.headers.authorization)) {
+  if (!schedulerBearerOk(request.headers.get("authorization") ?? undefined)) {
     // Logs the FACT of rejection only, never the provided token.
     logger.warn(
       { event: HTTP_LOG_EVENTS.schedulerRunRejectedUnauth, status: 401 },
       "scheduler: manual run rejected (unauthorized)",
     );
-    res.writeHead(401, { "Content-Type": "text/plain" }).end("unauthorized");
-    return;
+    return new Response("unauthorized", { status: 401, headers: TEXT_PLAIN });
   }
   try {
-    // The payload is a tiny `{ owner, repo, action }` object. Cap the body
-    // so a slowloris-style or oversized upload cannot pressure memory before
-    // the parse/validation below even runs. On overflow the 413 is written
-    // from the data handler; the post-await `headersSent` guard then bails.
-    const body = await new Promise<string>((resolve, reject) => {
-      let data = "";
-      let size = 0;
-      req.on("data", (chunk: Buffer) => {
-        if (res.headersSent) return;
-        size += chunk.length;
-        if (size > MAX_SCHEDULER_BODY_BYTES) {
-          logger.warn(
-            {
-              event: HTTP_LOG_EVENTS.schedulerRunRejectedPayload,
-              status: 413,
-              reason: "body_too_large",
-            },
-            "scheduler: manual run rejected (body too large)",
-          );
-          res
-            .writeHead(413, { "Content-Type": "application/json" })
-            .end(JSON.stringify({ error: "request body too large" }));
-          req.destroy();
-          resolve("");
-          return;
-        }
-        data += chunk.toString();
-      });
-      req.on("end", () => {
-        resolve(data);
-      });
-      req.on("error", reject);
-    });
-    if (res.headersSent) return;
+    // The payload is a tiny `{ owner, repo, action }` object. Cap the body so an
+    // oversized upload cannot pressure memory before the parse/validation below
+    // runs. Read the stream in chunks and abort as soon as the cap is passed,
+    // rather than buffering the whole body first: `request.text()` would
+    // materialise the entire payload before we could reject it.
+    const body = await readCappedBody(request, MAX_SCHEDULER_BODY_BYTES);
+    if (body === null) {
+      logger.warn(
+        {
+          event: HTTP_LOG_EVENTS.schedulerRunRejectedPayload,
+          status: 413,
+          reason: "body_too_large",
+        },
+        "scheduler: manual run rejected (body too large)",
+      );
+      return Response.json({ error: "request body too large" }, { status: 413 });
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(body);
@@ -697,10 +617,7 @@ async function handleSchedulerRun(
         { event: HTTP_LOG_EVENTS.schedulerRunRejectedPayload, status: 400, reason: "invalid_json" },
         "scheduler: manual run rejected (invalid JSON)",
       );
-      res
-        .writeHead(400, { "Content-Type": "application/json" })
-        .end(JSON.stringify({ error: "request body is not valid JSON" }));
-      return;
+      return Response.json({ error: "request body is not valid JSON" }, { status: 400 });
     }
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
       // A valid JSON literal that is not an object (null, number, string) is
@@ -709,10 +626,7 @@ async function handleSchedulerRun(
         { event: HTTP_LOG_EVENTS.schedulerRunRejectedPayload, status: 400, reason: "not_object" },
         "scheduler: manual run rejected (not a JSON object)",
       );
-      res
-        .writeHead(400, { "Content-Type": "application/json" })
-        .end(JSON.stringify({ error: "request body must be a JSON object" }));
-      return;
+      return Response.json({ error: "request body must be a JSON object" }, { status: 400 });
     }
     const payload = parsed as { owner?: unknown; repo?: unknown; action?: unknown };
     if (
@@ -728,10 +642,7 @@ async function handleSchedulerRun(
         },
         "scheduler: manual run rejected (missing field)",
       );
-      res
-        .writeHead(400, { "Content-Type": "application/json" })
-        .end(JSON.stringify({ error: "owner, repo, and action are required" }));
-      return;
+      return Response.json({ error: "owner, repo, and action are required" }, { status: 400 });
     }
     const result = await scheduledActionScheduler.runAction({
       owner: payload.owner,
@@ -743,16 +654,51 @@ async function handleSchedulerRun(
       { event: HTTP_LOG_EVENTS.schedulerRunEnqueued, status, enqueued: result.enqueued },
       "scheduler: manual run accepted",
     );
-    res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(result));
+    return Response.json(result, { status });
   } catch (err) {
     logger.error(
       { event: HTTP_LOG_EVENTS.schedulerRunFailed, status: 500, err },
       "scheduler: manual run endpoint failed",
     );
-    res
-      .writeHead(500, { "Content-Type": "application/json" })
-      .end(JSON.stringify({ error: "internal error" }));
+    return Response.json({ error: "internal error" }, { status: 500 });
   }
+}
+
+/**
+ * Read a request body, giving up as soon as it exceeds `maxBytes`.
+ *
+ * Returns `null` when the cap is exceeded, so the caller can answer 413. The
+ * node:http version wrote the 413 from inside the `data` handler and then
+ * destroyed the socket; with Web streams the equivalent is to stop pulling and
+ * cancel the reader, which lets the runtime tear the connection down.
+ *
+ * Counts decoded *bytes*, not characters: a multi-byte UTF-8 payload must not
+ * slip past a byte cap because its string length is shorter.
+ */
+async function readCappedBody(request: Request, maxBytes: number): Promise<string | null> {
+  const body = request.body;
+  if (body === null) return "";
+
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  // `Request["body"]` widens to `ReadableStream<any>` under the ambient
+  // DOM/Bun lib pairing, so the chunk type is asserted to keep the loop typed.
+  // Returning early from a for-await calls the iterator's `return()`, which
+  // cancels the stream, so the over-cap path stops pulling rather than draining.
+
+  for await (const chunk of body as AsyncIterable<Uint8Array>) {
+    size += chunk.byteLength;
+    if (size > maxBytes) return null;
+    chunks.push(chunk);
+  }
+
+  const joined = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(joined);
 }
 
 /**
@@ -764,53 +710,55 @@ function shutdown(signal: string): void {
   logger.info({ signal }, "Received shutdown signal");
   isReady = false;
 
-  // Disarm the socket-health watchdog BEFORE server.close(). Stuck CLOSE_WAIT
-  // sockets (the exact condition the watchdog detects) can block server.close()
-  // from ever completing, so its callback below may never run. Left armed, the
-  // watchdog would keep sampling through the force-exit window and could
-  // exit(75) during a normal shutdown, polluting the "deliberate self-heal"
-  // signal. Disarm here so a graceful shutdown never trips it.
+  // Disarm the socket-health watchdog BEFORE draining the server. Stuck
+  // CLOSE_WAIT sockets (the exact condition the watchdog detects) can stop the
+  // drain from ever completing, so everything after the await may never run.
+  // Left armed, the watchdog would keep sampling through the force-exit window
+  // and could exit(75) during a normal shutdown, polluting the "deliberate
+  // self-heal" signal. Disarm here so a graceful shutdown never trips it.
   stopSocketHealthWatchdog();
 
-  server.close(() => {
-    void (async (): Promise<void> => {
-      try {
-        // Stop the tickle scheduler FIRST so no resume callbacks fire
-        // mid-drain. Then stop the queue worker so no new offers go out
-        // during WS shutdown. Then drain the WebSocket server (daemon
-        // disconnect cleanup still uses Valkey). Then release this
-        // instance's liveness key so peers immediately pick up our leased
-        // jobs via the reaper. Close Valkey + DB last, once nothing else
-        // needs them.
-        if (shipTickleScheduler !== null) {
-          shipTickleScheduler.stop();
-          shipTickleScheduler = null;
-        }
-        if (scheduledActionScheduler !== null) {
-          scheduledActionScheduler.stop();
-          scheduledActionScheduler = null;
-        }
-        if (proposalPoller !== null) {
-          proposalPoller.stop();
-          proposalPoller = null;
-        }
-        await stopQueueWorker();
-        stopLivenessReaper();
-        stopFleetSnapshot();
-        await stopWebSocketServer();
-        await stopInstanceHeartbeat();
-        closeValkey();
-        await closeDb();
-        logger.info("Server closed, exiting");
-        process.exit(0);
-      } catch (err) {
-        logger.error({ err }, "Failed to close resources during shutdown");
-        process.exit(1);
+  void (async (): Promise<void> => {
+    try {
+      // Bun.serve has no callback form; `stop(false)` resolves once in-flight
+      // requests finish, which is the `server.close(cb)` equivalent. Everything
+      // below therefore runs after the drain, exactly as it did before.
+      await server.stop(false);
+      // Stop the tickle scheduler FIRST so no resume callbacks fire
+      // mid-drain. Then stop the queue worker so no new offers go out
+      // during WS shutdown. Then drain the WebSocket server (daemon
+      // disconnect cleanup still uses Valkey). Then release this
+      // instance's liveness key so peers immediately pick up our leased
+      // jobs via the reaper. Close Valkey + DB last, once nothing else
+      // needs them.
+      if (shipTickleScheduler !== null) {
+        shipTickleScheduler.stop();
+        shipTickleScheduler = null;
       }
-    })();
-  });
+      if (scheduledActionScheduler !== null) {
+        scheduledActionScheduler.stop();
+        scheduledActionScheduler = null;
+      }
+      if (proposalPoller !== null) {
+        proposalPoller.stop();
+        proposalPoller = null;
+      }
+      await stopQueueWorker();
+      stopLivenessReaper();
+      stopFleetSnapshot();
+      await stopWebSocketServer();
+      await stopInstanceHeartbeat();
+      closeValkey();
+      await closeDb();
+      logger.info("Server closed, exiting");
+      process.exit(0);
+    } catch (err) {
+      logger.error({ err }, "Failed to close resources during shutdown");
+      process.exit(1);
+    }
+  })();
 
-  // Force exit after terminationGracePeriodSeconds if server.close hangs
+  // Force exit after terminationGracePeriodSeconds if the drain hangs
   setTimeout(() => {
     logger.warn("Forced exit after timeout");
     process.exit(1);

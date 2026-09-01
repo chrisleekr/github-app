@@ -18,6 +18,7 @@ describe("HTTP_LOG_EVENTS", () => {
     expect(HTTP_LOG_EVENTS.schedulerRunRejectedPayload).toBe("http.scheduler.run.rejected_payload");
     expect(HTTP_LOG_EVENTS.schedulerRunEnqueued).toBe("http.scheduler.run.enqueued");
     expect(HTTP_LOG_EVENTS.schedulerRunFailed).toBe("http.scheduler.run.failed");
+    expect(HTTP_LOG_EVENTS.requestFailed).toBe("http.request.failed");
   });
 
   it("pins the webhook-error kinds", () => {
@@ -101,6 +102,25 @@ describe("HttpLogFieldsSchema: accepts well-formed events", () => {
       err: new Error("kaboom"),
     });
     expect(r.success).toBe(true);
+  });
+
+  it("accepts http.request.failed with err only", () => {
+    const r = HttpLogFieldsSchema.safeParse({
+      event: HTTP_LOG_EVENTS.requestFailed,
+      err: new Error("router exploded"),
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects http.request.failed carrying request data", () => {
+    // The Bun.serve error hook is a last-resort boundary that may be reached
+    // via attacker-shaped input, so the branch is strict: err and nothing else.
+    const r = HttpLogFieldsSchema.safeParse({
+      event: HTTP_LOG_EVENTS.requestFailed,
+      err: new Error("router exploded"),
+      path: "/some-bogus-path",
+    });
+    expect(r.success).toBe(false);
   });
 });
 

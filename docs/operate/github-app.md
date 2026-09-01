@@ -30,7 +30,7 @@ Direct link: <https://github.com/settings/apps/new>.
 | SSL verification | Enabled (default, keep it).                                        |
 | Webhook secret   | Output of `openssl rand -hex 32`. Save as `GITHUB_WEBHOOK_SECRET`. |
 
-The path `/api/github` is set by `pathPrefix` in `createNodeMiddleware` (`src/app.ts`). Don't change the path unless you also change the source.
+The path `/api/github/webhooks` is the `WEBHOOK_PATH` constant in `src/http-router.ts`, passed as the `path` option to `createWebMiddleware` in `src/app.ts`. The router matches it explicitly before delegating, so changing it means changing both. Don't change the path unless you also change the source.
 
 For local dev, set the Webhook URL to a [smee.io](https://smee.io) channel and relay it to your local server:
 

@@ -23,6 +23,7 @@ function runFixture(mode: FixtureMode): { exitCode: number; stdout: string } {
       GITHUB_APP_PRIVATE_KEY: "test-private-key",
       GITHUB_WEBHOOK_SECRET: "test-webhook-secret",
       DAEMON_AUTH_TOKEN: "test-daemon-token",
+      WORKFLOW_RUNNER_CAPABILITY_SECRET: "test-workflow-runner-capability-secret",
       DATABASE_URL: "postgres://bot:bot@localhost:5432/x",
       VALKEY_URL: "redis://localhost:6379",
     },
