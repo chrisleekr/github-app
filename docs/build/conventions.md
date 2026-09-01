@@ -78,14 +78,15 @@ bun run check
 
 ## CI pipeline
 
-Four workflow files form the pipeline; each owns one responsibility.
+Five pipeline files; each owns one responsibility.
 
 | Workflow                               | Trigger                                                   | Owns                                                                                                                                                                                                                               |
 | -------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.github/workflows/ci.yml`             | `pull_request` + `push: main` + `workflow_call`           | Quality gates only: typecheck, lint, format, audit:ci, test, build                                                                                                                                                                 |
 | `.github/workflows/secrets-scan.yml`   | `push: branches-ignore: [gh-pages]` + `workflow_dispatch` | Standalone gitleaks scan, decoupled so every push (incl. chore/docs) is gated                                                                                                                                                      |
 | `.github/workflows/release-please.yml` | `push: [main, beta]`                                      | release-please maintains a Release PR per branch; merging it cuts the release then calls `docker-build.yml`, and on a stable `main` release dispatches `github-app-released` to `chrisleekr/helm-charts` to open the chart-sync PR |
-| `.github/workflows/docker-build.yml`   | `workflow_call` + `workflow_dispatch`                     | Reusable image builder: matrix split-and-merge (amd64 on `ubuntu-24.04`, arm64 on `ubuntu-24.04-arm`), Trivy scan                                                                                                                  |
+| `.github/workflows/docker-build.yml`   | `workflow_call` + `workflow_dispatch`                     | Reusable image builder: matrix split-and-merge (amd64 on `ubuntu-24.04`, arm64 on `ubuntu-24.04-arm`), Trivy scan. Tags each variant `<version>-<variant>` plus a mutable `latest-<variant>` on prod releases                      |
+| `.gitlab-ci.yml`                       | every branch (gates) + `main` (images)                    | GitLab CI: the same quality gates on every branch, then `latest-orchestrator` / `latest-daemon` to the GitLab container registry on `main`                                                                                         |
 
 Notes:
 

@@ -84,6 +84,23 @@ describe("logger redaction", () => {
     expect(line["privateKey"]).toBe("[Redacted]");
   });
 
+  it("redacts workflow-runner capability roots", () => {
+    const { logger, lines } = buildCapturingLogger();
+    logger.info(
+      {
+        workflowRunnerCapabilitySecret: "runner-current-secret",
+        workflowRunnerCapabilitySecretPrevious: "runner-previous-secret",
+      },
+      "Loaded config",
+    );
+
+    const raw = JSON.stringify(lines);
+    expect(raw).not.toContain("runner-current-secret");
+    expect(raw).not.toContain("runner-previous-secret");
+    expect(lines[0]?.["workflowRunnerCapabilitySecret"]).toBe("[Redacted]");
+    expect(lines[0]?.["workflowRunnerCapabilitySecretPrevious"]).toBe("[Redacted]");
+  });
+
   it("redacts the x-hub-signature-256 webhook signature header", () => {
     const { logger, lines } = buildCapturingLogger();
     const err = Object.assign(new Error("Invalid signature"), {
@@ -145,8 +162,18 @@ describe("logger redaction", () => {
     expect(line.err.response.data.message).toBe("Bad");
   });
 
-  it("passes through non-error values from the err serializer unchanged", () => {
+  it("scrubs string errors and passes through other primitive values unchanged", () => {
     expect(errSerializer("not an error")).toBe("not an error");
+    const token = `ghs_${"a".repeat(36)}`;
+    const apiKey = `sk-ant-api03-${"b".repeat(80)}`;
+    const serialized = String(
+      errSerializer(
+        `request failed with ${token}, ${apiKey}, and postgres://bot:secret@db.local/app`,
+      ),
+    );
+    expect(serialized).not.toContain(token);
+    expect(serialized).not.toContain(apiKey);
+    expect(serialized).not.toContain("secret");
     expect(errSerializer(null)).toBeNull();
     expect(errSerializer(42)).toBe(42);
   });

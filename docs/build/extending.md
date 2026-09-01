@@ -4,7 +4,7 @@ Two extension points in this codebase: workflow handlers and MCP servers. Both f
 
 ## Adding a workflow
 
-A workflow is a verb the bot performs on a target (issue or PR). Six are registered today; adding a seventh is appending one entry to `src/workflows/registry.ts` plus a handler file.
+A workflow is a verb the bot performs on a target (issue or PR). Seven are registered today; adding an eighth is appending one entry to `src/workflows/registry.ts` plus a handler file.
 
 ### Step 1: write the handler
 
@@ -25,7 +25,7 @@ export type WorkflowHandler = (ctx: WorkflowRunContext) => Promise<HandlerResult
 | `logger`                        | `pino.Logger`                                  | Structured logging.                           |
 | `octokit`                       | `Octokit`                                      | API client with installation token.           |
 | `deliveryId`                    | string \| null                                 | Webhook delivery id for tracing.              |
-| `daemonId`                      | string                                         | Daemon process id.                            |
+| `daemonId`                      | string                                         | Stable isolated-runner identity.              |
 | `setState(state, humanMessage)` | function                                       | Persist partial state mid-execution.          |
 
 `HandlerResult` is a discriminated union:
@@ -33,6 +33,7 @@ export type WorkflowHandler = (ctx: WorkflowRunContext) => Promise<HandlerResult
 ```typescript
 | { status: "succeeded"; state: unknown; humanMessage?: string }
 | { status: "failed"; reason: string; state?: unknown; humanMessage?: string }
+| { status: "incomplete"; reason: string; state?: unknown; humanMessage?: string }
 | { status: "handed-off"; state?: unknown; humanMessage?: string; childRunId: string }
 ```
 
@@ -70,7 +71,7 @@ If the workflow should be reachable via mentions, extend the system prompt in `s
 
 ### Step 4: document and test
 
-- Add `docs/use/workflows/<name>.md` matching the template used by the six built-ins.
+- Add `docs/use/workflows/<name>.md` matching the template used by the seven built-ins.
 - Add `test/workflows/handlers/<name>.test.ts` covering the happy path and one failure mode. Integration via `test/workflows/dispatcher.test.ts` is automatic: if the registry entry is valid, dispatch works.
 - The `check:docs-sync` script in CI fails any PR that touches `src/workflows/**` without updating the workflow docs tree.
 
@@ -201,4 +202,4 @@ If your extension reacts to a GitHub event the bot does not yet handle (e.g. `pu
 2. **Add a webhook handler** in `src/webhook/events/<event>.ts` that parses the payload and dispatches via `dispatchByLabel` (label path) or `dispatchByIntent` (comment path). Webhook handlers must return within 10 s, fire `processRequest` with fire-and-forget semantics.
 3. **Register the event handler** in `src/app.ts` alongside the existing `app.webhooks.on(...)` calls.
 
-Webhook handlers do **not** run business logic, they parse the event, build a `BotContext`, and dispatch. All bot work happens in workflow handlers, called from the daemon.
+Webhook handlers do **not** run business logic, they parse the event, build a `BotContext`, and dispatch. Structured workflow handlers execute in one-attempt runner Pods. Legacy direct and scoped jobs execute on shared daemons.

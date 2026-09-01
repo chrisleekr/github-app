@@ -91,9 +91,8 @@ export async function eventsPerTarget(
 /**
  * 5.2: Triage-driven ephemeral spawn rate per day, last `days` days.
  *
- * Post dispatch-collapse, triage runs on every request, so the useful
- * aggregate is no longer "did triage run?" but rather "did triage drive
- * a scale-up?": `dispatch_reason = 'ephemeral-daemon-triage'`.
+ * This metric is specific to shared-daemon scale-up, so isolated workflow
+ * runners are excluded from both numerator and denominator.
  */
 export async function triageRate(days = 30, sql: SQL = requireDb()): Promise<TriageRateRow[]> {
   const rows: TriageRateRow[] = await sql`
@@ -116,6 +115,7 @@ export async function triageRate(days = 30, sql: SQL = requireDb()): Promise<Tri
       )::float AS triage_pct
     FROM executions
     WHERE created_at >= NOW() - make_interval(days => ${days})
+      AND dispatch_target = 'daemon'
     GROUP BY day
     ORDER BY day DESC
   `;

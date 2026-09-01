@@ -5,7 +5,7 @@ hide:
 
 # GitHub App
 
-A GitHub App that responds to `@chrisleekr-bot` mentions on pull requests and issues, powered by the Claude Agent SDK. Every webhook is acknowledged in under ten seconds and handed to the daemon fleet over WebSocket; when triage flags the job as heavy or the queue backs up, the orchestrator spawns an ephemeral daemon Pod on Kubernetes so the same image scales on demand.
+A GitHub App that responds to `@chrisleekr-bot` mentions on pull requests and issues, powered by the Claude Agent SDK. Every webhook is acknowledged in under ten seconds. Structured workflows run in one-attempt Kubernetes Pods; legacy direct and scoped jobs use the shared daemon fleet, which can add ephemeral Pods for heavy work or queue overflow.
 
 ## Three doors
 

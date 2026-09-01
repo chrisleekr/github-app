@@ -5,6 +5,7 @@ import {
   type AnthropicLikeSdk,
   type AnthropicMessageResponse,
   buildRequest,
+  buildRichRequest,
   createLLMClient,
   estimateHaikuCostUsd,
   MODEL_MAP,
@@ -109,7 +110,36 @@ describe("buildRequest: shaping the SDK payload", () => {
     expect(req["system"]).toBeUndefined();
     expect(req["model"]).toBe("haiku");
     expect(req["max_tokens"]).toBe(256);
-    expect(req["temperature"]).toBe(0);
+    expect(req).not.toHaveProperty("temperature");
+  });
+
+  // Claude 5 rejects the field outright with 400 "`temperature` is deprecated
+  // for this model", so injecting a default here broke every single-turn call:
+  // intent classification, triage, discussion digest, and the fail-closed
+  // output scanner. It is opt-in now, including an explicit 0.
+  it("omits `temperature` unless the caller asks for it", () => {
+    const bare = buildRequest({
+      model: "haiku",
+      messages: [{ role: "user", content: "hi" }],
+      maxTokens: 256,
+    });
+    expect(bare).not.toHaveProperty("temperature");
+
+    const explicitZero = buildRequest({
+      model: "haiku",
+      messages: [{ role: "user", content: "hi" }],
+      maxTokens: 256,
+      temperature: 0,
+    });
+    expect(explicitZero["temperature"]).toBe(0);
+
+    const rich = buildRichRequest({
+      model: "haiku",
+      messages: [{ role: "user", content: "hi" }],
+      maxTokens: 256,
+      tools: [],
+    });
+    expect(rich).not.toHaveProperty("temperature");
   });
 
   it("includes `system` verbatim when supplied", () => {

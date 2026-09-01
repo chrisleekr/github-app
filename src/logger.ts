@@ -62,8 +62,9 @@ export function createChildLogger(
  * shipper in cleartext. Logging via `logger.fatal({ err })` applies the same
  * `REDACT_PATHS` + `errSerializer` scrubbing every other line gets.
  *
- * `processName` distinguishes orchestrator vs daemon crash lines in the shared
- * aggregator. Register once per process, alongside the signal handlers.
+ * `processName` distinguishes orchestrator, daemon, and workflow-runner crash
+ * lines in the shared aggregator. Register once per process, alongside the
+ * signal handlers.
  *
  * Flushing: the default (production) destination is a SonicBoom stream that
  * flushes synchronously on the process `exit` event, so the fatal line is
@@ -73,7 +74,9 @@ export function createChildLogger(
  * (the dev-only `pino-pretty` config here), and the on-exit flush already
  * guarantees delivery on the production path.
  */
-export function installFatalHandlers(processName: "orchestrator" | "daemon"): void {
+export function installFatalHandlers(
+  processName: "orchestrator" | "daemon" | "workflow-runner",
+): void {
   const onFatal =
     (kind: "uncaughtException" | "unhandledRejection") =>
     (reason: unknown): void => {

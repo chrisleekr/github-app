@@ -7,7 +7,7 @@ import type { TriggerEventType } from "../shared/dispatch-types";
  * GitHub comment reaction lifecycle for bot-driven workflows.
  *
  *   eyes    : trigger detected, work queued
- *   rocket  : job dispatched to a daemon
+ *   rocket  : workflow durably queued for execution
  *   hooray  : workflow succeeded
  *   confused: workflow failed (handler error, daemon disconnect, OOM)
  *
