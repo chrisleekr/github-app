@@ -979,10 +979,14 @@ async function runProposalPayload(p: RunProposalPayloadInput): Promise<void> {
     // FIX #4, surface non-dispatch outcomes as throws so the caller's
     // catch path posts a failure ack and the proposal does NOT get
     // marked executed for a workflow that never ran.
-    if (result.status === "refused") {
+    if (result.status === "refused" && result.explained) {
       // Dispatcher already posted a user-facing refusal comment via
       // postRefusalComment. Throw a sentinel so runPendingApproval
       // can skip its own failure-ack and avoid double-commenting.
+      //
+      // Gated on `explained`: the repo-config trigger filters refuse
+      // silently by design, and suppressing our ack for those too would
+      // dead-end an approved proposal with no message at all.
       throw new WorkflowRefusedByDispatcher(
         `workflow dispatch refused${result.reason !== undefined ? `, ${result.reason}` : ""}`,
       );
@@ -1056,8 +1060,10 @@ async function runWorkflowDirectly(
       },
       "chat-thread: high-conf execute-workflow refused by dispatcher",
     );
-    // The dispatcher already posted a refusal comment via
-    // postRefusalComment, so we don't double-post.
+    // No follow-up post. When the dispatcher explained the refusal it
+    // already commented; when a repo-config trigger filter refused it
+    // stayed silent on purpose, and the reply posted above this call
+    // means the user is not left with nothing either way.
   }
   return replyId !== null ? { replyCommentId: replyId } : {};
 }

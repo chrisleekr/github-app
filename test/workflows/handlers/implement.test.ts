@@ -14,6 +14,7 @@ import type { Octokit } from "octokit";
 import type pino from "pino";
 
 import type { WorkflowRunContext } from "../../../src/workflows/registry";
+import { expectToReject } from "../../utils/assertions";
 
 const mockConfig: { githubPersonalAccessToken: string | undefined } = {
   githubPersonalAccessToken: undefined,
@@ -27,19 +28,22 @@ let pipelineResult: {
   numTurns?: number;
   durationMs?: number;
   capturedFiles?: Record<string, string>;
+  daemonActions?: {
+    learnings: { category: "setup"; content: string }[];
+    deletions: string[];
+  };
 };
 
+const mockRunPipeline = mock(() => Promise.resolve(pipelineResult));
+
 void mock.module("../../../src/core/pipeline", () => ({
-  runPipeline: mock(() => Promise.resolve(pipelineResult)),
+  runPipeline: mockRunPipeline,
 }));
 
+class StaleWorkflowAttemptError extends Error {}
+
 void mock.module("../../../src/workflows/runs-store", () => ({
-  findLatestSucceededForTarget: mock(() =>
-    Promise.resolve({
-      id: "plan-row-1",
-      state: { plan: "## Plan\n\nDo the thing." },
-    }),
-  ),
+  StaleWorkflowAttemptError,
 }));
 
 // Stub the discussion-digest module so this test (which mocks `config` down
@@ -115,7 +119,7 @@ function buildCtx(
     },
   } as unknown as Octokit;
 
-  const setStateMock = mock(() => Promise.resolve());
+  const setStateMock = mock(() => Promise.resolve({ trackingCommentId: 12345 }));
 
   return {
     runId: "run-1",
@@ -125,6 +129,7 @@ function buildCtx(
     octokit,
     deliveryId: "delivery-1",
     daemonId: "daemon-1",
+    priorPlanState: { plan: "## Plan\n\nDo the thing." },
     setState: setStateMock,
     setStateMock,
   } as unknown as WorkflowRunContext & { setStateMock: ReturnType<typeof mock> };
@@ -146,6 +151,16 @@ describe("implement handler: findRecentOpenedPr", () => {
     mockConfig.githubPersonalAccessToken = undefined;
   });
 
+  it("stops before pipeline execution when the starting-comment attempt fence is stale", async () => {
+    const ctx = buildCtx([]);
+    ctx.setStateMock.mockImplementation(() =>
+      Promise.reject(new StaleWorkflowAttemptError("workflow attempt is no longer current")),
+    );
+
+    await expectToReject(implementHandler(ctx), "workflow attempt is no longer current");
+    expect(mockRunPipeline).not.toHaveBeenCalled();
+  });
+
   it("App mode: accepts a PR authored by the App bot", async () => {
     const ctx = buildCtx([{ number: 107, type: "Bot", login: "chrisleekr-bot[bot]" }]);
     const result = await implementHandler(ctx);
@@ -158,13 +173,44 @@ describe("implement handler: findRecentOpenedPr", () => {
     }
   });
 
+  it("passes repo memory into the pipeline and forwards terminal daemon actions", async () => {
+    const ctx = buildCtx([{ number: 107, type: "Bot", login: "chrisleekr-bot[bot]" }]);
+    const repoMemory = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        category: "setup" as const,
+        content: "Run isolated tests.",
+        pinned: false,
+      },
+    ];
+    (ctx as { repoMemory?: typeof repoMemory }).repoMemory = repoMemory;
+    pipelineResult.daemonActions = {
+      learnings: [{ category: "setup", content: "Use Bun." }],
+      deletions: [],
+    };
+
+    const result = await implementHandler(ctx);
+
+    expect((mockRunPipeline.mock.calls.at(-1)?.[0] as BotContext).repoMemory).toEqual(repoMemory);
+    expect("daemonActions" in result ? result.daemonActions : undefined).toEqual(
+      pipelineResult.daemonActions,
+    );
+  });
+
   it("App mode: rejects a PR authored by a User account", async () => {
+    pipelineResult.daemonActions = {
+      learnings: [{ category: "setup", content: "Use the App-authored PR." }],
+      deletions: [],
+    };
     const ctx = buildCtx([{ number: 107, type: "User", login: "chrisleekr" }]);
     const result = await implementHandler(ctx);
     expect(result.status).toBe("failed");
     if (result.status === "failed") {
       expect(result.reason).toBe("implement completed but no PR was found");
     }
+    expect("daemonActions" in result ? result.daemonActions : undefined).toEqual(
+      pipelineResult.daemonActions,
+    );
   });
 
   it("PAT mode: accepts a PR authored by the PAT owner (regression: User type)", async () => {
@@ -224,5 +270,67 @@ describe("implement handler: findRecentOpenedPr", () => {
       expect(result.reason).not.toContain("999");
       expect(result.reason).toContain("502 Bad Gateway");
     }
+  });
+});
+
+// ─── Per-repo agent policy, `.github-app.yaml` Gate 2 ───────────────────────
+
+describe("implement handler: per-repo policy forwarding", () => {
+  beforeEach(() => {
+    mockRunPipeline.mockClear();
+    pipelineResult = { success: true, capturedFiles: { "IMPLEMENT.md": "## Summary\n\nDone." } };
+  });
+
+  it("forwards the run-context policy into the pipeline overrides", async () => {
+    const policy = {
+      model: "claude-repo-pinned-model",
+      timeoutMs: 900_000,
+      extraAllowedTools: ["WebFetch"],
+    };
+    const ctx = buildCtx([]);
+    (ctx as unknown as Record<string, unknown>)["policy"] = policy;
+
+    await implementHandler(ctx);
+
+    expect(mockRunPipeline).toHaveBeenCalledTimes(1);
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as
+      | { policy?: Record<string, unknown> }
+      | undefined;
+    expect(overrides?.policy).toEqual(policy);
+  });
+
+  it("forwards the run-context maxTurns into the pipeline overrides", async () => {
+    // The turn cap rides the top-level payload field, not `policy`, so it
+    // needs its own hop. Without it `workflows.implement.max_turns` is inert.
+    const ctx = buildCtx([]);
+    (ctx as unknown as Record<string, unknown>)["maxTurns"] = 12;
+
+    await implementHandler(ctx);
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as { maxTurns?: number } | undefined;
+    expect(overrides?.maxTurns).toBe(12);
+  });
+
+  it("forwards the daemon attempt signal into the pipeline overrides", async () => {
+    const ctx = buildCtx([]);
+    const signal = new AbortController().signal;
+    (ctx as unknown as Record<string, unknown>)["signal"] = signal;
+
+    await implementHandler(ctx);
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as { signal?: AbortSignal } | undefined;
+    expect(overrides?.signal).toBe(signal);
+  });
+
+  it("passes no policy or maxTurns key when the run context carries neither (C8)", async () => {
+    await implementHandler(buildCtx([]));
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as Record<string, unknown> | undefined;
+    expect(overrides).toBeDefined();
+    // `exactOptionalPropertyTypes`: absent, not `undefined`-valued.
+    expect(Object.hasOwn(overrides ?? {}, "policy")).toBe(false);
+    expect(Object.hasOwn(overrides ?? {}, "maxTurns")).toBe(false);
+    // Existing overrides must survive the addition.
+    expect(overrides?.["captureFiles"]).toEqual(["IMPLEMENT.md"]);
   });
 });

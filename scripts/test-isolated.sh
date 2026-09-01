@@ -9,14 +9,15 @@ passed=0
 failed=0
 failures=()
 
-tests=(test/**/*.test.ts src/**/*.test.ts)
+tests=(test/**/*.test.ts)
 if (( ${#tests[@]} == 0 )); then
-  echo "No test files matched test/**/*.test.ts or src/**/*.test.ts" >&2
+  echo "No test files matched test/**/*.test.ts" >&2
   exit 1
 fi
 
 for f in "${tests[@]}"; do
-  output=$(bun test "$f" 2>&1)
+  # Cold database migrations can exceed Bun's 5s lifecycle-hook default.
+  output=$(bun test --timeout=30000 "$f" 2>&1)
   has_zero_fail=false
   has_skip=false
   # Anchor on the leading-whitespace summary line Bun prints (e.g. " 0 fail")

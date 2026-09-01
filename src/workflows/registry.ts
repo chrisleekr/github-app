@@ -3,6 +3,15 @@ import type pino from "pino";
 import { z } from "zod";
 
 import type { ReviewLearningPayload } from "../mcp/registry";
+import {
+  type HandlerResult,
+  type PriorPlanState,
+  type RepoMemoryEntry,
+  type WorkflowName,
+  WorkflowNameSchema,
+  type WorkflowRunSnapshot,
+} from "../shared/workflow-types";
+import type { AgentPolicy } from "../shared/ws-messages";
 import { handler as implementHandler } from "./handlers/implement";
 import { handler as planHandler } from "./handlers/plan";
 import { handler as rememberHandler } from "./handlers/remember";
@@ -11,78 +20,12 @@ import { handler as reviewHandler } from "./handlers/review";
 import { handler as shipHandler } from "./handlers/ship";
 import { handler as triageHandler } from "./handlers/triage";
 
-export const WorkflowNameSchema = z.enum([
-  "triage",
-  "plan",
-  "implement",
-  "review",
-  "resolve",
-  "ship",
-  "remember",
-]);
-export type WorkflowName = z.infer<typeof WorkflowNameSchema>;
+export { WorkflowNameSchema };
+export { HandlerResultSchema } from "../shared/workflow-types";
+export type { HandlerResult, WorkflowName };
 
 export const WorkflowContextSchema = z.enum(["issue", "pr", "both"]);
 export type WorkflowContext = z.infer<typeof WorkflowContextSchema>;
-
-/**
- * `humanMessage` lets the handler supply the exact body the executor should
- * render into the tracking comment alongside the terminal status header.
- * When omitted, the executor falls back to a generic "<workflow> <status>"
- * line. Handlers that already wrote a rich message via `ctx.setState` during
- * execution should repeat it here so the final replace-write preserves it.
- *
- * `handed-off` is the composite-workflow variant: the handler inserted and
- * enqueued a child run and wants the parent row to stay `running` until the
- * last child completes (FR-006, handoff-protocol.md §Parent status). The
- * executor merges `state` into the parent's row but does NOT transition the
- * parent's `status`: the orchestrator's cascade does that on the final
- * child's completion.
- *
- * `incomplete` is the "agent ran cleanly but work remains" terminal state
- * (issue #93). The pipeline returned `success: true`, but a handler-side
- * post-execution gate (e.g., the `resolve` handler's CI re-check) found
- * surviving failures: typically when the agent hit `FIX_ATTEMPTS_CAP=3`
- * with red CI. Distinct from `failed` so downstream surfaces can tell a
- * clean-run-but-blocked outcome from a true pipeline error.
- */
-/**
- * Review-learning IDs the review/resolve handler's runPipeline actually
- * applied to the prompt (post file-glob filter). Forwarded by workflow-
- * executor.ts into the `job:result` payload's `appliedReviewLearningIds`
- * field so the orchestrator can bump `use_count` + `last_used_at`. Only
- * `review` and `resolve` populate this; other handlers leave it omitted.
- */
-const appliedReviewLearningIdsField = z.array(z.string().max(64)).max(50).optional();
-
-export const HandlerResultSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("succeeded"),
-    state: z.unknown(),
-    humanMessage: z.string().min(1).optional(),
-    appliedReviewLearningIds: appliedReviewLearningIdsField,
-  }),
-  z.object({
-    status: z.literal("failed"),
-    reason: z.string().min(1),
-    state: z.unknown().optional(),
-    humanMessage: z.string().min(1).optional(),
-  }),
-  z.object({
-    status: z.literal("incomplete"),
-    reason: z.string().min(1),
-    state: z.unknown().optional(),
-    humanMessage: z.string().min(1).optional(),
-    appliedReviewLearningIds: appliedReviewLearningIdsField,
-  }),
-  z.object({
-    status: z.literal("handed-off"),
-    state: z.unknown().optional(),
-    humanMessage: z.string().min(1).optional(),
-    childRunId: z.string().min(1),
-  }),
-]);
-export type HandlerResult = z.infer<typeof HandlerResultSchema>;
 
 export interface WorkflowRunContext {
   readonly runId: string;
@@ -100,14 +43,17 @@ export interface WorkflowRunContext {
   readonly logger: pino.Logger;
   readonly octokit: Octokit;
   readonly deliveryId: string | null;
-  /**
-   * Identifier of the daemon process executing this run. Handlers writing
-   * new `workflow_runs` rows from inside the daemon (e.g., the `ship`
-   * composite spawning child runs) must set `owner_kind='daemon',
-   * owner_id=daemonId` so the liveness reaper can detect inserter death
-   * before the row reaches a downstream handler.
-   */
+  /** Stable isolated-runner identity used for logs and execution context. */
   readonly daemonId: string;
+  readonly signal?: AbortSignal;
+  /** Commit a composite child and parent hand-off under this attempt's lease. */
+  readonly handOffChild?: (input: {
+    readonly workflowName: WorkflowName;
+    readonly target: WorkflowRunContext["target"];
+    readonly parentStepIndex: number;
+    readonly state: Record<string, unknown>;
+    readonly humanMessage: string;
+  }) => Promise<{ childRunId: string }>;
   /**
    * Orchestrator pre-loaded review learnings for this job, when any. Only the
    * `review` and `resolve` handlers read this and forward to `runPipeline`
@@ -117,7 +63,29 @@ export interface WorkflowRunContext {
    * the orchestrator's load returned zero rows.
    */
   readonly reviewLearnings?: ReviewLearningPayload[];
-  readonly setState: (state: unknown, humanMessage: string) => Promise<void>;
+  /** Bounded repository hints loaded by the orchestrator. */
+  readonly repoMemory?: RepoMemoryEntry[];
+  /**
+   * Per-repo agent policy from `.github-app.yaml` ("Gate 2"), already clamped
+   * against the server ceilings by the orchestrator, and applied via
+   * `applyAgentPolicy`. Undefined when the repo ships no config file.
+   */
+  readonly policy?: AgentPolicy;
+  /**
+   * Turn cap for this run, already resolved by the orchestrator as
+   * `workflows.<name>.max_turns ?? AGENT_MAX_TURNS ?? DEFAULT_MAXTURNS` and
+   * clamped against the server ceiling. Separate from `policy` because it
+   * rides the isolated runner payload as the single source of truth.
+   */
+  readonly maxTurns?: number;
+  /** Most recent succeeded plan, preloaded for the implement workflow. */
+  readonly priorPlanState?: Readonly<PriorPlanState>;
+  /** Latest row per ship step, preloaded so the runner never queries PostgreSQL. */
+  readonly shipStepRuns?: Readonly<Partial<Record<WorkflowName, WorkflowRunSnapshot>>>;
+  readonly setState: (
+    state: unknown,
+    humanMessage: string,
+  ) => Promise<{ trackingCommentId?: number }>;
 }
 
 export type WorkflowHandler = (ctx: WorkflowRunContext) => Promise<HandlerResult>;

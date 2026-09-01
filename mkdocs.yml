@@ -93,6 +93,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Use the bot:
+      - Repo configuration: use/repo-config.md
       - Invoking: use/invoking.md
       - Workflows:
           - Catalog: use/workflows/index.md

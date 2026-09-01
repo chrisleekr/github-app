@@ -3,6 +3,7 @@ import type { Octokit } from "octokit";
 import pino from "pino";
 
 import type { WorkflowRunRow } from "../../src/workflows/runs-store";
+import { expectToReject } from "../utils/assertions";
 
 // Mock the runs-store DB layer so the tracking-mirror exercises pure logic
 // without touching Postgres. Each test seeds the mocks by mutating the
@@ -21,18 +22,30 @@ const tryReserveMock = mock(() => Promise.resolve(mockReservation));
 const listChildrenByParentMock = mock(() => Promise.resolve([] as readonly WorkflowRunRow[]));
 const findPriorTrackingCommentsMock = mock(() => Promise.resolve(mockPriorComments));
 const clearTrackingCommentIdMock = mock(() => Promise.resolve());
+const clearTrackingCommentIdForAttemptMock = mock(() => Promise.resolve());
+const assertCurrentWorkflowAttemptMock = mock(() => Promise.resolve());
+const mergeAttemptStateMock = mock(() => {
+  if (mockRow === null) return Promise.reject(new Error("run missing"));
+  return Promise.resolve(mockRow);
+});
+class StaleWorkflowAttemptError extends Error {}
 
 void mock.module("../../src/workflows/runs-store", () => ({
+  assertCurrentWorkflowAttempt: assertCurrentWorkflowAttemptMock,
   clearTrackingCommentId: clearTrackingCommentIdMock,
+  clearTrackingCommentIdForAttempt: clearTrackingCommentIdForAttemptMock,
   findById: findByIdMock,
   findPriorTrackingComments: findPriorTrackingCommentsMock,
   listChildrenByParent: listChildrenByParentMock,
   mergeState: mergeStateMock,
+  mergeAttemptState: mergeAttemptStateMock,
+  StaleWorkflowAttemptError,
   tryReserveTrackingCommentId: tryReserveMock,
 }));
 
 // Import AFTER mock.module so the module-under-test binds to mocks.
-const { setState } = await import("../../src/workflows/tracking-mirror");
+const { CONFIG_NOTICE_KEY, renderCommentBody, setState } =
+  await import("../../src/workflows/tracking-mirror");
 
 const RUN_ID = "11111111-1111-1111-1111-111111111111";
 const MARKER = `<!-- workflow-run:${RUN_ID} -->`;
@@ -111,6 +124,9 @@ describe("tracking-mirror.setState: first-touch create/adopt path", () => {
     listChildrenByParentMock.mockClear();
     findPriorTrackingCommentsMock.mockClear();
     clearTrackingCommentIdMock.mockClear();
+    clearTrackingCommentIdForAttemptMock.mockClear();
+    assertCurrentWorkflowAttemptMock.mockClear();
+    mergeAttemptStateMock.mockClear();
     mockPriorComments = [];
   });
 
@@ -147,6 +163,61 @@ describe("tracking-mirror.setState: first-touch create/adopt path", () => {
       ?.body;
     expect(createBody).toContain(MARKER);
     expect(result.tracking_comment_id).toBe(9000);
+  });
+
+  it("reserves a first-touch comment through the exact workflow attempt", async () => {
+    mockRow = makeRow();
+    mockReservation = { won: true, trackingCommentId: 9000 };
+    const attempt = { runId: RUN_ID, attemptId: crypto.randomUUID() };
+    const { octokit } = makeOctokit({ createCommentResult: { id: 9000 } });
+    let scanCallCount = 0;
+    const listComments = mock(() => {
+      scanCallCount += 1;
+      if (scanCallCount === 1) return Promise.resolve({ data: [] });
+      return Promise.resolve({
+        data: [{ id: 9000, body: `${MARKER}\nstarting`, created_at: "2026-05-08T02:55:43Z" }],
+      });
+    });
+    (octokit.rest.issues as unknown as { listComments: typeof listComments }).listComments =
+      listComments;
+
+    await setState(
+      { octokit, logger: SILENT_LOGGER },
+      { runId: RUN_ID, patch: {}, humanMessage: "starting", attempt },
+    );
+
+    expect(tryReserveMock).toHaveBeenCalledWith(RUN_ID, 9000, attempt);
+  });
+
+  it("stops first-touch cleanup and updates when the reservation attempt is stale", async () => {
+    mockRow = makeRow({ parent_run_id: "parent-run-id" });
+    const attempt = { runId: RUN_ID, attemptId: crypto.randomUUID() };
+    const { octokit, calls } = makeOctokit({ createCommentResult: { id: 9000 } });
+    tryReserveMock.mockRejectedValueOnce(new StaleWorkflowAttemptError("attempt lost"));
+    let scanCallCount = 0;
+    const listComments = mock(() => {
+      scanCallCount += 1;
+      if (scanCallCount === 1) return Promise.resolve({ data: [] });
+      return Promise.resolve({
+        data: [{ id: 9000, body: `${MARKER}\nstarting`, created_at: "2026-05-08T02:55:43Z" }],
+      });
+    });
+    (octokit.rest.issues as unknown as { listComments: typeof listComments }).listComments =
+      listComments;
+
+    await expectToReject(
+      setState(
+        { octokit, logger: SILENT_LOGGER },
+        { runId: RUN_ID, patch: {}, humanMessage: "starting", attempt },
+      ),
+      "attempt lost",
+    );
+
+    expect(calls.createComment).toHaveBeenCalledTimes(1);
+    expect(calls.updateComment).not.toHaveBeenCalled();
+    expect(calls.deleteComment).not.toHaveBeenCalled();
+    expect(findPriorTrackingCommentsMock).not.toHaveBeenCalled();
+    expect(listChildrenByParentMock).not.toHaveBeenCalled();
   });
 
   it("adopts an existing marker comment without POSTing when pre-scan finds one (pod-restart recovery)", async () => {
@@ -384,6 +455,32 @@ describe("tracking-mirror.setState: first-touch create/adopt path", () => {
     expect(clearTrackingCommentIdMock).toHaveBeenCalledWith("prior-run-id");
   });
 
+  it("re-run cleanup: clears a prior row through the current attempt fence", async () => {
+    mockRow = makeRow();
+    mockReservation = { won: true, trackingCommentId: 9000 };
+    mockPriorComments = [{ runId: "prior-run-id", trackingCommentId: 8001 }];
+    const { octokit } = makeOctokit({ createCommentResult: { id: 9000 } });
+    const attempt = { runId: RUN_ID, attemptId: crypto.randomUUID() };
+    let scanCallCount = 0;
+    const listComments = mock(() => {
+      scanCallCount += 1;
+      if (scanCallCount === 1) return Promise.resolve({ data: [] });
+      return Promise.resolve({
+        data: [{ id: 9000, body: `${MARKER}\nstarting`, created_at: "2026-05-08T02:55:43Z" }],
+      });
+    });
+    (octokit.rest.issues as unknown as { listComments: typeof listComments }).listComments =
+      listComments;
+
+    await setState(
+      { octokit, logger: SILENT_LOGGER },
+      { runId: RUN_ID, patch: {}, humanMessage: "starting", attempt },
+    );
+
+    expect(clearTrackingCommentIdMock).not.toHaveBeenCalled();
+    expect(clearTrackingCommentIdForAttemptMock).toHaveBeenCalledWith("prior-run-id", attempt);
+  });
+
   it("re-run cleanup: a deleteComment failure does not block the new comment (fail-open)", async () => {
     mockRow = makeRow();
     mockReservation = { won: true, trackingCommentId: 9000 };
@@ -456,5 +553,99 @@ describe("tracking-mirror.setState: first-touch create/adopt path", () => {
     expect(updateArgs?.comment_id).toBe(4242);
     expect(updateArgs?.body).toContain(MARKER);
     expect(result.tracking_comment_id).toBe(4242);
+  });
+
+  it("uses the exact workflow attempt for progress state and the GitHub update", async () => {
+    mockRow = makeRow({ tracking_comment_id: 4242 });
+    const { octokit, calls } = makeOctokit({});
+    const attempt = { runId: RUN_ID, attemptId: "22222222-2222-4222-8222-222222222222" };
+
+    await setState(
+      { octokit, logger: SILENT_LOGGER },
+      {
+        runId: RUN_ID,
+        patch: { progress: 50 },
+        humanMessage: "half complete",
+        attempt,
+      },
+    );
+
+    expect(mergeStateMock).not.toHaveBeenCalled();
+    expect(mergeAttemptStateMock).toHaveBeenCalledWith(
+      attempt,
+      expect.objectContaining({ progress: 50 }),
+    );
+    expect(assertCurrentWorkflowAttemptMock).toHaveBeenCalledWith(attempt);
+    expect(calls.updateComment).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not update GitHub after the progress attempt loses its lease", async () => {
+    mockRow = makeRow({ tracking_comment_id: 4242 });
+    const { octokit, calls } = makeOctokit({});
+    const attempt = { runId: RUN_ID, attemptId: "33333333-3333-4333-8333-333333333333" };
+    assertCurrentWorkflowAttemptMock.mockRejectedValueOnce(
+      new StaleWorkflowAttemptError("attempt lost"),
+    );
+
+    await expectToReject(
+      setState(
+        { octokit, logger: SILENT_LOGGER },
+        { runId: RUN_ID, patch: { progress: 50 }, humanMessage: "half complete", attempt },
+      ),
+      "attempt lost",
+    );
+
+    expect(calls.updateComment).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Per-repo config notice, `.github-app.yaml` Gate 2 ──────────────────────
+
+describe("renderCommentBody: persisted config notice", () => {
+  it("pins the state key so a rename fails loudly", () => {
+    // The key is persisted into `workflow_runs.state`. Renaming it after
+    // release strands the notice on every existing row, and the underscore
+    // prefix keeps it out of the handler-visible state namespace.
+    expect(CONFIG_NOTICE_KEY).toBe("_configNotice");
+  });
+
+  it("renders the notice on every body, not just the write that set it", () => {
+    const row = makeRow({
+      state: { [CONFIG_NOTICE_KEY]: "`.github-app.yaml` failed validation and was ignored." },
+    });
+
+    // The body is rebuilt from scratch on every write, so the assertion that
+    // matters is that a LATER message still carries the notice.
+    const body = renderCommentBody(row, "third progress update");
+
+    expect(body).toContain("> [!WARNING]");
+    expect(body).toContain("failed validation");
+    expect(body).toContain("third progress update");
+  });
+
+  it("collapses whitespace so a stray CR cannot break out of the blockquote", () => {
+    const row = makeRow({ state: { [CONFIG_NOTICE_KEY]: "config was\rignored" } });
+
+    const body = renderCommentBody(row, "msg");
+
+    expect(body).toContain("> config was ignored");
+    expect(body).not.toContain("\r");
+  });
+
+  it("renders each stored line as its own paragraph inside one alert", () => {
+    const row = makeRow({
+      state: { [CONFIG_NOTICE_KEY]: "config was ignored\nreview scope reduced" },
+    });
+
+    const body = renderCommentBody(row, "msg");
+
+    expect(body).toContain("> [!WARNING]\n> config was ignored\n>\n> review scope reduced");
+  });
+
+  it("renders nothing for an absent or whitespace-only notice", () => {
+    expect(renderCommentBody(makeRow(), "msg")).not.toContain("[!WARNING]");
+    expect(
+      renderCommentBody(makeRow({ state: { [CONFIG_NOTICE_KEY]: "  " } }), "msg"),
+    ).not.toContain("[!WARNING]");
   });
 });

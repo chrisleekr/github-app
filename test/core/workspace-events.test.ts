@@ -4,7 +4,7 @@ import {
   WORKSPACE_CLEANUP_TARGETS,
   WORKSPACE_LOG_EVENTS,
   WorkspaceLogFieldsSchema,
-} from "./workspace-events";
+} from "../../src/core/workspace-events";
 
 describe("WORKSPACE_LOG_EVENTS", () => {
   it("pins the canonical event strings", () => {

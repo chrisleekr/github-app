@@ -334,7 +334,6 @@ async function runDigestCall(
       system: withStructuredRules(system),
       messages: [{ role: "user", content: userMessage }],
       maxTokens: DIGEST_MAX_TOKENS,
-      temperature: 0,
     });
   } catch (err) {
     cc.log.warn({ err }, "discussion-digest LLM call failed");

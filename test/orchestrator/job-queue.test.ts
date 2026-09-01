@@ -64,12 +64,14 @@ void mock.module("../../src/config", () => ({
 // Import AFTER mocks
 const {
   enqueueJob,
+  ensureWorkflowJobQueued,
   tryDequeueJob,
   dequeueJob,
   requeueJob,
   leaseJob,
   releaseLeasedJob,
   requeueLeasedJob,
+  deferLeasedWorkflowJob,
   recoverProcessingList,
   processingListKey,
 } = await import("../../src/orchestrator/job-queue");
@@ -126,6 +128,29 @@ describe("job-queue", () => {
         { kind: "legacy", deliveryId: "d-123", retryCount: 2 },
         "Job enqueued",
       );
+    });
+  });
+
+  describe("ensureWorkflowJobQueued", () => {
+    it("atomically checks the shared and processing lists for one stable payload", async () => {
+      const job = makeQueuedJob({
+        kind: "workflow-run",
+        workflowRun: { runId: crypto.randomUUID(), workflowName: "review" },
+      });
+      if (job.kind !== "workflow-run") throw new Error("Expected workflow fixture");
+      mockSend.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+
+      expect(await ensureWorkflowJobQueued(job, "orch-a")).toBe(true);
+      expect(await ensureWorkflowJobQueued(job, "orch-a")).toBe(false);
+
+      for (const call of mockSend.mock.calls) {
+        expect(call[0]).toBe("EVAL");
+        expect(call[1][0]).toContain("LPOS");
+        expect(call[1][1]).toBe("2");
+        expect(call[1][2]).toBe("queue:jobs");
+        expect(call[1][3]).toBe("queue:processing:orch-a");
+        expect(call[1][4]).toBe(JSON.stringify(job));
+      }
     });
   });
 
@@ -359,6 +384,52 @@ describe("job-queue", () => {
       expect(call?.[1]?.[4]).toBe(raw);
       const pushed = JSON.parse(call?.[1]?.[5] as string) as { retryCount: number };
       expect(pushed.retryCount).toBe(2);
+    });
+  });
+
+  describe("deferLeasedWorkflowJob", () => {
+    it("moves the exact workflow lease without consuming retryCount", async () => {
+      const oldEnqueuedAt = Date.now() - 60_000;
+      const job = makeQueuedJob({
+        kind: "workflow-run",
+        retryCount: 2,
+        enqueuedAt: oldEnqueuedAt,
+        workflowRun: { runId: crypto.randomUUID(), workflowName: "implement" },
+      });
+      if (job.kind !== "workflow-run") throw new Error("Expected workflow fixture");
+      const raw = JSON.stringify(job);
+      mockSend.mockResolvedValueOnce(1);
+
+      expect(await deferLeasedWorkflowJob("orch-a", raw, job, "capacity-1")).toEqual({
+        status: "moved",
+      });
+
+      const call = mockSend.mock.calls[0];
+      expect(call?.[0]).toBe("EVAL");
+      expect(call?.[1]?.[0]).toContain("EXISTS");
+      expect(call?.[1]?.[1]).toBe("3");
+      expect(call?.[1]?.[2]).toBe("queue:processing:orch-a");
+      expect(call?.[1]?.[3]).toBe("queue:jobs");
+      expect(call?.[1]?.[4]).toBe("queue:workflow-deferral-receipt:orch-a:capacity-1");
+      expect(call?.[1]?.[5]).toBe(raw);
+      expect(call?.[1]?.[6]).toBe(raw);
+    });
+
+    it("distinguishes replayed and missing deferral receipts", async () => {
+      const job = makeQueuedJob({
+        kind: "workflow-run",
+        workflowRun: { runId: crypto.randomUUID(), workflowName: "plan" },
+      });
+      if (job.kind !== "workflow-run") throw new Error("Expected workflow fixture");
+      const raw = JSON.stringify(job);
+      mockSend.mockResolvedValueOnce(2).mockResolvedValueOnce(0);
+
+      expect(await deferLeasedWorkflowJob("orch-a", raw, job, "capacity-2")).toEqual({
+        status: "already-moved",
+      });
+      expect(await deferLeasedWorkflowJob("orch-a", raw, job, "capacity-3")).toEqual({
+        status: "missing",
+      });
     });
   });
 

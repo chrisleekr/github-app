@@ -25,20 +25,22 @@ flowchart TD
     NL["Mention + NL classifier<br/>Bedrock single-turn"]:::route
     LabelEvt["issues.labeled or<br/>pull_request.labeled"]:::input
     LabelMatch["registry.getByLabel"]:::route
-    Enqueue["enqueueJob<br/>Valkey queue:jobs"]:::store
-    Daemon["Daemon claims offer"]:::work
+    Commit["Commit workflow + execution<br/>with open outbox receipt"]:::store
+    Enqueue["Publish workflow-run<br/>to Valkey queue:jobs"]:::store
+    Runner["Controller claims lease<br/>and starts one-attempt Pod"]:::work
     Pipe["src/core/pipeline.ts"]:::work
-    Track["Tracking comment finalised"]:::done
+    Durable["Store terminal result<br/>before projection"]:::store
+    Track["Tracking comment reconciled"]:::done
 
     Cmt --> Verify --> Idem --> Allow --> Router
     Router --> Lit
     Router --> NL
     LabelEvt --> Allow
     Allow -. label path .-> LabelMatch
-    Lit --> Enqueue
-    NL --> Enqueue
-    LabelMatch --> Enqueue
-    Enqueue --> Daemon --> Pipe --> Track
+    Lit --> Commit
+    NL --> Commit
+    LabelMatch --> Commit
+    Commit --> Enqueue --> Runner --> Pipe --> Durable --> Track
 
     classDef input fill:#0b5cad,stroke:#083e74,color:#ffffff
     classDef guard fill:#164a3a,stroke:#0d2c24,color:#ffffff
@@ -62,12 +64,12 @@ The legacy in-memory `Map` + tracking-comment marker scan was retired in issue #
 
 Comment-driven runs stack four reactions on your trigger comment so the lifecycle is visible at a glance:
 
-| Stage                      | Reaction |
-| -------------------------- | -------- |
-| Trigger detected           | 👀       |
-| Job dispatched to a daemon | 🚀       |
-| Workflow succeeded         | 🎉       |
-| Workflow failed            | 😕       |
+| Stage              | Reaction |
+| ------------------ | -------- |
+| Trigger detected   | 👀       |
+| Workflow queued    | 🚀       |
+| Workflow succeeded | 🎉       |
+| Workflow failed    | 😕       |
 
 Reactions are additive: the combined set is the audit trail. Label-driven runs skip reactions because there is no comment to react on.
 

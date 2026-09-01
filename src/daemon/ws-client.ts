@@ -7,6 +7,7 @@ import {
   PROTOCOL_VERSION,
   type ServerMessage,
   serverMessageSchema,
+  WS_CLOSE_CODES,
 } from "../shared/ws-messages";
 import { redactErrorMessage } from "../utils/log-redaction";
 import { DAEMON_CONNECTION_LOG_EVENTS } from "./log-fields";
@@ -153,7 +154,9 @@ export class DaemonWsClient {
         },
         "Disconnected from orchestrator",
       );
-      if (!this.closed) {
+      if (event.code === WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.code) {
+        this.closed = true;
+      } else if (!this.closed) {
         this.scheduleReconnect();
       }
     };

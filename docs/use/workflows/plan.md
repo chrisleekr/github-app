@@ -31,7 +31,7 @@ When `PROMPT_CACHE_LAYOUT=cacheable`, the plan prompt is split: the static role 
 
 ## Stop conditions
 
-The agent writes `PLAN.md`; the pipeline reports success or failure. No turn cap: the agent runs to completion.
+The agent writes `PLAN.md`; the pipeline reports success or failure. There is no _default_ turn cap, so the agent runs to completion. Three sources can bind one, and all three are honoured: the repo's `workflows.plan.max_turns` in `.github-app.yaml`, the operator's `AGENT_MAX_TURNS`, and `DEFAULT_MAXTURNS`. With all three unset, which is the stock deployment, the run is uncapped as before.
 
 ## Re-trigger semantics
 

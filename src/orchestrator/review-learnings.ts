@@ -326,12 +326,6 @@ export async function bumpReviewLearningUsage(
   }
 }
 
-/** One row from the review-learnings upsert: the row id and whether it was new. */
-interface ReviewLearningInsertResult {
-  id: string;
-  inserted: boolean;
-}
-
 /**
  * Persist review learnings discovered during a review/resolve run.
  *
@@ -392,7 +386,7 @@ export async function saveReviewLearnings(
     // (the most recent embedding reflects the most recent text), but only
     // when the incoming save brought one.
     // eslint-disable-next-line no-await-in-loop -- bounded action list preserves result order
-    const result: ReviewLearningInsertResult[] = await db`
+    const result: { id: string; inserted: boolean }[] = await db`
         INSERT INTO review_learnings
           (repo_owner, repo_name, scope, file_glob, directive, rationale,
            source_pr, source_thread, source_author, embedding)

@@ -195,11 +195,10 @@ server.tool(
       const isSingleLine = startLine === undefined;
 
       const locKey = locationKey(path, line, side);
-      const alreadyPosted = await hasExistingComment(pull_number, path, line, side);
-      // Re-read `pendingLocations` AFTER the await: a concurrent handler can
-      // claim this location while `hasExistingComment` is in flight, and both
-      // would otherwise fall through and post.
-      if (pendingLocations.has(locKey) || alreadyPosted) {
+      if (
+        pendingLocations.has(locKey) ||
+        (await hasExistingComment(pull_number, path, line, side))
+      ) {
         log.info(
           { event: "mcp.inline_comment.deduped", pull_number, path, line, side },
           "skipped duplicate inline comment",
@@ -219,10 +218,6 @@ server.tool(
           ],
         };
       }
-
-      // Claim before the commit-SHA fetch below, which is another suspension
-      // point a concurrent handler could interleave with.
-      pendingLocations.add(locKey);
 
       // Get latest commit SHA if not provided
       let commitSha = commit_id;
@@ -257,6 +252,7 @@ server.tool(
         params.line = line;
       }
 
+      pendingLocations.add(locKey);
       let result;
       try {
         result = await retryWithBackoff(() => octokit.rest.pulls.createReviewComment(params), {

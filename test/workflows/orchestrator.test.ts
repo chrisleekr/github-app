@@ -19,6 +19,8 @@ import { SQL } from "bun";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import type pino from "pino";
 
+import { expectToReject } from "../utils/assertions";
+
 const TEST_DATABASE_URL =
   process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:55432/github_app_test";
 
@@ -36,6 +38,40 @@ function requireSql(): SQL {
   return sql;
 }
 
+async function markTestRunning(runId: string, daemonId: string, db: SQL): Promise<void> {
+  await db`
+    UPDATE workflow_runs
+       SET status = 'running', owner_kind = 'daemon', owner_id = ${daemonId}
+     WHERE id = ${runId} AND status = 'queued'
+  `;
+}
+
+async function markTestSucceeded(
+  runId: string,
+  state: Record<string, unknown>,
+  db: SQL,
+): Promise<void> {
+  await db`
+    UPDATE workflow_runs
+       SET status = 'succeeded', state = workflow_runs.state || ${state}::jsonb
+     WHERE id = ${runId}
+  `;
+}
+
+async function markTestFailed(
+  runId: string,
+  reason: string,
+  state: Record<string, unknown>,
+  db: SQL,
+): Promise<void> {
+  const merged = { ...state, failedReason: reason };
+  await db`
+    UPDATE workflow_runs
+       SET status = 'failed', state = workflow_runs.state || ${merged}::jsonb
+     WHERE id = ${runId}
+  `;
+}
+
 // ─── Mocked downstream surfaces ──────────────────────────────────────────
 
 const mockEnqueueJob = mock(() => Promise.resolve());
@@ -50,6 +86,38 @@ void mock.module("../../src/workflows/execution-row", () => ({
   buildWorkflowContextJson: mock(() => ({})),
 }));
 
+void mock.module("../../src/workflows/dispatch-outbox", () => ({
+  publishPendingWorkflowRuns: mock(() => Promise.resolve(0)),
+  publishWorkflowRunById: async (runId: string, db: SQL) => {
+    const rows: {
+      id: string;
+      workflow_name: string;
+      parent_run_id: string | null;
+      parent_step_index: number | null;
+      target_type: "issue" | "pr";
+      target_number: number;
+    }[] = await db`
+      SELECT id, workflow_name, parent_run_id, parent_step_index, target_type, target_number
+        FROM workflow_runs
+       WHERE id = ${runId}
+    `;
+    const row = rows[0];
+    if (row === undefined) return false;
+    await mockEnqueueJob({
+      entityNumber: row.target_number,
+      isPR: row.target_type === "pr",
+      workflowRun: {
+        runId: row.id,
+        workflowName: row.workflow_name,
+        ...(row.parent_run_id !== null && row.parent_step_index !== null
+          ? { parentRunId: row.parent_run_id, parentStepIndex: row.parent_step_index }
+          : {}),
+      },
+    });
+    return true;
+  },
+}));
+
 void mock.module("../../src/orchestrator/concurrency", () => ({
   incrementActiveCount: mock(() => {}),
   decrementActiveCount: mock(() => {}),
@@ -57,6 +125,7 @@ void mock.module("../../src/orchestrator/concurrency", () => ({
 
 const mockSetState = mock(() => Promise.resolve());
 void mock.module("../../src/workflows/tracking-mirror", () => ({
+  LAST_HUMAN_MESSAGE_KEY: "_lastHumanMessage",
   setState: mockSetState,
   postRefusalComment: mock(() => Promise.resolve()),
 }));
@@ -101,6 +170,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
   beforeAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -123,6 +193,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
   afterAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -148,8 +219,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
   });
 
   it("T025 success chain: each child success enqueues the next, final child flips parent to succeeded", async () => {
-    const { insertQueued, findById, markRunning, markSucceeded } =
-      await import("../../src/workflows/runs-store");
+    const { insertQueued, findById } = await import("../../src/workflows/runs-store");
     const { onStepComplete } = await import("../../src/workflows/orchestrator");
 
     const issueNumber = 201;
@@ -168,7 +238,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markRunning(parent.id, "test-daemon", requireSql());
+    await markTestRunning(parent.id, "test-daemon", requireSql());
     const child0 = await insertQueued(
       {
         workflowName: "triage",
@@ -184,7 +254,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     // ── child 0 (triage) succeeds ────────────────────────────────────────
     // Simulate the executor's terminal write before the cascade runs, so
     // the orchestrator sees the child as already succeeded.
-    await markSucceeded(child0.id, { verdict: "valid" }, requireSql());
+    await markTestSucceeded(child0.id, { verdict: "valid" }, requireSql());
 
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, child0.id, {
       status: "succeeded",
@@ -206,7 +276,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     expect(child1RunId).not.toBe("");
 
     // ── child 1 (plan) succeeds ──────────────────────────────────────────
-    await markSucceeded(child1RunId, { planWritten: true }, requireSql());
+    await markTestSucceeded(child1RunId, { planWritten: true }, requireSql());
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, child1RunId, {
       status: "succeeded",
     });
@@ -223,7 +293,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     const child2RunId = call1?.workflowRun.runId ?? "";
 
     // ── child 2 (implement) succeeds ─────────────────────────────────────
-    await markSucceeded(child2RunId, { pr_number: 42 }, requireSql());
+    await markTestSucceeded(child2RunId, { pr_number: 42 }, requireSql());
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, child2RunId, {
       status: "succeeded",
     });
@@ -240,7 +310,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
 
     // ── child 3 (review-1) succeeds with findings → resolve-1 enqueued ──
     // Phase 1: review must run on the PR target (#42), not the issue.
-    await markSucceeded(
+    await markTestSucceeded(
       child3RunId,
       { findings: { blocker: 0, major: 1, minor: 0, nit: 0, total: 1 } },
       requireSql(),
@@ -271,7 +341,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     // ── child 4 (resolve-1) succeeds → loops back to review-2 ───────────
     // Phase 2c: review_iterations(1) < cap(2), so a new review child is
     // inserted at parent_step_index = ship.steps.indexOf("review") = 3.
-    await markSucceeded(child4RunId, { approved: true }, requireSql());
+    await markTestSucceeded(child4RunId, { approved: true }, requireSql());
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, child4RunId, {
       status: "succeeded",
     });
@@ -296,7 +366,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     // ── child 5 (review-2) succeeds with no findings → parent succeeded ─
     // Phase 2c: review_iterations(2) >= 2 AND total findings == 0, so the
     // loop short-circuits and the ship parent terminates as succeeded.
-    await markSucceeded(
+    await markTestSucceeded(
       child5RunId,
       { findings: { blocker: 0, major: 0, minor: 0, nit: 0, total: 0 } },
       requireSql(),
@@ -324,7 +394,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
   });
 
   it("T026 failure cascade: child-2 failure flips parent to failed with failedAtStepIndex=2, no further children", async () => {
-    const { insertQueued, findById, markRunning, markSucceeded, markFailed, listChildrenByParent } =
+    const { insertQueued, findById, listChildrenByParent } =
       await import("../../src/workflows/runs-store");
     const { onStepComplete } = await import("../../src/workflows/orchestrator");
 
@@ -343,7 +413,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markRunning(parent.id, "test-daemon", requireSql());
+    await markTestRunning(parent.id, "test-daemon", requireSql());
     const child0 = await insertQueued(
       {
         workflowName: "triage",
@@ -356,7 +426,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       requireSql(),
     );
 
-    await markSucceeded(child0.id, { verdict: "valid" }, requireSql());
+    await markTestSucceeded(child0.id, { verdict: "valid" }, requireSql());
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, child0.id, {
       status: "succeeded",
     });
@@ -365,7 +435,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       | { workflowRun: { runId: string } }
       | undefined;
     const child1RunId = child1Enqueue?.workflowRun.runId ?? "";
-    await markSucceeded(child1RunId, {}, requireSql());
+    await markTestSucceeded(child1RunId, {}, requireSql());
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, child1RunId, {
       status: "succeeded",
     });
@@ -379,7 +449,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     mockEnqueueJob.mockClear();
 
     // ── child 2 (implement) FAILS ────────────────────────────────────────
-    await markFailed(child2RunId, "merge conflict", {}, requireSql());
+    await markTestFailed(child2RunId, "merge conflict", {}, requireSql());
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, child2RunId, {
       status: "failed",
       reason: "merge conflict",
@@ -399,9 +469,238 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     expect(mockSetState).toHaveBeenCalled();
   });
 
+  it("does not revive a terminal parent when a late child result is replayed", async () => {
+    const { findById, insertQueued } = await import("../../src/workflows/runs-store");
+    const { onStepComplete } = await import("../../src/workflows/orchestrator");
+    const shipTarget = { ...target, number: 209 };
+    const parent = await insertQueued(
+      {
+        workflowName: "ship",
+        target: shipTarget,
+        initialState: { currentStepIndex: 0, stepRuns: [] },
+        ownerKind: "orchestrator",
+        ownerId: "test-orchestrator",
+      },
+      requireSql(),
+    );
+    await markTestRunning(parent.id, "test-daemon", requireSql());
+    const child = await insertQueued(
+      {
+        workflowName: "triage",
+        target: shipTarget,
+        parentRunId: parent.id,
+        parentStepIndex: 0,
+        ownerKind: "orchestrator",
+        ownerId: "test-orchestrator",
+      },
+      requireSql(),
+    );
+    await markTestFailed(parent.id, "workflow execution lease expired", {}, requireSql());
+    await markTestSucceeded(child.id, { verdict: "valid" }, requireSql());
+
+    await onStepComplete({ octokit: {} as never, logger: silentLogger() }, child.id, {
+      status: "succeeded",
+    });
+
+    const parentAfter = await findById(parent.id, requireSql());
+    expect(parentAfter?.status).toBe("failed");
+    expect(parentAfter?.state).toEqual({
+      currentStepIndex: 0,
+      stepRuns: [],
+      failedReason: "workflow execution lease expired",
+    });
+    expect(mockEnqueueJob).not.toHaveBeenCalled();
+    expect(mockSetState).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a cascade receipt so a replay cannot enqueue the next child twice", async () => {
+    const store = await import("../../src/workflows/runs-store");
+    const { ensureWorkflowCascadeForOffer } =
+      await import("../../src/workflows/completion-reconciler");
+    const shipTarget = { ...target, number: 210 };
+    const parent = await store.insertQueued(
+      {
+        workflowName: "ship",
+        target: shipTarget,
+        initialState: { currentStepIndex: 0, stepRuns: [] },
+        ownerKind: "orchestrator",
+        ownerId: "test-orchestrator",
+      },
+      requireSql(),
+    );
+    await markTestRunning(parent.id, "test-daemon", requireSql());
+    const childExecutionDeliveryId = crypto.randomUUID();
+    const child = await store.insertQueued(
+      {
+        workflowName: "triage",
+        target: shipTarget,
+        parentRunId: parent.id,
+        parentStepIndex: 0,
+        executionDeliveryId: childExecutionDeliveryId,
+        ownerKind: "orchestrator",
+        ownerId: "test-orchestrator",
+      },
+      requireSql(),
+    );
+    const attempt = { runId: child.id, attemptId: crypto.randomUUID() };
+    await requireSql()`
+      UPDATE workflow_runs
+         SET status = 'running',
+             owner_kind = 'daemon',
+             owner_id = ${`workflow-runner:${attempt.attemptId}`},
+             attempt_id = ${attempt.attemptId},
+             lease_expires_at = now() + interval '1 minute',
+             attempt_deadline_at = now() + interval '70 minutes'
+       WHERE id = ${child.id}
+    `;
+    await store.markAttemptSucceeded(attempt, { verdict: "valid" }, requireSql());
+
+    expect(
+      await ensureWorkflowCascadeForOffer(attempt.attemptId, silentLogger(), requireSql()),
+    ).toBe("complete");
+    expect(
+      await ensureWorkflowCascadeForOffer(attempt.attemptId, silentLogger(), requireSql()),
+    ).toBe("complete");
+
+    const childAfter = await store.findById(child.id, requireSql());
+    const parentAfter = await store.findById(parent.id, requireSql());
+    const children = await store.listChildrenByParent(parent.id, requireSql());
+    expect(childAfter?.cascade_completed_at).toBeInstanceOf(Date);
+    expect(parentAfter?.state["stepRuns"]).toEqual([child.id]);
+    expect(children.map((row) => row.parent_step_index)).toEqual([0, 1]);
+    expect(mockEnqueueJob).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a terminal parent projection before recording the cascade receipt", async () => {
+    const store = await import("../../src/workflows/runs-store");
+    const { ensureWorkflowCascadeForOffer } =
+      await import("../../src/workflows/completion-reconciler");
+    const shipTarget = { ...target, number: 212 };
+    const parent = await store.insertQueued(
+      {
+        workflowName: "ship",
+        target: shipTarget,
+        initialState: { currentStepIndex: 0, stepRuns: [] },
+        ownerKind: "orchestrator",
+        ownerId: "test-orchestrator",
+      },
+      requireSql(),
+    );
+    await markTestRunning(parent.id, "test-daemon", requireSql());
+    const child = await store.insertQueued(
+      {
+        workflowName: "triage",
+        target: shipTarget,
+        parentRunId: parent.id,
+        parentStepIndex: 0,
+        executionDeliveryId: crypto.randomUUID(),
+        ownerKind: "orchestrator",
+        ownerId: "test-orchestrator",
+      },
+      requireSql(),
+    );
+    const attempt = { runId: child.id, attemptId: crypto.randomUUID() };
+    await requireSql()`
+      UPDATE workflow_runs
+         SET status = 'running',
+             owner_kind = 'daemon',
+             owner_id = ${`workflow-runner:${attempt.attemptId}`},
+             attempt_id = ${attempt.attemptId},
+             lease_expires_at = now() + interval '1 minute',
+             attempt_deadline_at = now() + interval '70 minutes'
+       WHERE id = ${child.id}
+    `;
+    await store.markAttemptFailed(attempt, "child failed", {}, requireSql());
+    mockSetState.mockRejectedValueOnce(new Error("GitHub unavailable"));
+
+    await expectToReject(
+      ensureWorkflowCascadeForOffer(attempt.attemptId, silentLogger(), requireSql(), {} as never),
+      "GitHub unavailable",
+    );
+    expect((await store.findById(child.id, requireSql()))?.cascade_completed_at).toBeNull();
+    expect((await store.findById(parent.id, requireSql()))?.status).toBe("failed");
+
+    expect(
+      await ensureWorkflowCascadeForOffer(
+        attempt.attemptId,
+        silentLogger(),
+        requireSql(),
+        {} as never,
+      ),
+    ).toBe("complete");
+    expect((await store.findById(child.id, requireSql()))?.cascade_completed_at).toBeInstanceOf(
+      Date,
+    );
+    expect(mockSetState).toHaveBeenCalledTimes(2);
+  });
+
+  it("repairs the cascade receipt after the parent commit succeeds first", async () => {
+    const store = await import("../../src/workflows/runs-store");
+    const { ensureWorkflowCascadeForOffer } =
+      await import("../../src/workflows/completion-reconciler");
+    const { onStepComplete } = await import("../../src/workflows/orchestrator");
+    const shipTarget = { ...target, number: 211 };
+    const parent = await store.insertQueued(
+      {
+        workflowName: "ship",
+        target: shipTarget,
+        initialState: { currentStepIndex: 0, stepRuns: [] },
+        ownerKind: "orchestrator",
+        ownerId: "test-orchestrator",
+      },
+      requireSql(),
+    );
+    await markTestRunning(parent.id, "test-daemon", requireSql());
+    const childExecutionDeliveryId = crypto.randomUUID();
+    const child = await store.insertQueued(
+      {
+        workflowName: "triage",
+        target: shipTarget,
+        parentRunId: parent.id,
+        parentStepIndex: 0,
+        executionDeliveryId: childExecutionDeliveryId,
+        ownerKind: "orchestrator",
+        ownerId: "test-orchestrator",
+      },
+      requireSql(),
+    );
+    const attempt = { runId: child.id, attemptId: crypto.randomUUID() };
+    await requireSql()`
+      UPDATE workflow_runs
+         SET status = 'running',
+             owner_kind = 'daemon',
+             owner_id = ${`workflow-runner:${attempt.attemptId}`},
+             attempt_id = ${attempt.attemptId},
+             lease_expires_at = now() + interval '1 minute',
+             attempt_deadline_at = now() + interval '70 minutes'
+       WHERE id = ${child.id}
+    `;
+    await store.markAttemptSucceeded(attempt, { verdict: "valid" }, requireSql());
+
+    // Models a crash after the parent/next-child transaction commits but
+    // before completion-reconciler records cascade_completed_at.
+    await onStepComplete(
+      { octokit: null, logger: silentLogger(), emitGitHub: false, sql: requireSql() },
+      child.id,
+      { status: "succeeded" },
+    );
+    expect((await store.findById(child.id, requireSql()))?.cascade_completed_at).toBeNull();
+
+    expect(
+      await ensureWorkflowCascadeForOffer(attempt.attemptId, silentLogger(), requireSql()),
+    ).toBe("complete");
+
+    const childAfter = await store.findById(child.id, requireSql());
+    const parentAfter = await store.findById(parent.id, requireSql());
+    const children = await store.listChildrenByParent(parent.id, requireSql());
+    expect(childAfter?.cascade_completed_at).toBeInstanceOf(Date);
+    expect(parentAfter?.state["stepRuns"]).toEqual([child.id]);
+    expect(children.map((row) => row.parent_step_index)).toEqual([0, 1]);
+    expect(mockEnqueueJob).toHaveBeenCalledTimes(1);
+  });
+
   it("T027 cascade retargeting: missing pr_number on implement → review fails the parent with a clear reason", async () => {
-    const { insertQueued, findById, markRunning, markSucceeded } =
-      await import("../../src/workflows/runs-store");
+    const { insertQueued, findById } = await import("../../src/workflows/runs-store");
     const { onStepComplete } = await import("../../src/workflows/orchestrator");
 
     const issueNumber = 203;
@@ -416,7 +715,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markRunning(parent.id, "test-daemon", requireSql());
+    await markTestRunning(parent.id, "test-daemon", requireSql());
 
     // Seed an implement child as if the prior cascade reached it. Implement
     // forgets to write pr_number to its state, simulates a regressed
@@ -432,7 +731,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markSucceeded(implementChild.id, { branch: "feature/foo" }, requireSql());
+    await markTestSucceeded(implementChild.id, { branch: "feature/foo" }, requireSql());
 
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, implementChild.id, {
       status: "succeeded",
@@ -446,8 +745,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
   });
 
   it("T028 cap reached: review-2 still has findings → resolve-2 runs → parent succeeds with manual-re-review warning", async () => {
-    const { insertQueued, findById, markRunning, markSucceeded } =
-      await import("../../src/workflows/runs-store");
+    const { insertQueued, findById } = await import("../../src/workflows/runs-store");
     const { onStepComplete } = await import("../../src/workflows/orchestrator");
 
     const issueNumber = 204;
@@ -468,7 +766,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markRunning(parent.id, "test-daemon", requireSql());
+    await markTestRunning(parent.id, "test-daemon", requireSql());
 
     // Resolve-1 just succeeded; this triggers loop back to review-2.
     const resolve1 = await insertQueued(
@@ -482,7 +780,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markSucceeded(resolve1.id, {}, requireSql());
+    await markTestSucceeded(resolve1.id, {}, requireSql());
 
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, resolve1.id, {
       status: "succeeded",
@@ -497,7 +795,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     const review2Id = loopBackCall?.workflowRun.runId ?? "";
 
     // Review-2 still finds blocker issues (cap-reached scenario).
-    await markSucceeded(
+    await markTestSucceeded(
       review2Id,
       { findings: { blocker: 1, major: 1, minor: 0, nit: 0, total: 2 } },
       requireSql(),
@@ -514,7 +812,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     expect(resolve2Call?.workflowRun.workflowName).toBe("resolve");
     const resolve2Id = resolve2Call?.workflowRun.runId ?? "";
 
-    await markSucceeded(resolve2Id, {}, requireSql());
+    await markTestSucceeded(resolve2Id, {}, requireSql());
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, resolve2Id, {
       status: "succeeded",
     });
@@ -535,7 +833,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
 
   // ─── Ship-iteration early-wake (T009) ─────────────────────────────────
   it("ZADDs ship:tickle when a completed workflow_run carries state.shipIntentId and the intent is non-terminal", async () => {
-    const { insertQueued, markSucceeded } = await import("../../src/workflows/runs-store");
+    const { insertQueued } = await import("../../src/workflows/runs-store");
     const { onStepComplete } = await import("../../src/workflows/orchestrator");
     const { insertIntent } = await import("../../src/db/queries/ship");
 
@@ -563,7 +861,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markSucceeded(run.id, { shipIntentId: intent.id }, requireSql());
+    await markTestSucceeded(run.id, { shipIntentId: intent.id }, requireSql());
 
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, run.id, {
       status: "succeeded",
@@ -575,7 +873,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
   });
 
   it("does not ZADD ship:tickle when the workflow_run state has no shipIntentId", async () => {
-    const { insertQueued, markSucceeded } = await import("../../src/workflows/runs-store");
+    const { insertQueued } = await import("../../src/workflows/runs-store");
     const { onStepComplete } = await import("../../src/workflows/orchestrator");
 
     const run = await insertQueued(
@@ -587,7 +885,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markSucceeded(run.id, { unrelated: true }, requireSql());
+    await markTestSucceeded(run.id, { unrelated: true }, requireSql());
 
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, run.id, {
       status: "succeeded",
@@ -598,7 +896,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
   });
 
   it("does not ZADD ship:tickle when the intent is already terminal", async () => {
-    const { insertQueued, markSucceeded } = await import("../../src/workflows/runs-store");
+    const { insertQueued } = await import("../../src/workflows/runs-store");
     const { onStepComplete } = await import("../../src/workflows/orchestrator");
     const { insertIntent, transitionIntent } = await import("../../src/db/queries/ship");
 
@@ -627,7 +925,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markSucceeded(run.id, { shipIntentId: intent.id }, requireSql());
+    await markTestSucceeded(run.id, { shipIntentId: intent.id }, requireSql());
 
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, run.id, {
       status: "succeeded",
@@ -641,7 +939,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
   // this guard a permanently broken intent would burn the iteration cap
   // re-firing on every failure.
   it("does not ZADD ship:tickle when the child workflow_run failed (H1)", async () => {
-    const { insertQueued, markFailed } = await import("../../src/workflows/runs-store");
+    const { insertQueued } = await import("../../src/workflows/runs-store");
     const { onStepComplete } = await import("../../src/workflows/orchestrator");
     const { insertIntent } = await import("../../src/db/queries/ship");
 
@@ -669,7 +967,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       },
       requireSql(),
     );
-    await markFailed(run.id, "implement crashed", { shipIntentId: intent.id }, requireSql());
+    await markTestFailed(run.id, "implement crashed", { shipIntentId: intent.id }, requireSql());
 
     mockValkeySend.mockClear();
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, run.id, {
@@ -689,7 +987,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
   // wiring between extractFailedReason → detectTransientQuotaError →
   // ZADD with a future score.
   it("ZADDs ship:tickle at the parsed reset time when child failed with a quota error (H2)", async () => {
-    const { insertQueued, markFailed } = await import("../../src/workflows/runs-store");
+    const { insertQueued } = await import("../../src/workflows/runs-store");
     const { onStepComplete } = await import("../../src/workflows/orchestrator");
     const { insertIntent } = await import("../../src/db/queries/ship");
 
@@ -728,7 +1026,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
       );
       const quotaReason =
         "Claude Code returned an error result: You've hit your limit · resets 6pm (UTC)";
-      await markFailed(run.id, quotaReason, { shipIntentId: intent.id }, requireSql());
+      await markTestFailed(run.id, quotaReason, { shipIntentId: intent.id }, requireSql());
 
       mockValkeySend.mockClear();
       await onStepComplete({ octokit: {} as never, logger: silentLogger() }, run.id, {
@@ -755,7 +1053,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
 });
 
 describe("orchestrator helpers (pure)", () => {
-  it("extractFailedReason reads state.failedReason set by markFailed", async () => {
+  it("extractFailedReason reads a terminal state failure reason", async () => {
     const { extractFailedReason } = await import("../../src/workflows/orchestrator");
     expect(extractFailedReason({ failedReason: "implement crashed" })).toBe("implement crashed");
     expect(extractFailedReason({ failedReason: "" })).toBeUndefined();

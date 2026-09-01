@@ -159,6 +159,99 @@ describe("serverMessageSchema", () => {
     }
   });
 
+  it("round-trips the per-repo agent policy on job:payload (Gate 2)", () => {
+    const msg = {
+      type: "job:payload",
+      ...envelope(),
+      payload: {
+        context: { owner: "org", repo: "repo" },
+        installationToken: "ghs_abc123",
+        allowedTools: ["Read"],
+        policy: {
+          model: "claude-repo-pinned-model",
+          timeoutMs: 900_000,
+          extraAllowedTools: ["WebFetch"],
+          pathFilters: ["**/__snapshots__/**"],
+          instructions: "reject migrations without a rollback",
+          warning: "`.github-app.yaml` failed validation and was ignored",
+        },
+      },
+    };
+    const result = serverMessageSchema.safeParse(msg);
+    expect(result.success).toBe(true);
+    if (result.success && result.data.type === "job:payload") {
+      // z.object strips unknown keys, so an unwired `policy` silently
+      // vanishes here rather than failing the parse. Assert the values.
+      expect(result.data.payload.policy).toEqual({
+        model: "claude-repo-pinned-model",
+        timeoutMs: 900_000,
+        extraAllowedTools: ["WebFetch"],
+        pathFilters: ["**/__snapshots__/**"],
+        instructions: "reject migrations without a rollback",
+        warning: "`.github-app.yaml` failed validation and was ignored",
+      });
+    }
+  });
+
+  it("leaves policy undefined when the payload omits it (C8)", () => {
+    const msg = {
+      type: "job:payload",
+      ...envelope(),
+      payload: {
+        context: {},
+        installationToken: "ghs_abc123",
+        maxTurns: 10,
+        allowedTools: [],
+      },
+    };
+    const result = serverMessageSchema.safeParse(msg);
+    expect(result.success).toBe(true);
+    if (result.success && result.data.type === "job:payload") {
+      expect(result.data.payload.policy).toBeUndefined();
+      // maxTurns stays a top-level field: the per-repo cap reuses it rather
+      // than adding a second, ambiguous source of truth inside `policy`.
+      expect(result.data.payload.maxTurns).toBe(10);
+    }
+  });
+
+  it("accepts 100 extraAllowedTools, the most the resolver's union can emit", () => {
+    // `resolveKnobs` UNIONS `defaults.extra_allowed_tools` with
+    // `workflows.<name>.extra_allowed_tools`, each capped at 50 in
+    // src/repo-config/schema.ts, so a disjoint pair resolves to 100. A wire
+    // cap below that drops the job silently in src/daemon/ws-client.ts.
+    const msg = {
+      type: "job:payload",
+      ...envelope(),
+      payload: {
+        context: {},
+        installationToken: "ghs_abc123",
+        allowedTools: [],
+        policy: {
+          extraAllowedTools: Array.from({ length: 100 }, (_, i) => `Bash(tool-${String(i)}:*)`),
+        },
+      },
+    };
+    const result = serverMessageSchema.safeParse(msg);
+    expect(result.success).toBe(true);
+    if (result.success && result.data.type === "job:payload") {
+      expect(result.data.payload.policy?.extraAllowedTools).toHaveLength(100);
+    }
+  });
+
+  it("rejects a job:payload policy with a non-positive timeoutMs", () => {
+    const msg = {
+      type: "job:payload",
+      ...envelope(),
+      payload: {
+        context: {},
+        installationToken: "ghs_abc123",
+        allowedTools: [],
+        policy: { timeoutMs: 0 },
+      },
+    };
+    expect(serverMessageSchema.safeParse(msg).success).toBe(false);
+  });
+
   it("rejects job:payload with a non-positive installationId (#177)", () => {
     const msg = {
       type: "job:payload",

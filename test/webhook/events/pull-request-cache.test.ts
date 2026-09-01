@@ -37,11 +37,13 @@ beforeAll(async () => {
   const db = getDb();
   if (db === null) return;
   try {
-    await db`SELECT 1 FROM target_cache LIMIT 1`;
-    dbAvailable = true;
+    await db`SELECT 1`;
   } catch {
-    dbAvailable = false;
+    return;
   }
+  const { runMigrations } = await import("../../../src/db/migrate");
+  await runMigrations(db);
+  dbAvailable = true;
 });
 
 const skipIfNoDb = (): boolean => !dbAvailable;

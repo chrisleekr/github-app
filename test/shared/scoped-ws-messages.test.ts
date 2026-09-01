@@ -7,12 +7,12 @@ import {
   type ScopedJobOfferMessage,
   serverMessageSchema,
   WS_REJECT_REASONS,
-} from "./ws-messages";
+} from "../../src/shared/ws-messages";
 
-describe("scoped-job-offer schema", () => {
+describe("scoped-job:offer schema", () => {
   function buildOffer(overrides?: Partial<ScopedJobOfferMessage["payload"]>): unknown {
     return {
-      type: "scoped-job-offer",
+      type: "scoped-job:offer",
       ...createMessageEnvelope(),
       payload: {
         jobKind: "scoped-rebase",
@@ -35,7 +35,7 @@ describe("scoped-job-offer schema", () => {
 
   it("requires threadRef for scoped-fix-thread", () => {
     const missing = serverMessageSchema.safeParse({
-      type: "scoped-job-offer",
+      type: "scoped-job:offer",
       ...createMessageEnvelope(),
       payload: {
         jobKind: "scoped-fix-thread",
@@ -54,7 +54,7 @@ describe("scoped-job-offer schema", () => {
 
   it("requires issueNumber + verdictSummary for scoped-open-pr", () => {
     const missing = serverMessageSchema.safeParse({
-      type: "scoped-job-offer",
+      type: "scoped-job:offer",
       ...createMessageEnvelope(),
       payload: {
         jobKind: "scoped-open-pr",
@@ -72,7 +72,7 @@ describe("scoped-job-offer schema", () => {
 
   it("rejects unknown jobKind values at the discriminator", () => {
     const wrong = serverMessageSchema.safeParse({
-      type: "scoped-job-offer",
+      type: "scoped-job:offer",
       ...createMessageEnvelope(),
       payload: {
         jobKind: "scoped-mystery",
@@ -88,12 +88,12 @@ describe("scoped-job-offer schema", () => {
   });
 });
 
-describe("scoped-job-completion schema", () => {
+describe("scoped-job:completion schema", () => {
   function buildCompletion(
     payload: ScopedJobCompletionMessage["payload"],
   ): ScopedJobCompletionMessage {
     return {
-      type: "scoped-job-completion",
+      type: "scoped-job:completion",
       ...createMessageEnvelope(),
       payload,
     };
@@ -126,7 +126,7 @@ describe("scoped-job-completion schema", () => {
 
   it("rejects malformed rebaseOutcome (missing commentId)", () => {
     const wrong = daemonMessageSchema.safeParse({
-      type: "scoped-job-completion",
+      type: "scoped-job:completion",
       ...createMessageEnvelope(),
       payload: {
         offerId: "offer-3",

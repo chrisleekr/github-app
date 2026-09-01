@@ -51,10 +51,12 @@ export const GITHUB_APP_TOKEN_LOG_EVENTS = {
 export const TOKEN_MINT_VIA = [
   "handleAccept",
   "handleScopedAccept",
-  "postOrphanNotification",
   "shipTickleResume",
   "proposalPoller",
   "schedulerRunAction",
+  "notifyExpiredWorkflowAttempts",
+  "workflowRunnerPayload",
+  "workflowRunnerResult",
 ] as const;
 
 export type TokenMintVia = (typeof TOKEN_MINT_VIA)[number];

@@ -6,7 +6,10 @@
 #   - chrisleekr/github-app:<tag>-daemon        (rich, Claude worker)
 # Orchestrator additionally publishes a bare `<tag>` alias so existing
 # consumers that pull `chrisleekr/github-app:<version>` keep working.
-# `:latest` is published on prod releases only, on the orchestrator variant.
+# Each variant also gets a mutable `:latest-<variant>` alias, so `latest-daemon`
+# resolves on Docker Hub the same way it does on the GitLab registry. Both that
+# alias and the bare `:latest` (orchestrator only) are prod-release only: a beta
+# prerelease must not move a tag prod consumers follow.
 #
 # Multi-platform via the documented split-and-merge pattern:
 #   https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
@@ -185,6 +188,22 @@ jobs:
             GIT_HASH=${{ steps.meta.outputs.git_hash }}
             NODE_ENV=production
 
+      - name: Smoke daemon process boundary
+        if: matrix.variant == 'daemon'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker pull "${IMAGE_NAME}@${DIGEST}"
+          docker run --rm \
+            --user 1000:1000 \
+            --read-only \
+            --network none \
+            --cap-drop ALL \
+            --security-opt no-new-privileges=true \
+            --entrypoint bun \
+            "${IMAGE_NAME}@${DIGEST}" \
+            run dist/daemon/process-boundary-smoke.js
+
       - name: Export digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -256,6 +275,7 @@ jobs:
             type=raw,value=${{ steps.tag.outputs.variant_tag }}
             type=raw,value=${{ steps.tag.outputs.version }},enable=${{ matrix.variant == 'orchestrator' }}
             type=raw,value=latest,enable=${{ matrix.variant == 'orchestrator' && inputs.is-dev-release == false }}
+            type=raw,value=latest-${{ matrix.variant }},enable=${{ inputs.is-dev-release == false }}
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests

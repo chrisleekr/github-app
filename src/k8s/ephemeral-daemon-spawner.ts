@@ -5,6 +5,8 @@ import { logger } from "../logger";
 import { K8S_SPAWN_LOG_EVENTS } from "../orchestrator/k8s-spawn-log-fields";
 import { redactErrorMessage } from "../utils/log-redaction";
 
+const DAEMON_PROCESS_GUARD_PATH = "/usr/local/lib/github-app/daemon-process-guard.so";
+
 /**
  * Typed errors the ephemeral-daemon spawner can throw. Distinguishing
  * `infra-absent` from generic K8s API failures lets the router map them
@@ -30,7 +32,7 @@ export class EphemeralSpawnError extends Error {
 
 let cachedClient: { core: CoreV1Api } | undefined;
 
-function loadKubernetesClient(): { core: CoreV1Api } {
+export function loadKubernetesClient(): { core: CoreV1Api } {
   if (cachedClient !== undefined) return cachedClient;
 
   const kc = new KubeConfig();
@@ -50,10 +52,10 @@ function loadKubernetesClient(): { core: CoreV1Api } {
     } else {
       kc.loadFromDefault();
     }
-  } catch (err) {
+  } catch {
     throw new EphemeralSpawnError(
       "auth-load-failed",
-      `Failed to load Kubernetes config: ${err instanceof Error ? err.message : String(err)}`,
+      "Kubernetes authentication configuration could not be loaded",
     );
   }
 
@@ -105,9 +107,9 @@ export interface SpawnEphemeralDaemonInput {
  * - `activeDeadlineSeconds`: belt-and-suspenders: the daemon self-exits
  *   on idle, but a bug in the idle loop must not leak a long-running Pod.
  * - `DAEMON_EPHEMERAL=true`: flips the daemon into idle-exit mode.
- * - `envFrom: secretRef: daemon-secrets`, carries the full runtime
- *   credential set (GitHub App, Claude, DB, Valkey). The operator is
- *   expected to provision this Secret out-of-band.
+ * - `envFrom: secretRef: <EPHEMERAL_DAEMON_SECRET_NAME>`, carries provider and
+ *   handshake credentials. The operator provisions this Secret out-of-band and
+ *   chooses its scope.
  */
 // K8s label values must match `([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]` and
 // be ≤63 chars. Strip invalid chars and trim leading/trailing non-alphanum so a
@@ -172,14 +174,13 @@ function buildEphemeralDaemonPodSpec(input: SpawnEphemeralDaemonInput): V1Pod {
           name: "daemon",
           image: input.image,
           command: ["bun", "run", "dist/daemon/main.js"],
-          // The ephemeral-daemon Pod mounts ONLY the `daemon-secrets` Secret
-          //, never `orchestrator-secrets`. The orchestrator/daemon split
-          // (defense layer 1b for prompt-injection hardening, issue #102) is
-          // enforced by the Helm chart: orchestrator-only credentials
-          // (`GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `DATABASE_URL`,
-          // `VALKEY_URL`, `CONTEXT7_API_KEY`) live in `orchestrator-secrets`
-          // and never reach a daemon Pod. The daemon needs only:
-          //   - `DAEMON_AUTH_TOKEN[_PREVIOUS]` (WS handshake)
+          // The Pod mounts exactly one Secret, named by
+          // `EPHEMERAL_DAEMON_SECRET_NAME` and provisioned out-of-band. Scoping
+          // it to daemon-only credentials is a deployment decision, not one this
+          // code can enforce: pointing it at a Secret that also carries GitHub
+          // App issuance or data-layer credentials hands those to the Pod. The
+          // daemon needs:
+          //   - `DAEMON_AUTH_TOKEN` (WS handshake)
           //   - `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` (Claude auth)
           //   - `AWS_*` chain (Bedrock provider)
           //   - `GITHUB_PERSONAL_ACCESS_TOKEN` (PAT mode only; optional)
@@ -189,12 +190,15 @@ function buildEphemeralDaemonPodSpec(input: SpawnEphemeralDaemonInput): V1Pod {
           env: [
             { name: "DAEMON_EPHEMERAL", value: "true" },
             { name: "ORCHESTRATOR_URL", value: input.orchestratorUrl },
+            // Explicit env entries override envFrom values. Keep the process
+            // guard pinned if the mounted Secret contains a stale LD_PRELOAD.
+            { name: "LD_PRELOAD", value: DAEMON_PROCESS_GUARD_PATH },
             {
               name: "EPHEMERAL_DAEMON_IDLE_TIMEOUT_MS",
               value: String(config.ephemeralDaemonIdleTimeoutMs),
             },
           ],
-          envFrom: [{ secretRef: { name: "daemon-secrets" } }],
+          envFrom: [{ secretRef: { name: config.ephemeralDaemonSecretName } }],
           securityContext: {
             allowPrivilegeEscalation: false,
             capabilities: { drop: ["ALL"] },

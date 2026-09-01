@@ -1,8 +1,7 @@
 import { runPipeline } from "../../core/pipeline";
-import type { BotContext } from "../../types";
+import type { BotContext, ExecutionResult } from "../../types";
 import { fetchAndBuildDigest, renderDigestSection } from "../discussion-digest";
 import type { WorkflowHandler } from "../registry";
-import { findById } from "../runs-store";
 import { type BranchStaleness, formatRefreshDirective, getBranchStaleness } from "./branch-refresh";
 import { evaluateChecks } from "./checks";
 import { parseOutstandingSection } from "./resolve-report";
@@ -45,6 +44,7 @@ export const POLL_WAIT_SECS_CAP = 900;
 
 export const handler: WorkflowHandler = async (ctx) => {
   const { octokit, target, logger: log, deliveryId, runId } = ctx;
+  let daemonActions: ExecutionResult["daemonActions"];
 
   try {
     if (target.type !== "pr") {
@@ -90,6 +90,12 @@ export const handler: WorkflowHandler = async (ctx) => {
       pull_number: target.number,
       per_page: 100,
     });
+    // Deliberately NOT filtered by author. `ship` runs review immediately
+    // before resolve on the same PR, so our own inline findings ARE the input
+    // here; dropping them would make ship's resolve step a CI-only fixer. It
+    // would also discard CodeRabbit / Copilot / Sonar feedback, which is
+    // `type: "Bot"` too. The review -> resolve -> push -> review loop is broken
+    // at the trigger instead, by `isSelfPush` in auto-review-guard.ts.
     const topLevelComments = reviewComments.filter((c) => c.in_reply_to_id === undefined);
 
     const staleness = await getBranchStaleness(octokit, target.owner, target.repo, target.number);
@@ -113,7 +119,7 @@ export const handler: WorkflowHandler = async (ctx) => {
 
     // Seed the tracking comment up front so the agent can post mid-run
     // progress against it. See review.ts for the same pattern + rationale.
-    await ctx.setState(
+    const seededState = await ctx.setState(
       {
         pr_number: target.number,
         failing_checks: failingChecks,
@@ -121,8 +127,7 @@ export const handler: WorkflowHandler = async (ctx) => {
       },
       `🔎 **Resolve starting**, ${String(failingChecks.length)} failing checks, ${String(topLevelComments.length)} open comment threads. Refreshing branch and classifying feedback…`,
     );
-    const seededRow = await findById(runId);
-    const trackingCommentId = seededRow?.tracking_comment_id ?? undefined;
+    const trackingCommentId = seededState.trackingCommentId;
     if (trackingCommentId === undefined || trackingCommentId === null) {
       log.warn({ runId }, "resolve handler: tracking comment id not found after seed setState");
     }
@@ -155,22 +160,27 @@ export const handler: WorkflowHandler = async (ctx) => {
       // Mirrors review.ts: workflow-dispatch path needs this thread or the
       // pipeline sees ctx.reviewLearnings=undefined and the feature no-ops.
       ...(ctx.reviewLearnings !== undefined ? { reviewLearnings: ctx.reviewLearnings } : {}),
+      ...(ctx.repoMemory !== undefined ? { repoMemory: ctx.repoMemory } : {}),
       octokit,
       log,
     };
 
     const result = await runPipeline(botCtx, {
       captureFiles: ["RESOLVE.md"],
+      ...(ctx.policy !== undefined ? { policy: ctx.policy } : {}),
+      ...(ctx.maxTurns !== undefined ? { maxTurns: ctx.maxTurns } : {}),
       ...(trackingCommentId !== undefined && trackingCommentId !== null
         ? { trackingCommentId }
         : {}),
       ...(topLevelComments.length > 0 ? { enableResolveReviewThread: true } : {}),
       ...(digestSection.length > 0 ? { discussionDigest: digestSection } : {}),
+      ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
       // Resolve handler may persist new review_learnings when a maintainer
       // pushback resolves with "intentional, don't flag next time". See
       // review.ts for the gate's contract.
       enableReviewLearnings: true,
     });
+    daemonActions = result.daemonActions;
     if (!result.success) {
       // `reason` is internal (DB state.failedReason → orchestrator quota
       // detection + operator logs); `humanMessage` is the public tracking
@@ -179,6 +189,7 @@ export const handler: WorkflowHandler = async (ctx) => {
         status: "failed",
         reason: result.errorMessage ?? "resolve pipeline execution failed",
         humanMessage: "resolve pipeline execution failed, see server logs for details.",
+        ...(daemonActions !== undefined ? { daemonActions } : {}),
       };
     }
 
@@ -276,7 +287,6 @@ export const handler: WorkflowHandler = async (ctx) => {
       const humanMessage = `${headline}${outstandingSection}${reportSection}${metaLine}${learningsFooter}`;
 
       const state = { ...baseState, ci_verified: false };
-      await ctx.setState(state, humanMessage);
       log.warn(
         {
           failingChecks: postCheckEvaluation.failingChecks,
@@ -286,7 +296,13 @@ export const handler: WorkflowHandler = async (ctx) => {
         },
         "resolve handler returning incomplete, post-pipeline gate caught surviving failures",
       );
-      return { status: "incomplete", reason, state, humanMessage };
+      return {
+        status: "incomplete",
+        reason,
+        state,
+        humanMessage,
+        ...(daemonActions !== undefined ? { daemonActions } : {}),
+      };
     }
 
     const state = { ...baseState, ci_verified: true };
@@ -299,7 +315,6 @@ export const handler: WorkflowHandler = async (ctx) => {
     const learningsFooter = renderReviewLearningsFooter(result.appliedReviewLearnings);
     const humanMessage = `${headline}${reportSection}${metaLine}${learningsFooter}`;
 
-    await ctx.setState(state, humanMessage);
     log.info(
       {
         failingChecks: failingChecks.length,
@@ -308,14 +323,15 @@ export const handler: WorkflowHandler = async (ctx) => {
       },
       "resolve handler succeeded",
     );
-    // Mirrors review.ts: forward applied-learning IDs so orchestrator can
-    // bump use_count. See workflow-executor.ts for the downstream wire.
+    // Mirrors review.ts: forward applied-learning IDs so result reconciliation
+    // can bump use_count after the terminal result is durable.
     const appliedReviewLearningIds = (result.appliedReviewLearnings ?? []).map((l) => l.id);
     return {
       status: "succeeded",
       state,
       humanMessage,
       ...(appliedReviewLearningIds.length > 0 ? { appliedReviewLearningIds } : {}),
+      ...(daemonActions !== undefined ? { daemonActions } : {}),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -324,6 +340,7 @@ export const handler: WorkflowHandler = async (ctx) => {
       status: "failed",
       reason: `resolve failed: ${message}`,
       humanMessage: "resolve pipeline execution failed, see server logs for details.",
+      ...(daemonActions !== undefined ? { daemonActions } : {}),
     };
   }
 };

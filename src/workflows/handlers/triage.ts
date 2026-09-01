@@ -5,11 +5,13 @@ import { z } from "zod";
 
 import { parseStructuredResponse } from "../../ai/structured-output";
 import { config } from "../../config";
+import { applyAgentPolicy } from "../../core/agent-policy";
 import { checkoutRepo } from "../../core/checkout";
 import { executeAgent } from "../../core/executor";
 import type { BotContext } from "../../types";
 import { fetchAndBuildDigest, renderDigestSection } from "../discussion-digest";
 import type { WorkflowHandler } from "../registry";
+import { StaleWorkflowAttemptError } from "../runs-store";
 
 /**
  * `triage` handler: code-aware validation of an issue against the actual
@@ -32,9 +34,10 @@ import type { WorkflowHandler } from "../registry";
  *   5. The full `TRIAGE.md` report is the tracking comment body so the user
  *      sees evidence, reasoning, and reproduction details: not a one-liner.
  *
- * Reproduction: there is NO turn cap. A senior engineer's job is to
- * determine whether a reported bug is real; that requires running the code,
- * not just reading it. If reproduction is impossible (e.g., production-only,
+ * Reproduction: determining whether a bug is real requires running the code,
+ * not just reading it, so there is no default turn cap. A cap arrives only if
+ * the repo, `AGENT_MAX_TURNS`, or `DEFAULT_MAXTURNS` sets one; all are unset
+ * by default. If reproduction is impossible (e.g., production-only,
  * needs external services we lack), the agent reports
  * `attempted: true, reproduced: null` with honest details, never lies.
  * Non-bug issues (features, refactors, docs) skip reproduction with
@@ -97,6 +100,7 @@ type Verdict = z.infer<typeof verdictSchema>;
 export const handler: WorkflowHandler = async (ctx) => {
   const { octokit, target, logger: log } = ctx;
   let cleanup: (() => Promise<void>) | undefined;
+  let disposePolicy: (() => void) | undefined;
 
   try {
     if (target.type !== "issue") {
@@ -154,17 +158,33 @@ export const handler: WorkflowHandler = async (ctx) => {
     const promptParts =
       config.promptCacheLayout === "cacheable" ? buildTriagePromptParts(promptInput) : undefined;
 
+    // Bypasses `runPipeline` (owns its prompt), so it applies the Gate-2 knobs itself.
+    const applied = applyAgentPolicy({
+      baseAllowedTools: ["Read", "Grep", "Glob", "Bash", "Write"],
+      ...(ctx.policy !== undefined ? { policy: ctx.policy } : {}),
+      ...(ctx.maxTurns !== undefined ? { maxTurns: ctx.maxTurns } : {}),
+      ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+    });
+    disposePolicy = applied.dispose;
+
     const result = await executeAgent({
       ctx: botCtx,
       prompt,
       mcpServers: {},
       workDir: checkout.workDir,
-      allowedTools: ["Read", "Grep", "Glob", "Bash", "Write"],
+      ...applied.options,
       ...(promptParts !== undefined ? { promptParts } : {}),
     });
+    applied.options.signal?.throwIfAborted();
 
     if (!result.success) {
-      return { status: "failed", reason: "triage agent execution failed" };
+      // `reason` is internal only; the raw error must not reach the public
+      // `humanMessage`. Keeping it preserves the per-repo `timeout:` attribution.
+      return {
+        status: "failed",
+        reason: result.errorMessage ?? "triage agent execution failed",
+        humanMessage: "triage agent execution failed, see server logs for details.",
+      };
     }
 
     const reportPath = join(checkout.workDir, "TRIAGE.md");
@@ -232,10 +252,13 @@ export const handler: WorkflowHandler = async (ctx) => {
 
     return { status: "succeeded", state, humanMessage };
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     log.warn({ err }, "triage handler caught error");
     return { status: "failed", reason: `triage failed: ${message}` };
   } finally {
+    // Before the awaited cleanup: a live timer holds Bun's event loop open.
+    disposePolicy?.();
     if (cleanup !== undefined) {
       await cleanup().catch((err: unknown) => {
         log.warn({ err }, "triage handler cleanup failed");
@@ -360,7 +383,8 @@ function buildTriageMethodAndRules(): string {
     `      \`reproduced=false\` → output contradicts the claim. The issue is wrong (already-fixed, misread, env-only), mark VALID=false.`,
     `      \`reproduced=null\`  → ONLY after walking 3b, 3c, AND 3d and ruling each out. State which you tried and why each failed to either show the defect or pin down a fix-relevant invariant. "Race condition" alone is NOT sufficient, races almost always have an invariant test (3d).`,
     ``,
-    `   f. There is NO turn cap. /tmp scratch is fine; do not commit anything.`,
+    // Byte-stable for the cacheable `append`: states the default, not the run's cap.
+    `   f. There is no default turn cap, though a repo or the operator may configure one. Work efficiently and record partial findings in TRIAGE.md as you go. /tmp scratch is fine; do not commit anything.`,
     ``,
     `   For non-bug classes (feature/refactor/docs/unclear): set \`attempted=false\`, \`reproduced=null\`, \`details\` to a one-liner explaining why reproduction was skipped.`,
     ``,
@@ -476,6 +500,7 @@ async function postStartingComment(
   try {
     await ctx.setState({ phase: "starting" }, body);
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     ctx.logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       "triage starting-comment write failed, continuing without up-front comment",

@@ -744,7 +744,7 @@ function shutdown(signal: string): void {
         proposalPoller = null;
       }
       await stopQueueWorker();
-      stopLivenessReaper();
+      await stopLivenessReaper();
       stopFleetSnapshot();
       await stopWebSocketServer();
       await stopInstanceHeartbeat();

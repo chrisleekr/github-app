@@ -168,6 +168,7 @@ describe.skipIf(sql === null)("cancellation-token discipline (T056)", () => {
   beforeAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -190,6 +191,7 @@ describe.skipIf(sql === null)("cancellation-token discipline (T056)", () => {
   afterAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;

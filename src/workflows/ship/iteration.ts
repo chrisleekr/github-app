@@ -1,17 +1,17 @@
 /**
  * Ship-iteration handler (US1, T012). Bridges a non-ready probe verdict
- * onto the existing daemon `workflow_runs` pipeline so a single iteration
+ * onto the isolated `workflow_runs` runner pipeline so a single iteration
  * does exactly one of:
  *
  *   - terminate the intent on cap or deadline,
  *   - leave the intent active because the verdict is already ready
  *     (the caller's terminal-shortcut is responsible for the GraphQL mutation),
- *   - or insert a `workflow_runs` row + enqueue a daemon job + append a
+ *   - or insert a `workflow_runs` row + publish a runner attempt + append a
  *     `ship_iterations` row so the orchestrator's completion cascade can
  *     early-wake the intent for the next iteration.
  *
  * One job per iteration (research.md Q4): the loop runs many iterations
- * rather than packing actions, because each daemon job mutates PR state
+ * rather than packing actions, because each runner attempt mutates PR state
  * and the next probe is the only way to detect that a fix worked.
  *
  * The handler stays inside the `workflow_runs` tree (no new JobKind);
@@ -26,7 +26,8 @@ import { config } from "../../config";
 import { requireDb } from "../../db";
 import { appendIteration, type ShipIntentRow } from "../../db/queries/ship";
 import { logger as rootLogger } from "../../logger";
-import { enqueueJob } from "../../orchestrator/job-queue";
+import { getInstanceId } from "../../orchestrator/instance-id";
+import { publishWorkflowRunById } from "../dispatch-outbox";
 import { recordWorkflowExecution } from "../execution-row";
 import { logWorkflowRunQueued } from "../log-fields";
 import type { WorkflowName } from "../registry";
@@ -144,21 +145,11 @@ export async function runIteration(input: RunIterationInput): Promise<RunIterati
   //    fields on action rows, so they live here.
   const totalRows = await countIterations(intent.id, sql);
   const probeIterationN = totalRows + 1;
-  await appendIteration(
-    {
-      intent_id: intent.id,
-      iteration_n: probeIterationN,
-      kind: "probe",
-      verdict_json: verdict,
-      non_readiness_reason: verdict.reason,
-    },
-    sql,
-  );
-
   // 5. Map verdict → next workflow_runs.workflow_name. Each non-readiness
   //    reason picks exactly one downstream workflow (research.md Q4).
   const nextWorkflowName = selectNextWorkflow(verdict.reason);
   const actionIterationN = probeIterationN + 1;
+  const childDeliveryId = `${intent.id}::iteration::${String(actionIterationN)}`;
 
   // 6. Insert a `workflow_runs` row with `state.shipIntentId` so the
   //    orchestrator's `onStepComplete` cascade ZADDs `ship:tickle` on
@@ -174,68 +165,72 @@ export async function runIteration(input: RunIterationInput): Promise<RunIterati
     repo: intent.repo,
     number: intent.pr_number,
   };
-  const run = await insertQueued(
-    {
-      workflowName: nextWorkflowName,
-      target: shipTarget,
-      ownerKind: "orchestrator",
-      ownerId: `ship-intent:${intent.id}`,
-      initialState: {
-        ...serializeShipWorkflowContext(intent.id),
-        iteration_n: actionIterationN,
+  const run = await sql.begin(async (tx) => {
+    await appendIteration(
+      {
+        intent_id: intent.id,
+        iteration_n: probeIterationN,
+        kind: "probe",
+        verdict_json: verdict,
+        non_readiness_reason: verdict.reason,
       },
-    },
-    sql,
-  );
+      tx,
+    );
+    const committedRun = await insertQueued(
+      {
+        workflowName: nextWorkflowName,
+        target: shipTarget,
+        ownerKind: "orchestrator",
+        ownerId: getInstanceId(),
+        executionDeliveryId: childDeliveryId,
+        initialState: {
+          ...serializeShipWorkflowContext(intent.id),
+          iteration_n: actionIterationN,
+        },
+      },
+      tx,
+    );
+
+    // Runner admission depends on both rows. Committing only one can strand
+    // the target behind the in-flight index after a process crash.
+    await recordWorkflowExecution({
+      deliveryId: childDeliveryId,
+      target: shipTarget,
+      senderLogin: config.botAppLogin,
+      workflowName: nextWorkflowName,
+      runId: committedRun.id,
+      logger: log,
+      sql: tx,
+    });
+
+    const iterationKind = nextWorkflowName === "review" ? "review" : "resolve";
+    await appendIteration(
+      {
+        intent_id: intent.id,
+        iteration_n: actionIterationN,
+        kind: iterationKind,
+        runs_store_id: committedRun.id,
+      },
+      tx,
+    );
+    return committedRun;
+  });
   logWorkflowRunQueued(log, { runId: run.id, workflowName: nextWorkflowName, target: shipTarget });
 
-  // 7. Persist the `executions` row BEFORE enqueueing so the daemon's
-  //    accept handler can resolve `context_json` via this `deliveryId`.
-  //    Without this, the daemon side rejects the offer with
-  //    `No execution context found, producer did not call createExecution`
-  //    (surfaced by T042 S2 against `@chrisleekr-bot-dev`). The legacy
-  //    workflow dispatcher writes this row before its enqueue too, the
-  //    iteration handler must mirror that contract.
-  const childDeliveryId = `${intent.id}::iteration::${String(actionIterationN)}`;
-  await recordWorkflowExecution({
-    deliveryId: childDeliveryId,
-    target: { type: "pr", owner: intent.owner, repo: intent.repo, number: intent.pr_number },
-    senderLogin: config.botAppLogin,
-    workflowName: nextWorkflowName,
-    runId: run.id,
-    logger: log,
-  });
-
-  // 8. Enqueue the daemon job (workflow-run kind, carrying WorkflowRunRef).
-  await enqueueJob({
-    kind: "workflow-run",
-    deliveryId: childDeliveryId,
-    repoOwner: intent.owner,
-    repoName: intent.repo,
-    entityNumber: intent.pr_number,
-    isPR: true,
-    eventName: "pull_request",
-    triggerUsername: config.botAppLogin,
-    labels: [],
-    triggerBodyPreview: "",
-    enqueuedAt: Date.now(),
-    retryCount: 0,
-    workflowRun: { runId: run.id, workflowName: nextWorkflowName },
-  });
-
-  // 9. Append the action ship_iterations row. `kind=resolve` for fix-shaped
-  //    runs; `kind=review` when the next workflow is `review`. Verdict
-  //    columns are forbidden on non-`probe` kinds (schema CHECK).
-  const iterationKind = nextWorkflowName === "review" ? "review" : "resolve";
-  await appendIteration(
-    {
-      intent_id: intent.id,
-      iteration_n: actionIterationN,
-      kind: iterationKind,
-      runs_store_id: run.id,
-    },
-    sql,
-  );
+  // Queue publication follows the durable commit. A crash or Valkey failure
+  // leaves dispatch_enqueued_at NULL for the periodic outbox retry.
+  try {
+    await publishWorkflowRunById(run.id, sql);
+  } catch (err) {
+    log.warn(
+      {
+        err: err instanceof Error ? err : new Error(String(err)),
+        runId: run.id,
+        workflowName: nextWorkflowName,
+      },
+      "Ship iteration publication failed; the durable outbox will retry",
+    );
+  }
 
   log.info(
     {

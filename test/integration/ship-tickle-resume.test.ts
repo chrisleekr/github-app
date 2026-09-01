@@ -56,6 +56,7 @@ describe.skipIf(skipSuite)("integration: ship tickle-scheduler resume", () => {
     const db = requireSql();
     await db.unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -83,6 +84,7 @@ describe.skipIf(skipSuite)("integration: ship tickle-scheduler resume", () => {
     if (sql !== null) {
       await sql.unsafe(`
         DROP TABLE IF EXISTS _migrations CASCADE;
+        DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
         DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;

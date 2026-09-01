@@ -45,7 +45,7 @@ if (touchedWorkflows.length > 0 && !touchedDoc) {
       "",
       "Update the relevant docs/use/workflows/*.md page in this PR, or",
       "mark the change as test/docs-only by moving it under",
-      "src/workflows/**/*.test.ts or src/workflows/**/*.md.",
+      "test/workflows/**/*.test.ts or src/workflows/**/*.md.",
     ].join("\n"),
   );
   exit(1);

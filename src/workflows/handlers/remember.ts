@@ -1,10 +1,9 @@
 import type { Octokit } from "octokit";
 
 import { runPipeline } from "../../core/pipeline";
-import type { BotContext } from "../../types";
+import type { BotContext, ExecutionResult } from "../../types";
 import { fetchAndBuildDigest, renderDigestSection } from "../discussion-digest";
 import type { WorkflowHandler } from "../registry";
-import { findById } from "../runs-store";
 
 /**
  * `remember` handler (issue #160 Option A): explicit `@bot remember [...]`
@@ -27,6 +26,7 @@ import { findById } from "../runs-store";
  */
 export const handler: WorkflowHandler = async (ctx) => {
   const { octokit, target, logger: log, deliveryId, runId } = ctx;
+  let daemonActions: ExecutionResult["daemonActions"];
 
   try {
     // Common metadata for both issue + PR targets. The discussion-digest
@@ -61,15 +61,14 @@ export const handler: WorkflowHandler = async (ctx) => {
       }),
     );
 
-    await ctx.setState(
+    const seededState = await ctx.setState(
       {
         target_type: target.type,
         target_number: target.number,
       },
       "🧠 **Remember starting**, reading the thread and extracting the directive…",
     );
-    const seededRow = await findById(runId);
-    const trackingCommentId = seededRow?.tracking_comment_id ?? undefined;
+    const trackingCommentId = seededState.trackingCommentId;
     if (trackingCommentId === undefined) {
       log.warn({ runId }, "remember handler: tracking comment id not found after seed setState");
     }
@@ -104,13 +103,17 @@ export const handler: WorkflowHandler = async (ctx) => {
       // an empty universe (which is fine for "save" but breaks dedup via
       // get_review_learnings).
       ...(ctx.reviewLearnings !== undefined ? { reviewLearnings: ctx.reviewLearnings } : {}),
+      ...(ctx.repoMemory !== undefined ? { repoMemory: ctx.repoMemory } : {}),
       octokit,
       log,
     };
 
     const result = await runPipeline(botCtx, {
+      ...(ctx.policy !== undefined ? { policy: ctx.policy } : {}),
+      ...(ctx.maxTurns !== undefined ? { maxTurns: ctx.maxTurns } : {}),
       ...(trackingCommentId !== undefined ? { trackingCommentId } : {}),
       ...(digestSection.length > 0 ? { discussionDigest: digestSection } : {}),
+      ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
       // Narrow the agent's tool surface: the only writes this workflow
       // makes are the save_review_learning round-trip and the tracking
       // comment update. No code edits, no shell, no commits, and (per
@@ -138,12 +141,14 @@ export const handler: WorkflowHandler = async (ctx) => {
       // directive whose glob does not overlap the current PR.
       unfilteredReviewLearnings: true,
     });
+    daemonActions = result.daemonActions;
 
     if (!result.success) {
       return {
         status: "failed",
         reason: result.errorMessage ?? "remember pipeline execution failed",
         humanMessage: "remember pipeline execution failed, see server logs for details.",
+        ...(daemonActions !== undefined ? { daemonActions } : {}),
       };
     }
 
@@ -157,6 +162,7 @@ export const handler: WorkflowHandler = async (ctx) => {
     return {
       status: "succeeded",
       state: { target_number: target.number, target_type: target.type },
+      ...(daemonActions !== undefined ? { daemonActions } : {}),
     };
   } catch (err) {
     log.error({ err, runId, target: target.number }, "remember handler threw");
@@ -164,6 +170,7 @@ export const handler: WorkflowHandler = async (ctx) => {
       status: "failed",
       reason: err instanceof Error ? err.message : "unknown error",
       humanMessage: "remember pipeline execution failed, see server logs for details.",
+      ...(daemonActions !== undefined ? { daemonActions } : {}),
     };
   }
 };

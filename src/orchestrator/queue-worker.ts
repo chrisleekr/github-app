@@ -2,26 +2,38 @@ import { config } from "../config";
 import { logger } from "../logger";
 import { getInstanceId } from "./instance-id";
 import { dispatchJob, markJobTerminallyFailed } from "./job-dispatcher";
-import { leaseJob, releaseLeasedJob, requeueLeasedJob } from "./job-queue";
+import {
+  deferLeasedWorkflowJob,
+  ensureWorkflowJobQueued,
+  leaseJob,
+  type QueuedJob,
+  releaseLeasedJob,
+  requeueLeasedJob,
+} from "./job-queue";
+import { dispatchWorkflowRunner } from "./workflow-runner-dispatch";
 
 const EMPTY_POLL_MS = 200;
 const INITIAL_BACKOFF_MS = 100;
+const WORKFLOW_CAPACITY_BACKOFF_MS = 1_000;
 
 let running = false;
 let loopPromise: Promise<void> | null = null;
 let stopRequested = false;
+let loopAbortController: AbortController | null = null;
 
-function sleep(ms: number, abortSignal: { aborted: boolean }): Promise<void> {
+function sleep(ms: number, abortSignal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (abortSignal.aborted) {
       resolve();
       return;
     }
-    const timer = setTimeout(resolve, ms);
-    // Best-effort abort, caller sets aborted=true and we poll it on wake.
-    // The setTimeout still fires; the outer loop checks `stopRequested`
-    // immediately after resolve and exits.
-    void timer;
+    const done = (): void => {
+      clearTimeout(timer);
+      abortSignal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    abortSignal.addEventListener("abort", done, { once: true });
   });
 }
 
@@ -36,12 +48,62 @@ function backoffFor(retryCount: number): number {
   return Math.min(doubled, config.queueWorkerBackoffMaxMs);
 }
 
-async function iterate(instanceId: string, abortSignal: { aborted: boolean }): Promise<void> {
+async function deferWorkflow(
+  instanceId: string,
+  raw: string,
+  job: Extract<QueuedJob, { kind: "workflow-run" }>,
+  abortSignal: AbortSignal,
+  reason: "capacity" | "dispatch-error",
+): Promise<void> {
+  const deferralId = crypto.randomUUID();
+  let retryDelayMs = INITIAL_BACKOFF_MS;
+  for (;;) {
+    if (abortSignal.aborted) return;
+    try {
+      const result = await deferLeasedWorkflowJob(instanceId, raw, job, deferralId);
+      if (result.status === "missing") {
+        await ensureWorkflowJobQueued(job, instanceId);
+        logger.warn(
+          { deliveryId: job.deliveryId, runId: job.workflowRun.runId, instanceId },
+          "Workflow lease was missing; published a recoverable duplicate",
+        );
+      }
+      logger.debug(
+        {
+          deliveryId: job.deliveryId,
+          runId: job.workflowRun.runId,
+          reason,
+          deferralStatus: result.status,
+          backoffMs: WORKFLOW_CAPACITY_BACKOFF_MS,
+        },
+        "Deferred isolated workflow runner dispatch",
+      );
+      await sleep(WORKFLOW_CAPACITY_BACKOFF_MS, abortSignal);
+      return;
+    } catch (err) {
+      logger.error(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          deliveryId: job.deliveryId,
+          runId: job.workflowRun.runId,
+          instanceId,
+          retryDelayMs,
+        },
+        "Workflow deferral failed; retaining the processing lease",
+      );
+      await sleep(retryDelayMs, abortSignal);
+      retryDelayMs = Math.min(retryDelayMs * 2, config.queueWorkerBackoffMaxMs);
+    }
+  }
+}
+
+async function iterate(instanceId: string, abortSignal: AbortSignal): Promise<void> {
   const leased = await leaseJob(instanceId);
   if (leased === null) {
     await sleep(EMPTY_POLL_MS, abortSignal);
     return;
   }
+  if (abortSignal.aborted) return;
 
   const { job, raw } = leased;
 
@@ -57,6 +119,38 @@ async function iterate(instanceId: string, abortSignal: { aborted: boolean }): P
   );
 
   let dispatched = false;
+  if (job.kind === "workflow-run") {
+    try {
+      const outcome = await dispatchWorkflowRunner(job);
+      if (outcome === "capacity") {
+        await deferWorkflow(instanceId, raw, job, abortSignal, "capacity");
+        return;
+      }
+      await releaseLeasedJob(instanceId, raw);
+      logger.debug(
+        {
+          deliveryId: job.deliveryId,
+          runId: job.workflowRun.runId,
+          outcome,
+          instanceId,
+        },
+        "Queue worker transferred workflow recovery authority to PostgreSQL",
+      );
+      return;
+    } catch (err) {
+      logger.error(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          deliveryId: job.deliveryId,
+          runId: job.workflowRun.runId,
+        },
+        "Isolated workflow runner dispatch failed before authority transfer",
+      );
+      await deferWorkflow(instanceId, raw, job, abortSignal, "dispatch-error");
+      return;
+    }
+  }
+
   try {
     dispatched = await dispatchJob(job);
   } catch (err) {
@@ -109,7 +203,9 @@ export function startQueueWorker(): void {
   running = true;
   stopRequested = false;
   const instanceId = getInstanceId();
-  const abortSignal = { aborted: false };
+  const abortController = new AbortController();
+  const abortSignal = abortController.signal;
+  loopAbortController = abortController;
 
   logger.info({ instanceId }, "Queue worker started");
 
@@ -128,7 +224,7 @@ export function startQueueWorker(): void {
         await sleep(EMPTY_POLL_MS * 5, abortSignal);
       }
     }
-    abortSignal.aborted = true;
+    if (loopAbortController === abortController) loopAbortController = null;
     logger.info({ instanceId }, "Queue worker stopped");
   })();
 }
@@ -145,6 +241,7 @@ export function startQueueWorker(): void {
 export async function stopQueueWorker(): Promise<void> {
   if (!running) return;
   stopRequested = true;
+  loopAbortController?.abort();
   const pending = loopPromise;
   loopPromise = null;
   running = false;

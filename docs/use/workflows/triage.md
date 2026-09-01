@@ -49,4 +49,4 @@ When `PROMPT_CACHE_LAYOUT=cacheable`, the triage prompt is split: the static rol
 - `valid = false` → handler returns `failed` and any composite cascade halts here.
 - Missing markdown, malformed JSON, or an SDK error → `failed` with a specific reason.
 
-There is no turn cap on triage: the agent runs until the verdict is honestly defensible.
+There is no _default_ turn cap on triage: the agent runs until the verdict is honestly defensible. Three sources can bind one, and all three are honoured: the repo's `workflows.triage.max_turns` in `.github-app.yaml`, the operator's `AGENT_MAX_TURNS`, and `DEFAULT_MAXTURNS`. With all three unset, which is the stock deployment, the run is uncapped as before.

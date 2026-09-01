@@ -140,7 +140,6 @@ export async function classify(
       system: withStructuredRules(SYSTEM_PROMPT),
       messages: [{ role: "user", content: buildUserMessage(commentBody) }],
       maxTokens: config.triageMaxTokens,
-      temperature: 0,
     });
     rawText = response.text;
   } catch (err) {

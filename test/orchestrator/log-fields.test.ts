@@ -330,7 +330,6 @@ describe("GithubAppTokenMintLogSchema (#236)", () => {
     for (const via of [
       "handleAccept",
       "handleScopedAccept",
-      "postOrphanNotification",
       "shipTickleResume",
       "proposalPoller",
       "schedulerRunAction",

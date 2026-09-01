@@ -379,7 +379,7 @@ export async function runPipeline(
         ctx.log,
         "trackingComment.create",
         () =>
-          retryWithBackoff(() => createTrackingComment(ctx), {
+          retryWithBackoff(() => createTrackingComment(ctx, overrides.policy?.warning), {
             maxAttempts: 3,
             initialDelayMs: 1000,
             log: ctx.log,
@@ -438,13 +438,11 @@ export async function runPipeline(
       ...ctx,
       headBranch: data.headBranch ?? ctx.headBranch ?? ctx.defaultBranch,
       baseBranch: data.baseBranch ?? ctx.baseBranch ?? ctx.defaultBranch,
-      // No review-only gate here, unlike reviewLearnings below. The repo
-      // schema only accepts `instructions` under `workflows.review`, so the
-      // value cannot be authored for another workflow. That gate lives on the
-      // repo's YAML, not on the wire: `AgentPolicySchema.instructions` is
-      // workflow-agnostic, so a producer that sets it for a non-review
-      // workflow would land here unchallenged. reviewLearnings needs its own
-      // gate below because it is loaded uniformly into every job.
+      // No review-only gate here, unlike reviewLearnings below. Two upstream
+      // layers already own it: the schema only accepts `instructions` under
+      // `workflows.review`, and `stripInstructionsUnlessReview` drops it at
+      // job accept. reviewLearnings needs its gate here because it is loaded
+      // uniformly into every job and has no upstream filter.
       ...(overrides.policy?.instructions !== undefined
         ? { reviewInstructions: overrides.policy.instructions }
         : {}),

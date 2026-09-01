@@ -18,6 +18,14 @@ scheduler: ALLOWED_OWNERS is unset; ... not starting
 To disable a single action without touching the bot, set `enabled: false` on
 that action in the repo's `.github-app.yaml`.
 
+To silence every action in one repo, set the **document-level** `enabled: false`
+(top level, not inside an action). It short-circuits both the cron scan and the
+manual endpoint, so a repo that opted out of the bot does not keep running
+unattended cron work. The manual endpoint reports it as
+`the bot is disabled for this repository`, distinct from the per-action
+`action "<name>" is disabled`. See
+[Per-repo configuration](../../use/repo-config.md).
+
 ## Force a run
 
 ```bash
@@ -49,7 +57,7 @@ The per-action state lives in the `scheduled_action_state` table
 ## Stuck `in_flight_job_id`
 
 The single-flight lock is taken when a run is claimed. It is normally cleared
-the moment the run completes (the scoped-job-completion handler), so a healthy
+the moment the run completes (the `scoped-job:completion` handler), so a healthy
 run releases it immediately. As a backstop it is also **self-healing**: the
 claim treats a lock older than `2 × AGENT_TIMEOUT_MS` (always longer than the
 longest possible run) as released, so a daemon that died mid-run does not
