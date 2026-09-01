@@ -1,0 +1,438 @@
+# Canonical workflow-runner admission boundary.
+#
+# This file is the source of truth for the ValidatingAdmissionPolicy. It is
+# derived from buildWorkflowRunnerPod in src/k8s/workflow-runner-spawner.ts and
+# verified against that renderer by `bun run test:admission`, which installs it in
+# a disposable Kubernetes 1.30 cluster and asserts the exact Pod is admitted and
+# every prohibited mutation is denied.
+#
+# The github-app Helm chart in chrisleekr/helm-charts packages these resources
+# behind workflowRunner.enabled and is the recommended way to install them. It
+# carries the policy spec verbatim, and its check-policy-parity.sh gate fails when
+# its copy drifts from the version published here at the chart's appVersion.
+#
+# So: changing the policy below means the chart needs the same change. Until the
+# next release tag is cut, that gate cannot see this file and will skip, so pair
+# any edit here with a chart update rather than relying on CI to catch it.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: github-app-runners
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.30
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.30
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.30
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: github-app-workflow-runner-egress-boundary
+  namespace: github-app-runners
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: github-app
+      app.kubernetes.io/component: workflow-runner
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              github-app.chrislee.kr/workflow-controller: "true"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: github-app
+              app.kubernetes.io/component: orchestrator
+      ports:
+        - protocol: TCP
+          port: 3002
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.0.2.0/24
+              - 192.168.0.0/16
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - 100::/64
+              - 2001:db8::/32
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workflow-runner-boundary
+  namespace: github-app-runners
+data:
+  runnerImage: "REPLACE_WITH_EXACT_DAEMON_IMAGE"
+  orchestratorOrigin: "wss://orchestrator.example.internal:3002"
+  provider: "REPLACE_WITH_CLAUDE_PROVIDER"
+  model: "REPLACE_WITH_CLAUDE_MODEL"
+  awsRegion: "REPLACE_WITH_AWS_REGION_OR_EMPTY"
+  anthropicBedrockBaseUrl: "REPLACE_WITH_BEDROCK_BASE_URL_OR_EMPTY"
+  allowedOwners: "REPLACE_WITH_ALLOWED_OWNERS_OR_EMPTY"
+  providerCredential1: "REPLACE_WITH_PROVIDER_CREDENTIAL_1"
+  providerCredential2: "REPLACE_WITH_PROVIDER_CREDENTIAL_2_OR_EMPTY"
+  providerCredential3: "REPLACE_WITH_PROVIDER_CREDENTIAL_3_OR_EMPTY"
+  runnerNodeLabel: "REPLACE_WITH_WORKFLOW_RUNNER_NODE_LABEL"
+  runnerNodeValue: "REPLACE_WITH_WORKFLOW_RUNNER_NODE_VALUE"
+  runnerImagePullSecret: "REPLACE_WITH_RUNNER_IMAGE_PULL_SECRET_OR_EMPTY"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: github-app-workflow-runner-boundary
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers"]
+  variables:
+    - name: podSpec
+      expression: object.spec
+    - name: podSecurity
+      expression: variables.podSpec.securityContext
+    - name: runner
+      expression: variables.podSpec.containers[0]
+    - name: configuredProviderCredentialNames
+      expression: >-
+        [params.data['providerCredential1'], params.data['providerCredential2'],
+         params.data['providerCredential3']].filter(name, name != '')
+    - name: configuredProviderSettingNames
+      expression: >-
+        ['CLAUDE_PROVIDER', 'CLAUDE_MODEL'] +
+        (params.data['awsRegion'] == '' ? [] : ['AWS_REGION']) +
+        (params.data['anthropicBedrockBaseUrl'] == '' ? [] :
+          ['ANTHROPIC_BEDROCK_BASE_URL']) +
+        (params.data['allowedOwners'] == '' ? [] : ['ALLOWED_OWNERS'])
+    - name: controlEnvNames
+      expression: >-
+        ['WORKFLOW_RUNNER', 'WORKFLOW_RUNNER_RUN_ID',
+         'WORKFLOW_RUNNER_ATTEMPT_ID', 'WORKFLOW_RUNNER_TOKEN',
+         'ORCHESTRATOR_URL', 'LD_PRELOAD']
+    - name: expectedEnvNames
+      expression: >-
+        variables.controlEnvNames + variables.configuredProviderCredentialNames +
+        variables.configuredProviderSettingNames
+  validations:
+    - expression: >-
+        has(object.metadata.labels) &&
+        size(object.metadata.labels) == 4 &&
+        'app.kubernetes.io/name' in object.metadata.labels &&
+        object.metadata.labels['app.kubernetes.io/name'] == 'github-app' &&
+        'app.kubernetes.io/component' in object.metadata.labels &&
+        object.metadata.labels['app.kubernetes.io/component'] == 'workflow-runner' &&
+        'github-app/workflow-run-id' in object.metadata.labels &&
+        'github-app/workflow-attempt-id' in object.metadata.labels &&
+        object.metadata.labels['github-app/workflow-run-id'].matches(
+          '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') &&
+        object.metadata.labels['github-app/workflow-attempt-id'].matches(
+          '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$') &&
+        object.metadata.name == 'workflow-runner-' +
+          object.metadata.labels['github-app/workflow-attempt-id']
+      message: Workflow runner name and labels must carry one exact v4 attempt identity.
+    - expression: >-
+        has(params.data) &&
+        size(params.data) == 13 &&
+        'runnerImagePullSecret' in params.data &&
+        'runnerNodeLabel' in params.data && params.data['runnerNodeLabel'] != '' &&
+        'runnerNodeValue' in params.data && params.data['runnerNodeValue'] != '' &&
+        'runnerImage' in params.data &&
+        params.data['runnerImage'].matches('^.+@sha256:[0-9a-f]{64}$') &&
+        'orchestratorOrigin' in params.data &&
+        (params.data['orchestratorOrigin'].startsWith('wss://') ||
+         params.data['orchestratorOrigin'].matches(
+           '^ws://[a-z0-9-]+[.][a-z0-9-]+[.]svc([.]cluster[.]local)?(:[0-9]{1,5})?$')) &&
+        'provider' in params.data &&
+        'model' in params.data && params.data['model'] != '' &&
+        'awsRegion' in params.data &&
+        'anthropicBedrockBaseUrl' in params.data &&
+        'allowedOwners' in params.data &&
+        'providerCredential1' in params.data &&
+        'providerCredential2' in params.data &&
+        'providerCredential3' in params.data &&
+        ((params.data['provider'] == 'anthropic' &&
+          params.data['awsRegion'] == '' &&
+          params.data['anthropicBedrockBaseUrl'] == '' &&
+          params.data['providerCredential1'] in
+            ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'] &&
+          params.data['providerCredential2'] == '' &&
+          params.data['providerCredential3'] == '') ||
+         (params.data['provider'] == 'bedrock' &&
+          params.data['awsRegion'] != '' &&
+          ((params.data['providerCredential1'] == 'AWS_BEARER_TOKEN_BEDROCK' &&
+            params.data['providerCredential2'] == '' &&
+            params.data['providerCredential3'] == '') ||
+           (params.data['providerCredential1'] == 'AWS_ACCESS_KEY_ID' &&
+            params.data['providerCredential2'] == 'AWS_SECRET_ACCESS_KEY' &&
+            params.data['providerCredential3'] in ['', 'AWS_SESSION_TOKEN']))))
+      message: Workflow runner boundary parameters must define one exact deployment environment.
+    - expression: >-
+        (!has(object.metadata.annotations) || size(object.metadata.annotations) == 0) &&
+        (!has(object.metadata.finalizers) || size(object.metadata.finalizers) == 0) &&
+        (!has(object.metadata.ownerReferences) || size(object.metadata.ownerReferences) == 0) &&
+        !has(object.metadata.generateName) &&
+        size(variables.podSpec.containers) == 1 &&
+        (!has(variables.podSpec.initContainers) ||
+         size(variables.podSpec.initContainers) == 0) &&
+        (!has(variables.podSpec.ephemeralContainers) ||
+         size(variables.podSpec.ephemeralContainers) == 0) &&
+        size(variables.podSpec.volumes) == 1 &&
+        variables.podSpec.volumes[0].name == 'workspace' &&
+        has(variables.podSpec.volumes[0].emptyDir) &&
+        (!has(variables.podSpec.volumes[0].emptyDir.medium) ||
+         variables.podSpec.volumes[0].emptyDir.medium == '') &&
+        quantity(variables.podSpec.volumes[0].emptyDir.sizeLimit).compareTo(
+          quantity('10Gi')) == 0
+      message: Workflow runner Pods may use only the size-limited workspace volume.
+    - expression: >-
+        variables.podSpec.restartPolicy == 'Never' &&
+        variables.podSpec.serviceAccountName == 'default' &&
+        variables.podSpec.serviceAccount == 'default' &&
+        variables.podSpec.dnsPolicy == 'ClusterFirst' &&
+        variables.podSpec.schedulerName == 'default-scheduler' &&
+        variables.podSpec.activeDeadlineSeconds == 4200 &&
+        variables.podSpec.terminationGracePeriodSeconds == 30 &&
+        variables.podSpec.automountServiceAccountToken == false &&
+        variables.podSpec.enableServiceLinks == false &&
+        (!has(variables.podSpec.hostIPC) || variables.podSpec.hostIPC == false) &&
+        (!has(variables.podSpec.hostNetwork) || variables.podSpec.hostNetwork == false) &&
+        (!has(variables.podSpec.hostPID) || variables.podSpec.hostPID == false) &&
+        (!has(variables.podSpec.shareProcessNamespace) ||
+         variables.podSpec.shareProcessNamespace == false) &&
+        !has(variables.podSpec.dnsConfig) && !has(variables.podSpec.hostAliases) &&
+        !has(variables.podSpec.hostUsers) && !has(variables.podSpec.hostname) &&
+        !has(variables.podSpec.hostnameOverride) &&
+        (!has(variables.podSpec.imagePullSecrets) ||
+         size(variables.podSpec.imagePullSecrets) == 0 ||
+         (params.data['runnerImagePullSecret'] != '' &&
+          size(variables.podSpec.imagePullSecrets) == 1 &&
+          variables.podSpec.imagePullSecrets[0].name ==
+            params.data['runnerImagePullSecret'])) &&
+        !has(variables.podSpec.affinity) && !has(variables.podSpec.nodeName) &&
+        size(variables.podSpec.nodeSelector) == 1 &&
+        variables.podSpec.nodeSelector[params.data['runnerNodeLabel']] == params.data['runnerNodeValue'] &&
+        !has(variables.podSpec.os) && !has(variables.podSpec.overhead) &&
+        variables.podSpec.preemptionPolicy == 'PreemptLowerPriority' &&
+        variables.podSpec.priority == 0 && !has(variables.podSpec.priorityClassName) &&
+        (!has(variables.podSpec.readinessGates) ||
+         size(variables.podSpec.readinessGates) == 0) &&
+        !has(variables.podSpec.resourceClaims) && !has(variables.podSpec.resources) &&
+        !has(variables.podSpec.runtimeClassName) &&
+        (!has(variables.podSpec.schedulingGates) ||
+         size(variables.podSpec.schedulingGates) == 0) &&
+        (!has(variables.podSpec.setHostnameAsFQDN) ||
+         variables.podSpec.setHostnameAsFQDN == false) &&
+        !has(variables.podSpec.subdomain) &&
+        (!has(variables.podSpec.topologySpreadConstraints) ||
+         size(variables.podSpec.topologySpreadConstraints) == 0) &&
+        size(variables.podSpec.tolerations) == 3 &&
+        variables.podSpec.tolerations.all(t,
+          (t.operator == 'Exists' && t.effect == 'NoExecute' &&
+           t.tolerationSeconds == 300 && !has(t.value) &&
+           t.key in ['node.kubernetes.io/not-ready', 'node.kubernetes.io/unreachable']) ||
+          (t.key == params.data['runnerNodeLabel'] && t.operator == 'Equal' &&
+           t.value == params.data['runnerNodeValue'] && t.effect == 'NoSchedule' &&
+           !has(t.tolerationSeconds))) &&
+        variables.podSpec.tolerations.exists(t, t.key == 'node.kubernetes.io/not-ready') &&
+        variables.podSpec.tolerations.exists(t, t.key == 'node.kubernetes.io/unreachable') &&
+        variables.podSpec.tolerations.exists(t,
+          t.key == params.data['runnerNodeLabel']) &&
+        variables.podSecurity.runAsNonRoot == true &&
+        variables.podSecurity.runAsUser == 1000 &&
+        variables.podSecurity.runAsGroup == 1000 &&
+        variables.podSecurity.seccompProfile.type == 'RuntimeDefault' &&
+        !has(variables.podSecurity.appArmorProfile) &&
+        !has(variables.podSecurity.fsGroup) &&
+        !has(variables.podSecurity.fsGroupChangePolicy) &&
+        !has(variables.podSecurity.seLinuxChangePolicy) &&
+        !has(variables.podSecurity.supplementalGroups) &&
+        !has(variables.podSecurity.supplementalGroupsPolicy) &&
+        !has(variables.podSecurity.sysctls) &&
+        !has(variables.podSecurity.seLinuxOptions) &&
+        !has(variables.podSecurity.windowsOptions)
+      message: Workflow runner Pod isolation settings are immutable.
+    - expression: >-
+        variables.runner.name == 'runner' &&
+        variables.runner.image == params.data['runnerImage'] &&
+        variables.runner.imagePullPolicy == 'IfNotPresent' &&
+        variables.runner.command == ['bun', 'run', 'dist/runner/main.js'] &&
+        variables.runner.terminationMessagePath == '/dev/termination-log' &&
+        variables.runner.terminationMessagePolicy == 'File' &&
+        !has(variables.runner.args) && !has(variables.runner.workingDir) &&
+        !has(variables.runner.lifecycle) && !has(variables.runner.livenessProbe) &&
+        !has(variables.runner.readinessProbe) && !has(variables.runner.startupProbe) &&
+        (!has(variables.runner.envFrom) || size(variables.runner.envFrom) == 0) &&
+        size(variables.runner.volumeMounts) == 1 &&
+        variables.runner.volumeMounts[0].name == 'workspace' &&
+        variables.runner.volumeMounts[0].mountPath == '/tmp/bot-workspaces' &&
+        (!has(variables.runner.volumeMounts[0].readOnly) ||
+         variables.runner.volumeMounts[0].readOnly == false) &&
+        !has(variables.runner.volumeMounts[0].subPath) &&
+        !has(variables.runner.volumeMounts[0].subPathExpr) &&
+        !has(variables.runner.volumeMounts[0].mountPropagation) &&
+        !has(variables.runner.volumeMounts[0].recursiveReadOnly) &&
+        (!has(variables.runner.ports) || size(variables.runner.ports) == 0) &&
+        (!has(variables.runner.resizePolicy) || size(variables.runner.resizePolicy) == 0) &&
+        !has(variables.runner.restartPolicy) &&
+        (!has(variables.runner.restartPolicyRules) ||
+         size(variables.runner.restartPolicyRules) == 0) &&
+        (!has(variables.runner.volumeDevices) || size(variables.runner.volumeDevices) == 0) &&
+        (!has(variables.runner.stdin) || variables.runner.stdin == false) &&
+        (!has(variables.runner.stdinOnce) || variables.runner.stdinOnce == false) &&
+        (!has(variables.runner.tty) || variables.runner.tty == false)
+      message: Workflow runner container execution fields are immutable.
+    - expression: >-
+        variables.runner.securityContext.allowPrivilegeEscalation == false &&
+        (!has(variables.runner.securityContext.privileged) ||
+         variables.runner.securityContext.privileged == false) &&
+        variables.runner.securityContext.capabilities.drop == ['ALL'] &&
+        (!has(variables.runner.securityContext.capabilities.add) ||
+         size(variables.runner.securityContext.capabilities.add) == 0) &&
+        !has(variables.runner.securityContext.runAsNonRoot) &&
+        !has(variables.runner.securityContext.runAsUser) &&
+        !has(variables.runner.securityContext.runAsGroup) &&
+        !has(variables.runner.securityContext.seccompProfile) &&
+        !has(variables.runner.securityContext.procMount) &&
+        !has(variables.runner.securityContext.readOnlyRootFilesystem) &&
+        !has(variables.runner.securityContext.appArmorProfile) &&
+        !has(variables.runner.securityContext.seLinuxOptions) &&
+        !has(variables.runner.securityContext.windowsOptions)
+      message: Workflow runner container security overrides are forbidden.
+    - expression: >-
+        has(variables.runner.resources) &&
+        !has(variables.runner.resources.claims) &&
+        has(variables.runner.resources.requests) &&
+        size(variables.runner.resources.requests) == 3 &&
+        'cpu' in variables.runner.resources.requests &&
+        quantity(variables.runner.resources.requests['cpu']).compareTo(quantity('500m')) == 0 &&
+        'memory' in variables.runner.resources.requests &&
+        quantity(variables.runner.resources.requests['memory']).compareTo(quantity('1Gi')) == 0 &&
+        'ephemeral-storage' in variables.runner.resources.requests &&
+        quantity(variables.runner.resources.requests['ephemeral-storage']).compareTo(
+          quantity('2Gi')) == 0 &&
+        has(variables.runner.resources.limits) &&
+        size(variables.runner.resources.limits) == 3 &&
+        'cpu' in variables.runner.resources.limits &&
+        quantity(variables.runner.resources.limits['cpu']).compareTo(quantity('2')) == 0 &&
+        'memory' in variables.runner.resources.limits &&
+        quantity(variables.runner.resources.limits['memory']).compareTo(quantity('4Gi')) == 0 &&
+        'ephemeral-storage' in variables.runner.resources.limits &&
+        quantity(variables.runner.resources.limits['ephemeral-storage']).compareTo(
+          quantity('10Gi')) == 0
+      message: Workflow runner resource requests and limits are immutable.
+    - expression: >-
+        size(variables.runner.env) == size(variables.expectedEnvNames) &&
+        variables.runner.env.all(e, e.name in variables.expectedEnvNames) &&
+        variables.expectedEnvNames.all(name,
+          variables.runner.env.exists(e, e.name == name)) &&
+        variables.runner.env.all(e,
+          variables.runner.env.filter(other, other.name == e.name).size() == 1) &&
+        variables.runner.env.filter(e,
+          e.name in variables.configuredProviderCredentialNames).all(e,
+          !has(e.value) && has(e.valueFrom) && has(e.valueFrom.secretKeyRef) &&
+          e.valueFrom.secretKeyRef.name == 'workflow-runner-secrets' &&
+          e.valueFrom.secretKeyRef.key == e.name &&
+          (!has(e.valueFrom.secretKeyRef.optional) ||
+           e.valueFrom.secretKeyRef.optional == false)) &&
+        variables.runner.env.filter(e,
+          e.name in variables.configuredProviderSettingNames).all(e,
+          has(e.value) && e.value != '' && !has(e.valueFrom))
+      message: Workflow runner provider environment must use the exact selected Secret keys.
+    - expression: >-
+        variables.runner.env.exists(e,
+          e.name == 'CLAUDE_PROVIDER' && e.value == params.data['provider']) &&
+        variables.runner.env.exists(e,
+          e.name == 'CLAUDE_MODEL' && e.value == params.data['model']) &&
+        (params.data['awsRegion'] == '' || variables.runner.env.exists(e,
+          e.name == 'AWS_REGION' && e.value == params.data['awsRegion'])) &&
+        (params.data['anthropicBedrockBaseUrl'] == '' ||
+         variables.runner.env.exists(e,
+           e.name == 'ANTHROPIC_BEDROCK_BASE_URL' &&
+           e.value == params.data['anthropicBedrockBaseUrl'])) &&
+        (params.data['allowedOwners'] == '' || variables.runner.env.exists(e,
+          e.name == 'ALLOWED_OWNERS' && e.value == params.data['allowedOwners']))
+      message: Workflow runner provider settings must match protected boundary parameters.
+    - expression: >-
+        variables.runner.env.exists(e,
+          e.name == 'WORKFLOW_RUNNER' && e.value == 'true') &&
+        variables.runner.env.exists(e,
+          e.name == 'WORKFLOW_RUNNER_RUN_ID' &&
+          e.value == object.metadata.labels['github-app/workflow-run-id']) &&
+        variables.runner.env.exists(e,
+          e.name == 'WORKFLOW_RUNNER_ATTEMPT_ID' &&
+          e.value == object.metadata.labels['github-app/workflow-attempt-id']) &&
+        variables.runner.env.exists(e,
+          e.name == 'WORKFLOW_RUNNER_TOKEN' && !has(e.value) &&
+          e.valueFrom.secretKeyRef.name == object.metadata.name &&
+          e.valueFrom.secretKeyRef.key == 'capability' &&
+          (!has(e.valueFrom.secretKeyRef.optional) ||
+           e.valueFrom.secretKeyRef.optional == false)) &&
+        variables.runner.env.exists(e,
+          e.name == 'ORCHESTRATOR_URL' &&
+          e.value == params.data['orchestratorOrigin'] + '/ws/workflow-runner/' +
+            object.metadata.labels['github-app/workflow-run-id'] + '/' +
+            object.metadata.labels['github-app/workflow-attempt-id']) &&
+        variables.runner.env.exists(e,
+          e.name == 'LD_PRELOAD' &&
+          e.value == '/usr/local/lib/github-app/daemon-process-guard.so')
+      message: Workflow runner control environment must match its exact attempt.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: github-app-workflow-runner-boundary
+spec:
+  policyName: github-app-workflow-runner-boundary
+  validationActions: [Deny, Audit]
+  paramRef:
+    name: workflow-runner-boundary
+    namespace: github-app-runners
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: github-app-runners

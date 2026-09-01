@@ -134,13 +134,12 @@ describe("configSchema: data layer validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("does not yet require a workflow runner capability secret in server mode", () => {
-    // Becomes mandatory in the slice that ships the capability signer. Until
-    // then, demanding it would only crashloop a controller rolled before the
-    // secret is provisioned.
+  it("requires a dedicated workflow runner capability secret in server mode", () => {
+    // Mandatory from this slice on: workflow-runner-dispatch.ts derives every
+    // runner capability from this root.
     const { workflowRunnerCapabilitySecret, ...withoutCapabilitySecret } = ANTHROPIC_BASE;
     expect(workflowRunnerCapabilitySecret).toBeDefined();
-    expect(configSchema.safeParse(withoutCapabilitySecret).success).toBe(true);
+    expect(configSchema.safeParse(withoutCapabilitySecret).success).toBe(false);
   });
 
   it("rejects capability roots reused from either daemon authentication slot", () => {

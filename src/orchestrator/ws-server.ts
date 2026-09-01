@@ -1,29 +1,31 @@
 import { timingSafeEqual } from "node:crypto";
 
 import type { ServerWebSocket } from "bun";
+import { z } from "zod";
 
 import { config } from "../config";
 import { logger } from "../logger";
+import { workflowRunnerClientMessageSchema } from "../shared/workflow-runner-messages";
+import { daemonMessageSchema, WS_CLOSE_CODES, WS_ERROR_CODES } from "../shared/ws-messages";
 import {
-  createMessageEnvelope,
-  daemonMessageSchema,
-  WS_CLOSE_CODES,
-  WS_ERROR_CODES,
-} from "../shared/ws-messages";
-import { handleDaemonMessage, handleWsClose, handleWsOpen } from "./connection-handler";
+  beginDaemonConnectionShutdown,
+  drainDisconnectCleanups,
+  handleDaemonMessage,
+  handleWsClose,
+  handleWsOpen,
+} from "./connection-handler";
+import {
+  isWorkflowRunnerCapabilityValid,
+  parseWorkflowRunnerPath,
+} from "./workflow-runner-capability";
+import {
+  handleWorkflowRunnerClose,
+  handleWorkflowRunnerMessage,
+  handleWorkflowRunnerOpen,
+} from "./workflow-runner-controller";
+import { sendError, type WsConnectionData } from "./ws-connection";
 
-/**
- * Per-connection data attached to each WebSocket via ws.data.
- * Set during the HTTP upgrade in the fetch handler.
- */
-export interface WsConnectionData {
-  /** Authenticated after token check in fetch handler. */
-  authenticated: boolean;
-  /** Remote address for logging. */
-  remoteAddr: string;
-  /** Daemon ID, set after daemon:register is processed. */
-  daemonId: string | undefined;
-}
+export { sendError, type WsConnectionData } from "./ws-connection";
 
 let server: ReturnType<typeof Bun.serve<WsConnectionData>> | null = null;
 
@@ -155,6 +157,11 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve<WsConnection
     throw new Error("DAEMON_AUTH_TOKEN is required for WebSocket server");
   }
   const previousAuthToken = config.daemonAuthTokenPrevious;
+  const runnerCapabilitySecret = config.workflowRunnerCapabilitySecret;
+  if (runnerCapabilitySecret === undefined) {
+    throw new Error("WORKFLOW_RUNNER_CAPABILITY_SECRET is required for WebSocket server");
+  }
+  const previousRunnerCapabilitySecret = config.workflowRunnerCapabilitySecretPrevious;
   if (previousAuthToken !== undefined && previousAuthToken === authToken) {
     // Misconfiguration: rotation overlap is a no-op when both slots hold the
     // same value. Warn loudly so the operator notices before assuming the
@@ -164,13 +171,22 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve<WsConnection
     );
   }
   const authExpectations = buildAuthExpectations(authToken, previousAuthToken);
+  if (
+    previousRunnerCapabilitySecret !== undefined &&
+    previousRunnerCapabilitySecret === runnerCapabilitySecret
+  ) {
+    logger.warn(
+      "WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS equals WORKFLOW_RUNNER_CAPABILITY_SECRET, rotation slot has no effect.",
+    );
+  }
 
   server = Bun.serve<WsConnectionData>({
     port: config.wsPort,
 
     fetch(req, srv) {
       const url = new URL(req.url);
-      if (url.pathname !== "/ws") {
+      const runnerIdentity = parseWorkflowRunnerPath(url.pathname);
+      if (url.pathname !== "/ws" && runnerIdentity === null) {
         return new Response("Not Found", { status: 404 });
       }
 
@@ -178,7 +194,22 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve<WsConnection
       // optional rotation-window `_PREVIOUS` token. Comparison is constant-time
       // to avoid leaking the secret via response-latency side channels (#76).
       const authHeader = req.headers.get("authorization");
-      if (!isAuthHeaderValid(authHeader, authExpectations)) {
+      const validRunnerIds =
+        runnerIdentity !== null &&
+        z.uuid().safeParse(runnerIdentity.runId).success &&
+        z.uuid().safeParse(runnerIdentity.attemptId).success;
+      const authenticated =
+        runnerIdentity === null
+          ? isAuthHeaderValid(authHeader, authExpectations)
+          : validRunnerIds &&
+            isWorkflowRunnerCapabilityValid(
+              authHeader,
+              runnerIdentity.runId,
+              runnerIdentity.attemptId,
+              runnerCapabilitySecret,
+              previousRunnerCapabilitySecret,
+            );
+      if (!authenticated) {
         logger.warn(
           { remoteAddr: srv.requestIP(req)?.address },
           "WebSocket auth failed, invalid token",
@@ -190,6 +221,14 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve<WsConnection
         authenticated: true,
         remoteAddr: srv.requestIP(req)?.address ?? "unknown",
         daemonId: undefined,
+        kind: runnerIdentity === null ? "daemon" : "workflow-runner",
+        ...(runnerIdentity === null
+          ? {}
+          : {
+              runnerRunId: runnerIdentity.runId,
+              runnerAttemptId: runnerIdentity.attemptId,
+              runnerRegistered: false,
+            }),
       };
 
       const upgraded = srv.upgrade(req, { data: connectionData });
@@ -209,7 +248,8 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve<WsConnection
 
       open(ws: ServerWebSocket<WsConnectionData>) {
         logger.info({ remoteAddr: ws.data.remoteAddr }, "WebSocket connection opened");
-        handleWsOpen(ws);
+        if (ws.data.kind === "workflow-runner") handleWorkflowRunnerOpen(ws);
+        else handleWsOpen(ws);
       },
 
       message(ws: ServerWebSocket<WsConnectionData>, message: string | Buffer) {
@@ -221,6 +261,16 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve<WsConnection
         } catch {
           sendError(ws, crypto.randomUUID(), WS_ERROR_CODES.INVALID_MESSAGE, "Invalid JSON");
           ws.close(WS_CLOSE_CODES.POLICY_VIOLATION.code, WS_CLOSE_CODES.POLICY_VIOLATION.reason);
+          return;
+        }
+
+        if (ws.data.kind === "workflow-runner") {
+          const result = workflowRunnerClientMessageSchema.safeParse(parsed);
+          if (!result.success) {
+            ws.close(WS_CLOSE_CODES.POLICY_VIOLATION.code, "invalid workflow runner message");
+            return;
+          }
+          handleWorkflowRunnerMessage(ws, result.data);
           return;
         }
 
@@ -244,7 +294,8 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve<WsConnection
 
       close(ws: ServerWebSocket<WsConnectionData>, code: number, reason: string) {
         logger.info({ daemonId: ws.data.daemonId, code, reason }, "WebSocket connection closed");
-        handleWsClose(ws, code, reason);
+        if (ws.data.kind === "workflow-runner") handleWorkflowRunnerClose(ws);
+        else handleWsClose(ws, code, reason);
       },
     },
   });
@@ -270,29 +321,12 @@ export async function stopWebSocketServer(): Promise<void> {
   if (server !== null) {
     const stopping = server;
     server = null;
+    beginDaemonConnectionShutdown();
     await Promise.race([
       stopping.stop(true),
       new Promise<void>((resolve) => setTimeout(resolve, STOP_DRAIN_TIMEOUT_MS)),
     ]);
+    await drainDisconnectCleanups();
     logger.info("WebSocket server stopped");
   }
-}
-
-/**
- * Send an error message to a daemon WebSocket connection.
- */
-export function sendError(
-  ws: ServerWebSocket<WsConnectionData>,
-  correlationId: string,
-  code: string,
-  message: string,
-): void {
-  const envelope = createMessageEnvelope(correlationId);
-  ws.sendText(
-    JSON.stringify({
-      type: "error",
-      ...envelope,
-      payload: { code, message },
-    }),
-  );
 }
