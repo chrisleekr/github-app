@@ -25,7 +25,13 @@ function b64(text: string): string {
 
 function fileResponse(yaml: string, etag?: string): unknown {
   return {
-    data: { type: "file", content: b64(yaml), sha: "abc123" },
+    data: {
+      type: "file",
+      content: b64(yaml),
+      sha: "abc123",
+      // Real responses always carry `size`; the size gate reads it.
+      size: Buffer.byteLength(yaml, "utf-8"),
+    },
     headers: etag !== undefined ? { etag } : {},
   };
 }
@@ -65,6 +71,41 @@ describe("fetchRepoConfig", () => {
     expect(result.kind).toBe("ok");
     expect(getContent).toHaveBeenCalledTimes(1);
     expect(getContent.mock.calls[0]?.[0]).not.toHaveProperty("ref");
+  });
+
+  it("rejects an oversize blob before decoding it", async () => {
+    // Mirrors the pr-check gate: the decode must never be paid for a file
+    // that is going to be rejected anyway. This path runs per job, not once
+    // per scheduler tick.
+    const getContent = mock(() =>
+      Promise.resolve({
+        data: { type: "file", content: b64(VALID_YAML), sha: "abc123", size: 64 * 1024 + 1 },
+        headers: {},
+      }),
+    );
+    const result = await fetchFrom(getContent);
+
+    expect(result.kind).toBe("invalid");
+    expect(result.kind === "invalid" ? result.message : "").toContain("over the");
+  });
+
+  it("reports a >1MB blob as a size problem, not a schema problem", async () => {
+    // Over 1 MB the Contents API returns `content: ""` with `encoding: "none"`.
+    // Decoding that yields "", which parses to null and would otherwise be
+    // reported as `(root): expected object, received null`, blaming the
+    // owner's document for what is really a size limit.
+    const getContent = mock(() =>
+      Promise.resolve({
+        data: { type: "file", content: "", encoding: "none", sha: "abc123", size: 2_000_000 },
+        headers: {},
+      }),
+    );
+    const result = await fetchFrom(getContent);
+
+    expect(result.kind).toBe("invalid");
+    const message = result.kind === "invalid" ? result.message : "";
+    expect(message).toContain("over the");
+    expect(message).not.toContain("expected object");
   });
 
   it("returns absent on 404 and negative-caches it", async () => {

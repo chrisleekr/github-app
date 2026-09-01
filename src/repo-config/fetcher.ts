@@ -24,7 +24,7 @@ import { parse as parseYaml } from "yaml";
 import type { z } from "zod";
 
 import { redactSecrets } from "../utils/sanitize";
-import { type GithubAppConfig, githubAppConfigSchema } from "./schema";
+import { type GithubAppConfig, githubAppConfigSchema, MAX_CONFIG_BYTES } from "./schema";
 
 /**
  * Outcome of reading one repo's config.
@@ -170,6 +170,25 @@ export async function fetchRepoConfig(input: FetchRepoConfigInput): Promise<Repo
       "repo-config: config path is not a file",
     );
     return { kind: "invalid", message: `${path} is not a file` };
+  }
+
+  // Size gate BEFORE the base64 decode, mirroring `pr-check.ts`, so an
+  // oversize blob is never materialised. This path runs per job rather than
+  // once per scheduler tick, and every cache miss re-pays it.
+  //
+  // Empty `content` is folded in here on purpose: over 1 MB the Contents API
+  // returns `content: ""` with `encoding: "none"`, which would otherwise
+  // decode to "", parse to null, and be reported as a root-level schema error
+  // blaming the owner's document for what is really a size limit.
+  if (data.size > MAX_CONFIG_BYTES || data.content.length === 0) {
+    log.warn(
+      { event: "repo_config.invalid", owner, repo, kind: "too-large", size: data.size },
+      "repo-config: config file is too large to validate",
+    );
+    return {
+      kind: "invalid",
+      message: `${path} is ${String(data.size)} bytes, over the ${String(MAX_CONFIG_BYTES)} byte limit`,
+    };
   }
 
   const raw = Buffer.from(data.content, "base64").toString("utf-8");

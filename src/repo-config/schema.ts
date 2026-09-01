@@ -319,6 +319,13 @@ export const DEFAULT_REPO_DEFAULTS: RepoDefaults = { extra_allowed_tools: [] };
  * written against an earlier revision of this schema still parses. Bump
  * `version` only for a breaking rename or semantic change.
  */
+/**
+ * Byte cap on the config blob, shared by `fetcher.ts` and `pr-check.ts` so the
+ * two read paths cannot drift. GitHub's own editor refuses far larger files;
+ * 64 KB is well past any real config.
+ */
+export const MAX_CONFIG_BYTES = 64 * 1024;
+
 export const githubAppConfigSchema = z
   .strictObject({
     version: z.literal(1),

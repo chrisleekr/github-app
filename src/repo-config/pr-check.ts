@@ -33,10 +33,7 @@ import type { z } from "zod";
 import { config } from "../config";
 import { redactSecrets, sanitizeContent } from "../utils/sanitize";
 import { buildScopedMarker, upsertMarkerComment } from "../workflows/ship/scoped/marker-comment";
-import { githubAppConfigSchema } from "./schema";
-
-/** GitHub's own editor refuses far larger files; 64 KB is well past any real config. */
-const MAX_CONFIG_BYTES = 64 * 1024;
+import { githubAppConfigSchema, MAX_CONFIG_BYTES } from "./schema";
 
 /** Rendered issue cap. Beyond this the comment stops being readable. */
 const MAX_RENDERED_ISSUES = 10;
@@ -201,12 +198,32 @@ function toIssues(issues: readonly z.core.$ZodIssue[]): ConfigCheckIssue[] {
  * missed edit costs the author a comment, never a wrong verdict.
  */
 async function touchesConfigFile(input: RunPrConfigCheckInput, path: string): Promise<boolean> {
-  const files = (await input.octokit.paginate(input.octokit.rest.pulls.listFiles, {
-    owner: input.owner,
-    repo: input.repo,
-    pull_number: input.prNumber,
-    per_page: 100,
-  })) as { filename: string }[];
+  let files: { filename: string }[];
+  try {
+    files = (await input.octokit.paginate(input.octokit.rest.pulls.listFiles, {
+      owner: input.owner,
+      repo: input.repo,
+      pull_number: input.prNumber,
+      per_page: 100,
+    })) as { filename: string }[];
+  } catch (err) {
+    // Degrade like every other GitHub call on this path: a secondary rate
+    // limit, a 5xx, or a revoked `pull_requests: read` must no-op the check,
+    // not reject out of `runPrConfigCheck` into the caller. Same trade the
+    // 3000-file cap already accepts: a missed edit costs the author a
+    // comment, never a wrong verdict.
+    input.log.info(
+      {
+        event: "repo_config.pr_check.list_files_failed",
+        err,
+        owner: input.owner,
+        repo: input.repo,
+        prNumber: input.prNumber,
+      },
+      "repo-config: could not list pull request files, skipping config check",
+    );
+    return false;
+  }
   return files.some((file) => file.filename === path);
 }
 
