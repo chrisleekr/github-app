@@ -464,6 +464,41 @@
                   "entrypoint"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "inline": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 50000
+                  }
+                },
+                "required": [
+                  "inline"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "entrypoint": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "repo": {
+                    "type": "string",
+                    "pattern": "^[\\w.-]+\\/[\\w.-]+$"
+                  }
+                },
+                "required": [
+                  "ref"
+                ],
+                "additionalProperties": false
               }
             ]
           }

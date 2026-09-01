@@ -274,11 +274,17 @@ describe("loadRepoPolicy: warning fits the wire cap", () => {
     // MAX_ISSUE_LENGTH chars each (src/repo-config/fetcher.ts). Long keys
     // force every rendered line to its own cap, which is the widest shape the
     // fetcher can hand the producer today.
-    const longKeys = Array.from({ length: 8 }, (_, i) => `${"x".repeat(200)}${String(i)}: 1`).join(
-      "\n",
-    );
+    //
+    // One unknown key per workflow block, NOT several on one object: zod 4
+    // collapses every unknown key of a single `strictObject` into ONE
+    // `unrecognized_keys` issue carrying a `keys` array, so a flat fixture
+    // renders a single line and never reaches the cap this case exists to pin.
+    const longKey = "y".repeat(200);
+    const blocks = ["triage", "plan", "implement", "review", "resolve", "remember"]
+      .map((name) => `  ${name}:\n    ${longKey}: 1`)
+      .join("\n");
     const policy = await loadRepoPolicy({
-      octokit: octokitServing(`version: 1\n${longKeys}\n`),
+      octokit: octokitServing(`version: 1\nworkflows:\n${blocks}\n`),
       owner: "acme",
       repo: "widgets",
       log,

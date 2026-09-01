@@ -242,8 +242,15 @@ only declares `version: 1` and `scheduled_actions:` stays valid.
 | `review_learnings`  | object | on      | See [Review learnings](review-learnings.md).             |
 | `scheduled_actions` | array  | `[]`    | See [Scheduled actions](scheduled-actions.md).           |
 
-`enabled: false` stops the bot doing any work in the repo: no workflow run, no
-queue job, no scheduled action. It is not a vow of silence. A deliberate `bot:*`
+!!! warning "Not enforced yet"
+
+    Gate 1 has no production call site on this change, so `enabled: false` does
+    not stop label or mention triggers today. It already silences the scheduler,
+    which reads the document directly. The rest of this section describes the
+    behaviour once Gate 1 is wired.
+
+`enabled: false` will stop the bot doing any work in the repo: no workflow run,
+no queue job, no scheduled action. It is not a vow of silence. A deliberate `bot:*`
 label or `@chrisleekr-bot` mention still gets one short reply saying the bot is
 disabled here, so a teammate who tries is told why instead of being ignored.
 Passive triggers stay silent. If you need the bot to make no writes at all,
@@ -553,6 +560,13 @@ appended:
 - **not valid**: the failing paths, capped at ten with a count of the remainder;
 - **too large to validate**: files over 64 KB are never decoded, and none of the
   file's contents are echoed back.
+
+!!! warning "Not wired yet"
+
+    `runPrConfigCheck` has no production caller on this change, so no verdict
+    comment is posted on a pull request today. The handler that invokes it
+    ships with the isolated workflow runner. This section describes the
+    behaviour once that lands.
 
 Every verdict restates that only the default-branch copy is applied, so the
 change takes effect on merge. Reading the branch copy here is strictly

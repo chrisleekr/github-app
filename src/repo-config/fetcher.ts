@@ -202,11 +202,16 @@ function parseAndValidate(
 
   const result = githubAppConfigSchema.safeParse(parsedYaml);
   if (!result.success) {
+    // Log the rendered summary, never `result.error.issues`. An
+    // `unrecognized_keys` issue carries repository-controlled key names, and a
+    // raw issue object bypasses the logger's named-field redaction.
+    // `formatConfigIssues` is already scrubbed and length-capped.
+    const summary = formatConfigIssues(result.error.issues);
     log.warn(
-      { event: "repo_config.invalid", owner, repo, kind: "schema", issues: result.error.issues },
+      { event: "repo_config.invalid", owner, repo, kind: "schema", issues: summary },
       "repo-config: validation failed",
     );
-    return { kind: "invalid", message: formatConfigIssues(result.error.issues) };
+    return { kind: "invalid", message: summary };
   }
   return { kind: "ok", config: result.data, sha };
 }

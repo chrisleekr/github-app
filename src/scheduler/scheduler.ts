@@ -340,7 +340,16 @@ async function runAction(
     log: ctx.log,
   });
   if (fetched.kind !== "ok") {
-    return { enqueued: false, reason: "no valid .github-app.yaml" };
+    // `invalid` carries a message that `formatConfigIssues` already scrubbed
+    // and capped, so an operator triggering a manual run learns why the file
+    // was rejected instead of just that it was.
+    return {
+      enqueued: false,
+      reason:
+        fetched.kind === "invalid"
+          ? `.github-app.yaml failed validation: ${fetched.message}`
+          : "no .github-app.yaml on the default branch",
+    };
   }
   if (!fetched.config.enabled) {
     return { enqueued: false, reason: "the bot is disabled for this repository" };
