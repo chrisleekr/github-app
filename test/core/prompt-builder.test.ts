@@ -847,3 +847,142 @@ describe("buildPromptParts: repo_memory", () => {
     expect(parts.userMessage).not.toContain("The following learnings have been accumulated");
   });
 });
+
+// ─── Per-repo review instructions, `.github-app.yaml` Gate 2 (C6) ───────────
+
+describe("buildPromptParts: review.instructions", () => {
+  const INSTRUCTIONS = "REPO_REVIEW_POLICY_MARKER: reject migrations without a rollback";
+
+  it("renders the per-repo review instructions in the per-request half", () => {
+    const ctx = makeBotContext({ isPR: true, reviewInstructions: INSTRUCTIONS });
+    const parts = buildPromptParts(ctx, makePrData(), 1);
+
+    expect(parts.userMessage).toContain(INSTRUCTIONS);
+  });
+
+  it("keeps the instructions out of the byte-stable cacheable append", () => {
+    // Per-repo text is per-request data. Leaking it into `append` would give
+    // every repo its own prompt-cache key, which is the exact churn issue
+    // #134 removed.
+    const withInstructions = buildPromptParts(
+      makeBotContext({ isPR: true, reviewInstructions: INSTRUCTIONS }),
+      makePrData(),
+      1,
+    );
+    const without = buildPromptParts(makeBotContext({ isPR: true }), makePrData(), 1);
+
+    expect(withInstructions.append).not.toContain(INSTRUCTIONS);
+    expect(withInstructions.append).toBe(without.append);
+  });
+
+  it("renders nothing when no per-repo instructions are configured (C8)", () => {
+    const parts = buildPromptParts(makeBotContext({ isPR: true }), makePrData(), 1);
+
+    expect(parts.userMessage).not.toContain("REPO_REVIEW_POLICY_MARKER");
+  });
+
+  it("renders the instructions through the single-string buildPrompt path too", () => {
+    const ctx = makeBotContext({ isPR: true, reviewInstructions: INSTRUCTIONS });
+
+    expect(buildPrompt(ctx, makePrData(), 1)).toContain(INSTRUCTIONS);
+  });
+
+  it("tags the block outside the untrusted_ namespace but keeps the nonce", () => {
+    // The block is trusted-as-policy. Wearing the `untrusted_` prefix forced
+    // the security directive to tell the model the prefix was negotiable,
+    // which erodes the spotlighting every other block relies on. The nonce
+    // stays so the boundary against adjacent attacker text is unforgeable.
+    const ctx = makeBotContext({ isPR: true, reviewInstructions: INSTRUCTIONS });
+    const parts = buildPromptParts(ctx, makePrData(), 1);
+
+    expect(parts.userMessage).toMatch(/<repo_review_policy_[0-9a-f]{8}>/);
+    expect(parts.userMessage).toMatch(/<\/repo_review_policy_[0-9a-f]{8}>/);
+    expect(parts.userMessage).not.toContain("untrusted_review_instructions");
+    // The static directive must no longer tell the model to look past a prefix.
+    expect(parts.append).toContain("repo_review_policy_<nonce>");
+    expect(parts.append).not.toContain("Despite the tag prefix");
+  });
+
+  it("sanitizes the instructions before they reach the prompt", () => {
+    // Repo YAML is not a bounded GitHub field (invariant #3). Every other test
+    // here uses plain ASCII, so deleting the sanitizeContent call would pass
+    // them all.
+    const ctx = makeBotContext({
+      isPR: true,
+      reviewInstructions: "reject​migrations without a rollback",
+    });
+    const parts = buildPromptParts(ctx, makePrData(), 1);
+
+    expect(parts.userMessage).not.toContain("​");
+    expect(parts.userMessage).toContain("rejectmigrations without a rollback");
+  });
+
+  it("preserves newlines so multi-line policy survives intact", () => {
+    const multiline = "POLICY_LINE_ONE\nPOLICY_LINE_TWO\nPOLICY_LINE_THREE";
+    const ctx = makeBotContext({ isPR: true, reviewInstructions: multiline });
+    const parts = buildPromptParts(ctx, makePrData(), 1);
+
+    expect(parts.userMessage).toContain(multiline);
+  });
+});
+
+// ─── Per-repo review path filters, `.github-app.yaml` Gate 2 (C5) ───────────
+
+describe("buildPromptParts: review.path_filters exclusion instruction", () => {
+  const GLOBS = ["**/__snapshots__/**", "dist/**"];
+
+  it("tells the agent to skip the excluded globs in the diff it is told to read", () => {
+    // Hiding the files from `<untrusted_changed_files>` is not enough: the
+    // agent has Bash and is instructed to run `git diff`, which would surface
+    // every excluded file in full.
+    const ctx = makeBotContext({ isPR: true, reviewExcludedPaths: GLOBS });
+    const parts = buildPromptParts(ctx, makePrData(), 1);
+
+    for (const glob of GLOBS) {
+      expect(parts.userMessage).toContain(glob);
+    }
+    expect(parts.userMessage).toContain("git diff");
+  });
+
+  it("keeps the exclusion instruction out of the byte-stable cacheable append", () => {
+    const withFilters = buildPromptParts(
+      makeBotContext({ isPR: true, reviewExcludedPaths: GLOBS }),
+      makePrData(),
+      1,
+    );
+    const without = buildPromptParts(makeBotContext({ isPR: true }), makePrData(), 1);
+
+    expect(withFilters.append).not.toContain("__snapshots__");
+    expect(withFilters.append).toBe(without.append);
+  });
+
+  it("renders nothing when no path filters are configured (C8)", () => {
+    const parts = buildPromptParts(makeBotContext({ isPR: true }), makePrData(), 1);
+
+    expect(parts.userMessage).not.toContain("excluded these path globs");
+  });
+
+  it("renders nothing for an empty filter list", () => {
+    const parts = buildPromptParts(
+      makeBotContext({ isPR: true, reviewExcludedPaths: [] }),
+      makePrData(),
+      1,
+    );
+
+    expect(parts.userMessage).not.toContain("excluded these path globs");
+  });
+
+  it("sanitizes each glob at the interpolation site", () => {
+    const ctx = makeBotContext({ isPR: true, reviewExcludedPaths: ["di​st/**"] });
+    const parts = buildPromptParts(ctx, makePrData(), 1);
+
+    expect(parts.userMessage).not.toContain("​");
+    expect(parts.userMessage).toContain("dist/**");
+  });
+
+  it("renders through the single-string buildPrompt path too", () => {
+    const ctx = makeBotContext({ isPR: true, reviewExcludedPaths: GLOBS });
+
+    expect(buildPrompt(ctx, makePrData(), 1)).toContain("**/__snapshots__/**");
+  });
+});

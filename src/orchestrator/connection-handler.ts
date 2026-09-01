@@ -1224,18 +1224,20 @@ async function loadReviewLearningsForJob(
 ): Promise<ReviewLearning[]> {
   try {
     const [configFetcherModule, configSchemaModule] = await Promise.all([
-      import("../scheduler/config-fetcher"),
-      import("../scheduler/config-schema"),
+      import("../repo-config/fetcher"),
+      import("../repo-config/schema"),
     ]);
     const repoConfig = await configFetcherModule.fetchRepoConfig({
       octokit,
       owner,
       repo,
-      path: config.schedulerConfigFile,
+      path: config.repoConfigFile,
       log: logger,
     });
     const rlConfig =
-      repoConfig?.config.review_learnings ?? configSchemaModule.DEFAULT_REVIEW_LEARNINGS_CONFIG;
+      repoConfig.kind === "ok"
+        ? repoConfig.config.review_learnings
+        : configSchemaModule.DEFAULT_REVIEW_LEARNINGS_CONFIG;
     if (!rlConfig.enabled) return [];
 
     const reviewLearningsModule = await import("./review-learnings");

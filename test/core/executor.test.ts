@@ -1,7 +1,7 @@
 /**
  * Unit tests for executeAgent's cancellation surface.
  *
- * Covers issue #16: timeout/cancel must abort the SDK iterator (not just
+ * Covers the cancellation contract: timeout/cancel must abort the SDK iterator (not just
  * reject a racing promise), and the wall-clock setTimeout must be cleared
  * on the happy path so the Bun test runner exits promptly.
  *
@@ -49,6 +49,7 @@ function emptyIterator(): AsyncIterableIterator<unknown> {
 }
 
 let nextIterator: IteratorFactory = emptyIterator;
+const closeQuery = mock(() => {});
 
 void mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   query: mock(
@@ -57,7 +58,7 @@ void mock.module("@anthropic-ai/claude-agent-sdk", () => ({
       options: { abortController?: AbortController; stderr?: (chunk: string) => void };
     }) => {
       lastQueryCall = { prompt: opts.prompt, options: opts.options };
-      return nextIterator();
+      return Object.assign(nextIterator(), { close: closeQuery });
     },
   ),
 }));
@@ -96,7 +97,9 @@ function awaitAbortIterator(
         const fire = (): void => {
           const reason = controller.signal.reason;
           onAbort(reason);
-          reject(reason instanceof Error ? reason : new Error("aborted"));
+          // Models the real SDK: it discards the abort reason and throws its
+          // own AbortError (sdk.mjs v0.3.146).
+          reject(new Error("Claude Code process aborted by user"));
         };
         if (controller.signal.aborted) {
           fire();
@@ -109,10 +112,77 @@ function awaitAbortIterator(
   } as AsyncIterableIterator<unknown>;
 }
 
+function closeDrivenIterator(): {
+  iterator: AsyncIterableIterator<unknown>;
+  closed: Promise<void>;
+} {
+  let closed = false;
+  let rejectNext: ((error: Error) => void) | undefined;
+  let resolveClosed: () => void = () => undefined;
+  const closedPromise = new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+  });
+  closeQuery.mockImplementation(() => {
+    if (closed) return;
+    closed = true;
+    resolveClosed();
+    rejectNext?.(new Error("SDK query closed"));
+  });
+  return {
+    iterator: {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      next: () => {
+        if (closed) return Promise.reject(new Error("SDK query closed"));
+        return new Promise((_, reject) => {
+          rejectNext = reject;
+        });
+      },
+      return: () => Promise.resolve({ value: undefined, done: true }),
+    } as AsyncIterableIterator<unknown>,
+    closed: closedPromise,
+  };
+}
+
+function closeCompletesIterator(): {
+  iterator: AsyncIterableIterator<unknown>;
+  closed: Promise<void>;
+} {
+  let closed = false;
+  let resolveNext: ((value: IteratorResult<unknown>) => void) | undefined;
+  let resolveClosed: () => void = () => undefined;
+  const closedPromise = new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+  });
+  closeQuery.mockImplementation(() => {
+    if (closed) return;
+    closed = true;
+    resolveClosed();
+    resolveNext?.({ value: undefined, done: true });
+  });
+  return {
+    iterator: {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      next: () => {
+        if (closed) return Promise.resolve({ value: undefined, done: true });
+        return new Promise((resolve) => {
+          resolveNext = resolve;
+        });
+      },
+      return: () => Promise.resolve({ value: undefined, done: true }),
+    },
+    closed: closedPromise,
+  };
+}
+
 describe("executeAgent: MCP config hardening (#196)", () => {
   beforeEach(() => {
     lastQueryCall = undefined;
     nextIterator = emptyIterator;
+    closeQuery.mockClear();
   });
 
   it("sets strictMcpConfig so a cloned-PR .mcp.json is not auto-loaded, keeping the injected mcpServers", async () => {
@@ -136,6 +206,8 @@ describe("executeAgent: cancellation", () => {
   beforeEach(() => {
     lastQueryCall = undefined;
     nextIterator = emptyIterator;
+    closeQuery.mockClear();
+    closeQuery.mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -152,23 +224,37 @@ describe("executeAgent: cancellation", () => {
   it("aborts the SDK controller when the wall-clock timeout fires", async () => {
     config.agentTimeoutMs = 25;
 
-    let observedReason: unknown;
-    nextIterator = (): AsyncIterableIterator<unknown> =>
-      awaitAbortIterator((reason) => {
-        observedReason = reason;
-      });
+    const query = closeDrivenIterator();
+    nextIterator = () => query.iterator;
+    const execution = executeAgent(baseParams());
 
-    const result = await executeAgent(baseParams());
+    await query.closed;
+    expect(closeQuery).toHaveBeenCalledTimes(1);
+    const result = await execution;
 
     expect(result.success).toBe(false);
-    expect(observedReason).toBeInstanceOf(Error);
-    expect((observedReason as Error).message).toContain("timed out after 25ms");
-    // Downstream handlers (workflow-executor → markFailed) read
-    // result.errorMessage to populate state.failedReason on the
-    // workflow_runs row. Asserting it explicitly here so the
-    // operator-visibility contract from PR #90 cannot regress to
-    // success: false with no message.
+    expect(lastQueryCall?.options.abortController?.signal.reason).toBeInstanceOf(Error);
+    expect((lastQueryCall?.options.abortController?.signal.reason as Error).message).toContain(
+      "timed out after 25ms",
+    );
+    // Handlers return this reason so terminal persistence can populate
+    // state.failedReason instead of recording an unexplained failure.
     expect(result.errorMessage).toMatch(/^Agent execution timed out after \d+ms$/);
+    expect(closeQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves timeout failure when Query.close ends iteration normally", async () => {
+    config.agentTimeoutMs = 25;
+    const query = closeCompletesIterator();
+    nextIterator = () => query.iterator;
+
+    const execution = executeAgent(baseParams());
+    await query.closed;
+    const result = await execution;
+
+    expect(result.success).toBe(false);
+    expect(result.errorMessage).toMatch(/^Agent execution timed out after \d+ms$/);
+    expect(closeQuery).toHaveBeenCalledTimes(1);
   });
 
   it("clears the wall-clock timer on the happy path", async () => {
@@ -231,6 +317,22 @@ describe("executeAgent: cancellation", () => {
     expect(result.success).toBe(false);
     expect(lastQueryCall?.options.abortController?.signal.aborted).toBe(true);
     expect(result.errorMessage).toBe("daemon cancel");
+  });
+
+  it("force-closes the retained SDK query when the caller aborts", async () => {
+    const controller = new AbortController();
+    const query = closeDrivenIterator();
+    nextIterator = () => query.iterator;
+
+    const execution = executeAgent(baseParams({ signal: controller.signal }));
+    await Promise.resolve();
+    controller.abort(new Error("workflow attempt fenced"));
+    await query.closed;
+
+    expect(closeQuery).toHaveBeenCalledTimes(1);
+    await execution;
+
+    expect(closeQuery).toHaveBeenCalledTimes(1);
   });
 });
 

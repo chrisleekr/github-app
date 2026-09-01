@@ -470,6 +470,11 @@
     "kind": "config"
   },
   {
+    "env": "REPO_CONFIG_FILE",
+    "group": "Group 14",
+    "kind": "config"
+  },
+  {
     "env": "SCHEDULER_CONFIG_FILE",
     "group": "Group 14",
     "kind": "config"

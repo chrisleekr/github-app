@@ -8,3 +8,4 @@ bun.lockb
 # Generated/managed assets with intentional non-prettier formatting
 .claude/skills/
 docs/index.md
+schema/github-app.schema.json

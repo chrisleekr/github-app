@@ -175,7 +175,8 @@ for the file schema. Server mode only; a daemon process ignores these.
 | `SCHEDULER_ENABLED`          | `false`            | Master kill-switch. When false the scheduler never starts. It also will not start without `DATABASE_URL` and a non-empty `ALLOWED_OWNERS`.                               |
 | `SCHEDULER_SCAN_INTERVAL_MS` | `300000` (5 min)   | Cadence of the scan that enumerates installations, fetches each `.github-app.yaml`, and enqueues due actions. A value outside `[60000, 3600000]` is rejected at startup. |
 | `SCHEDULER_ALLOW_AUTO_MERGE` | `false`            | Hard kill-switch for unattended auto-merge. Effective auto-merge requires BOTH this AND a per-action `auto_merge: true`; otherwise no merge tool runs.                   |
-| `SCHEDULER_CONFIG_FILE`      | `.github-app.yaml` | Filename read from each installed repo's default-branch root.                                                                                                            |
+| `REPO_CONFIG_FILE`           | `.github-app.yaml` | Filename read from each installed repo's default-branch root. No longer scheduler-specific: also carries feature toggles, agent overrides, and trigger filters.          |
+| `SCHEDULER_CONFIG_FILE`      | (unset)            | **Deprecated** former name for `REPO_CONFIG_FILE`. Still honoured as a fallback so an upgrade does not silently change which file is read; logs a one-shot boot warning. |
 
 ## Review learnings
 
@@ -217,9 +218,9 @@ Selects the system/user prompt split the agent executor passes to the Claude Age
 
 **Why this exists.** The SDK's default systemPrompt (`{ type: "preset", preset: "claude_code" }`) embeds dynamic sections (cwd, platform, shell, OS) directly in the system-prompt prefix. Because each delivery clones to a unique `cwd` under `CLONE_BASE_DIR`, the system-prompt prefix is unique per job and the Anthropic prompt cache misses on every invocation, paying the 1-hour TTL `ephemeral_1h_input_tokens` cache-write surcharge (2× base price) with zero compensating reads.
 
-**`legacy` (default).** Single user-role string built by `buildPrompt()` in `src/core/prompt-builder.ts:155#buildPrompt`. SystemPrompt is the unmodified `claude_code` preset. Backwards-compatible; safe rollback target.
+**`legacy` (default).** Single user-role string built by `buildPrompt()` in `src/core/prompt-builder.ts:179#buildPrompt`. SystemPrompt is the unmodified `claude_code` preset. Backwards-compatible; safe rollback target.
 
-**`cacheable`.** Static scaffolding (`security_directive`, `freshness_directive`, workflow steps, commit/CAPABILITIES boilerplate) is lifted into `systemPrompt.append`, and `excludeDynamicSections: true` strips cwd / platform / shell / OS from the preset. Built by `buildPromptParts()` in `src/core/prompt-builder.ts:448#buildPromptParts`. The user-role message keeps only the per-call dynamic blocks (`formatted_context`, `untrusted_*` with per-call nonce, per-call metadata). The append is byte-identical across jobs of the same shape (PR vs issue), so the system-prompt prefix becomes a stable cache key.
+**`cacheable`.** Static scaffolding (`security_directive`, `freshness_directive`, workflow steps, commit/CAPABILITIES boilerplate) is lifted into `systemPrompt.append`, and `excludeDynamicSections: true` strips cwd / platform / shell / OS from the preset. Built by `buildPromptParts()` in `src/core/prompt-builder.ts:481#buildPromptParts`. The user-role message keeps only the per-call dynamic blocks (`formatted_context`, `untrusted_*` with per-call nonce, per-call metadata). The append is byte-identical across jobs of the same shape (PR vs issue), so the system-prompt prefix becomes a stable cache key.
 
 **Rollout.** Flip the variable to `cacheable`, then verify cache hits by tailing the executor completion log for non-zero `cacheReadInputTokens`:
 

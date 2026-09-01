@@ -7,7 +7,7 @@ import {
   SchedulerScanFailedSchema,
   SchedulerScanSkippedOverlapSchema,
   SchedulerScanStartedSchema,
-} from "./log-fields";
+} from "../../src/scheduler/log-fields";
 
 describe("SCHEDULER_LOG_EVENTS", () => {
   it("pins the four canonical scan event strings", () => {

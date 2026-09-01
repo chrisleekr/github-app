@@ -2,6 +2,7 @@ import type { Octokit } from "octokit";
 
 import type { Logger } from "./logger";
 import type { DaemonCapabilities, SerializableBotContext } from "./shared/daemon-types";
+import type { DaemonActions } from "./shared/workflow-types";
 
 /**
  * Unified context for processing a webhook event.
@@ -40,11 +41,11 @@ export interface BotContext {
   skipTrackingComments?: boolean;
   /** When true, skip Claude Agent SDK execution and return a synthetic result (dev testing) */
   dryRun?: boolean;
-  /** Pre-loaded repo memory from orchestrator (daemon mode only) */
+  /** Pre-loaded repo memory from the controller. */
   repoMemory?: { id: string; category: string; content: string; pinned: boolean }[];
   /**
-   * Pre-loaded review learnings from orchestrator (daemon mode only).
-   * Populated by handleAccept for every dispatched job; only the `review` and
+   * Pre-loaded review learnings from the controller.
+   * Populated while preparing a worker payload; only the `review` and
    * `resolve` handlers actually render these into the prompt (gated at the
    * handler / runPipeline-override level). Carries directives extracted from
    * past PR review pushback that can suppress findings in future reviews.
@@ -61,6 +62,23 @@ export interface BotContext {
     sourceAuthor: string | null;
     createdAt?: string | undefined;
   }[];
+  /**
+   * Per-repo review instructions from `.github-app.yaml`
+   * (`workflows.review.instructions`), threaded in by `runPipeline` from the
+   * job payload's `policy`. Owner-trusted config, same tier as review
+   * learnings, but still spotlighted so its boundary against adjacent
+   * attacker text is unambiguous. Rendered only in the per-call half of the
+   * prompt: it varies per repo and would poison the cacheable append.
+   */
+  reviewInstructions?: string;
+  /**
+   * Per-repo `review.path_filters` globs from `.github-app.yaml`, threaded in
+   * by `runPipeline` from the job payload's `policy`. Filtering
+   * `data.changedFiles` only hides the file LIST; the agent has Bash and is
+   * told to read the diff, so the globs also have to reach the prompt as an
+   * explicit skip instruction. Per-call only, never the cacheable append.
+   */
+  reviewExcludedPaths?: readonly string[];
   /** Daemon capabilities, set when running in daemon mode to enable capability-based tools */
   daemonCapabilities?: DaemonCapabilities;
   /**
@@ -121,28 +139,8 @@ export interface ExecutionResult {
   modelUsage?: readonly ModelUsageEntry[];
   /** When true, indicates this was a dry-run (no Claude execution) */
   dryRun?: boolean;
-  /** Daemon actions collected from execution (learnings and deletions from .daemon-actions.json) */
-  daemonActions?: {
-    learnings: { category: string; content: string }[];
-    deletions: string[];
-    /**
-     * Review-learning saves from the `save_review_learning` MCP tool. Empty
-     * unless the agent invoked the tool (which only the review/resolve
-     * prompts encourage). Orchestrator persists these via
-     * `saveReviewLearnings` in connection-handler's result path.
-     */
-    reviewLearningSaves?: {
-      directive: string;
-      rationale?: string;
-      fileGlob?: string;
-      scope?: "local" | "global";
-      sourcePr?: number;
-      sourceThread?: string;
-      sourceAuthor?: string;
-    }[];
-    /** Review-learning deletes by id; symmetrical with deletions. */
-    reviewLearningDeletes?: string[];
-  };
+  /** Repository-memory actions collected from .daemon-actions.json. */
+  daemonActions?: DaemonActions;
   /**
    * Contents of files the caller asked the pipeline to capture from the
    * workspace before cleanup. Keyed by basename (e.g. "IMPLEMENT.md").
@@ -272,7 +270,7 @@ export type McpServerConfig = Record<string, McpServerDef>;
 /**
  * Convert a BotContext into a JSON-serializable form for WebSocket transmission.
  * Strips `octokit` (class instance) and `log` (pino logger with streams).
- * Daemon reconstructs these locally from the installation token and delivery ID.
+ * The worker reconstructs these from its repository token and delivery ID.
  */
 export function serializeBotContext(ctx: BotContext): SerializableBotContext {
   // Destructure to remove non-serializable fields; spread the rest.

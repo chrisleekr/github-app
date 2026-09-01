@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { computeDueDecision } from "./due-evaluator";
+import { computeDueDecision } from "../../src/scheduler/due-evaluator";
 
 const GRACE = 600_000; // 10 min
 

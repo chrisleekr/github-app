@@ -28,9 +28,9 @@ import { logger as rootLogger } from "../logger";
 import { createExecution, markExecutionFailed } from "../orchestrator/history";
 import { mintInstallationToken } from "../orchestrator/installation-token";
 import { enqueueJob } from "../orchestrator/job-queue";
+import { fetchRepoConfig } from "../repo-config/fetcher";
+import type { ScheduledAction } from "../repo-config/schema";
 import { isOwnerAllowed } from "../webhook/authorize";
-import { fetchRepoConfig } from "./config-fetcher";
-import type { ScheduledAction } from "./config-schema";
 import { computeDueDecision } from "./due-evaluator";
 import { enumerateScheduledRepos, type ScheduledRepo } from "./installation-enumerator";
 import { createScanCounters, type ScanCounters, SCHEDULER_LOG_EVENTS } from "./log-fields";
@@ -38,7 +38,7 @@ import { resolvePrompt } from "./prompt-resolver";
 
 /**
  * In-flight lock staleness backstop. The lock is normally cleared when the
- * run completes (`clearInFlightByJobId`, called from the scoped-job-completion
+ * run completes (`clearInFlightByJobId`, called from the scoped-job:completion
  * handler); this window only releases a lock whose daemon died without ever
  * reporting completion. Derived as 2x `config.agentTimeoutMs` so it is always
  * longer than the longest possible run regardless of how high an operator
@@ -92,7 +92,7 @@ async function enqueueRun(
 ): Promise<void> {
   const { repo, action, slotIso, promptText, deliveryId } = run;
   const autoMerge = action.auto_merge && config.schedulerAllowAutoMerge;
-  // Create the `executions` row BEFORE enqueueing: the scoped-job-completion
+  // Create the `executions` row BEFORE enqueueing: the scoped-job:completion
   // handler validates ownership against this row and would otherwise reject
   // the completion (leaking a daemon capacity slot). It doubles as run history.
   await createExecution({
@@ -257,10 +257,14 @@ async function scanOnce(ctx: SchedulerCtx): Promise<ScanCounters> {
       octokit: repo.octokit,
       owner: repo.owner,
       repo: repo.repo,
-      path: config.schedulerConfigFile,
+      path: config.repoConfigFile,
       log: ctx.log,
     });
-    if (fetched === null) continue;
+    if (fetched.kind !== "ok") continue;
+    // Repo-wide master switch. Unattended cron runs write to the repo with
+    // nobody watching, so `enabled: false` has to silence them too, not just
+    // the label and mention surfaces Gate 1 covers.
+    if (!fetched.config.enabled) continue;
     for (const action of fetched.config.scheduled_actions) {
       if (!action.enabled) continue;
       counters.actions_evaluated += 1;
@@ -332,11 +336,14 @@ async function runAction(
     octokit,
     owner: input.owner,
     repo: input.repo,
-    path: config.schedulerConfigFile,
+    path: config.repoConfigFile,
     log: ctx.log,
   });
-  if (fetched === null) {
+  if (fetched.kind !== "ok") {
     return { enqueued: false, reason: "no valid .github-app.yaml" };
+  }
+  if (!fetched.config.enabled) {
+    return { enqueued: false, reason: "the bot is disabled for this repository" };
   }
   const action = fetched.config.scheduled_actions.find((a) => a.name === input.actionName);
   if (action === undefined) {

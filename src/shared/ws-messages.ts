@@ -177,6 +177,47 @@ const scopedJobContextSchema = z.discriminatedUnion("jobKind", [
 export type ScopedJobContext = z.infer<typeof scopedJobContextSchema>;
 export type ScopedJobKind = ScopedJobContext["jobKind"];
 
+/**
+ * Wire cap for `AgentPolicy.warning`. Exported so the producer in
+ * `src/repo-config/effective.ts` can truncate against the same number: the
+ * warning's length is an emergent property of the fetcher's issue-rendering
+ * constants, and a bump there must not turn into a silent job drop at parse.
+ */
+export const AGENT_POLICY_WARNING_MAX = 1000;
+
+/**
+ * Per-repo agent knobs resolved from `.github-app.yaml` at accept time
+ * (`src/repo-config/effective.ts#loadRepoPolicy`), already clamped against
+ * the server ceilings. Every field is optional so a repo with no config
+ * file produces no `policy` key at all and the daemon behaves as before.
+ *
+ * `maxTurns` is deliberately absent: the per-repo turn cap rides the existing
+ * top-level `maxTurns` field so there is one source of truth on the wire.
+ *
+ * Caps are derived from the per-block caps in `src/repo-config/schema.ts`,
+ * not copied from them: a resolved value can exceed one block's cap where the
+ * resolver unions two blocks. The orchestrator resolves the values but the
+ * daemon re-validates, the wire is the trust boundary, and a parse failure
+ * here silently drops the job (`src/daemon/ws-client.ts`), so every cap must
+ * be at least what the producer can emit.
+ */
+export const AgentPolicySchema = z.object({
+  model: z.string().min(1).max(128).optional(),
+  timeoutMs: z.number().int().positive().optional(),
+  // 100, not the schema's per-block 50: `resolveKnobs` UNIONS
+  // `defaults.extra_allowed_tools` with `workflows.<name>.extra_allowed_tools`,
+  // each independently capped at 50, so a disjoint pair resolves to 100.
+  extraAllowedTools: z.array(z.string().min(1)).max(100).optional(),
+  pathFilters: z.array(z.string().min(1)).max(100).optional(),
+  instructions: z.string().max(10_000).optional(),
+  /** Fail-open notice rendered in the tracking comment when the repo's
+   * config file exists but failed schema validation. Producer-side truncation
+   * in `src/repo-config/effective.ts` keeps emissions under this cap. */
+  warning: z.string().min(1).max(AGENT_POLICY_WARNING_MAX).optional(),
+});
+
+export type AgentPolicy = z.infer<typeof AgentPolicySchema>;
+
 const jobPayloadSchema = z.object({
   type: z.literal("job:payload"),
   ...messageEnvelopeBase,

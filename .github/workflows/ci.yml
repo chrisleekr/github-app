@@ -132,6 +132,13 @@ jobs:
         # parity gate, so this keeps config.ts, the contract, and the docs aligned.
         run: bun run check:env-contract
 
+      - name: Config-schema guard
+        # Fails when schema/github-app.schema.json drifts from
+        # src/repo-config/schema.ts. That file is what editors consume via the
+        # `# yaml-language-server: $schema=` modeline, so a stale copy would
+        # advertise a config surface the runtime no longer accepts.
+        run: bun run check:config-schema
+
       - name: Docs-sync guard (bot workflows, FR-019)
         if: github.event_name == 'pull_request'
         env:
