@@ -46,60 +46,6 @@ describe("createTrackingComment", () => {
     expect(capturedBody).toContain("<!-- delivery:del-abc-123 -->");
     expect(capturedBody).toContain("@chrisleekr-bot");
   });
-
-  /** Capture the body `createTrackingComment` posts for `configWarning`. */
-  async function bodyFor(configWarning?: string): Promise<string> {
-    const ctx = makeBotContext({ deliveryId: DELIVERY_ID });
-    let capturedBody = "";
-    ctx.octokit = {
-      rest: {
-        issues: {
-          createComment: mock(({ body }: { body: string }) => {
-            capturedBody = body;
-            return Promise.resolve({ data: { id: 999 } });
-          }),
-        },
-      },
-    } as unknown as Octokit;
-
-    await createTrackingComment(ctx, configWarning);
-    return capturedBody;
-  }
-
-  it("renders the invalid-config notice as a GitHub warning alert", async () => {
-    // A silently ignored config file looks identical to one that took effect,
-    // so the notice has to ride the first thing the user reads.
-    const body = await bodyFor("`.github-app.yaml` failed validation and was ignored");
-
-    expect(body).toContain("> [!WARNING]");
-    expect(body).toContain("failed validation");
-    // Still a notice, not an error: the run proceeds on built-in defaults.
-    expect(body).toContain("is working on this...");
-  });
-
-  it("collapses newlines so the blockquote stays a single line", async () => {
-    const body = await bodyFor("first line\nsecond line");
-
-    expect(body).toContain("> first line second line");
-    // A bare `\n` inside the quote would orphan everything after it.
-    expect(body).not.toContain("> first line\nsecond line");
-  });
-
-  it("collapses a lone carriage return so the blockquote stays a single line", async () => {
-    const body = await bodyFor("first line\rsecond line");
-
-    // GitHub treats a bare `\r` as a line break too, so `\n`-only collapsing
-    // would orphan the tail outside the `> ` quote.
-    expect(body).toContain("> first line second line");
-  });
-
-  it("renders no alert block for a whitespace-only warning", async () => {
-    expect(await bodyFor("   ")).not.toContain("[!WARNING]");
-  });
-
-  it("renders no alert block when no warning is supplied", async () => {
-    expect(await bodyFor()).not.toContain("[!WARNING]");
-  });
 });
 
 // ─── updateTrackingComment ────────────────────────────────────────────────────
@@ -190,49 +136,6 @@ describe("finalizeTrackingComment", () => {
     expect(capturedUpdateBody.startsWith("<!-- delivery:del-abc-123 -->")).toBe(true);
   });
 
-  it("re-appends the config warning the agent's comment rewrite erased", async () => {
-    // `update_claude_comment` replaces the whole body, so the banner
-    // `createTrackingComment` posted is gone by the time we finalize.
-    await finalizeTrackingComment(ctx, 1, {
-      success: true,
-      configWarning: "`.github-app.yaml` failed validation and was ignored.",
-    });
-
-    expect(capturedUpdateBody).toContain("> [!WARNING]");
-    expect(capturedUpdateBody).toContain("failed validation");
-  });
-
-  it("does not repeat the warning when the create-time banner survived", async () => {
-    const warning = "`.github-app.yaml` failed validation and was ignored.";
-    ctx.octokit = {
-      rest: {
-        issues: {
-          getComment: mock(() =>
-            Promise.resolve({
-              data: {
-                body: `<!-- delivery:del-abc-123 -->\n**Working...**\n\n> [!WARNING]\n> ${warning}`,
-              },
-            }),
-          ),
-          updateComment: mock(({ body }: { body: string }) => {
-            capturedUpdateBody = body;
-            return Promise.resolve({ data: { id: 1 } });
-          }),
-        },
-      },
-    } as unknown as Octokit;
-
-    await finalizeTrackingComment(ctx, 1, { success: true, configWarning: warning });
-
-    expect(capturedUpdateBody.split("[!WARNING]")).toHaveLength(2);
-  });
-
-  it("writes no warning block when the run carried no config warning", async () => {
-    await finalizeTrackingComment(ctx, 1, { success: true });
-
-    expect(capturedUpdateBody).not.toContain("[!WARNING]");
-  });
-
   it("falls back gracefully when getComment throws, still calls updateComment", async () => {
     let updateCalled = false;
     ctx.octokit = {
@@ -283,7 +186,6 @@ describe("renderDispatchReasonLine", () => {
     expect(renderDispatchReasonLine("ephemeral-spawn-failed", "daemon")).toMatch(
       /Kubernetes|infrastructure|unavailable/i,
     );
-    expect(renderDispatchReasonLine("workflow-runner", "workflow-runner")).toMatch(/isolated/i);
   });
 
   it("spawn-failed reason does not use 'Routed' (nothing was routed)", () => {

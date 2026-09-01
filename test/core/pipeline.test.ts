@@ -85,25 +85,6 @@ function lastAgentCall(): ExecuteAgentParams {
   return call;
 }
 
-/**
- * Depth-bounded search for `needle` among an argument list. Shape-agnostic on
- * purpose: the warning may ride on the context or on a dedicated parameter,
- * and the acceptance criterion is that it reaches the tracking-comment write,
- * not which slot carries it.
- */
-function argsContainText(args: readonly unknown[], needle: string): boolean {
-  const seen = new WeakSet();
-  const walk = (value: unknown, depth: number): boolean => {
-    if (depth > 4) return false;
-    if (typeof value === "string") return value.includes(needle);
-    if (typeof value !== "object" || value === null) return false;
-    if (seen.has(value)) return false;
-    seen.add(value);
-    return Object.values(value).some((v) => walk(v, depth + 1));
-  };
-  return args.some((a) => walk(a, 0));
-}
-
 const PR_FILES: FetchedData["changedFiles"] = [
   { filename: "src/a.ts", status: "modified", additions: 5, deletions: 2 },
   { filename: "src/__snapshots__/big.snap", status: "modified", additions: 900, deletions: 900 },
@@ -440,60 +421,5 @@ describe("runPipeline: policy.instructions (C6)", () => {
     });
 
     expect(lastAgentCall().prompt).toContain("REPO_REVIEW_POLICY_MARKER");
-  });
-});
-
-// ─── C7: fail-open warning, direct-pipeline rail ─────────────────────────────
-
-describe("runPipeline: policy.warning (C7, direct-pipeline rail)", () => {
-  it("surfaces the invalid-config warning through the tracking comment write", async () => {
-    const warning =
-      "`.github-app.yaml` failed validation and was ignored; built-in defaults were used.";
-    const ctx = makeBotContext({ isPR: false });
-
-    await runPipeline(ctx, {
-      allowedTools: ["Read"],
-      policy: { warning },
-    });
-
-    expect(mockCreateTrackingComment).toHaveBeenCalled();
-    const args = mockCreateTrackingComment.mock.calls[0] ?? [];
-    expect(argsContainText(args, "failed validation")).toBe(true);
-  });
-
-  it("still executes the agent with default behaviour despite the warning (C7 fail-open)", async () => {
-    const ctx = makeBotContext({ isPR: false });
-
-    await runPipeline(ctx, {
-      allowedTools: ["Read"],
-      policy: { warning: "`.github-app.yaml` failed validation and was ignored" },
-    });
-
-    expect(executeAgentCalls).toHaveLength(1);
-    expect(lastAgentCall().model).toBeUndefined();
-    expect(lastAgentCall().allowedTools).toEqual(["Read"]);
-  });
-
-  it("hands the warning to finalize so the agent's body rewrite cannot drop it", async () => {
-    const warning =
-      "`.github-app.yaml` failed validation and was ignored; built-in defaults were used.";
-    const ctx = makeBotContext({ isPR: false });
-
-    await runPipeline(ctx, { allowedTools: ["Read"], policy: { warning } });
-
-    expect(mockFinalizeTrackingComment).toHaveBeenCalled();
-    const opts = mockFinalizeTrackingComment.mock.calls[0]?.[2] as
-      | { configWarning?: string }
-      | undefined;
-    expect(opts?.configWarning).toBe(warning);
-  });
-
-  it("writes no warning into the tracking comment when the policy is clean (C8)", async () => {
-    const ctx = makeBotContext({ isPR: false });
-
-    await runPipeline(ctx, { allowedTools: ["Read"] });
-
-    const args = mockCreateTrackingComment.mock.calls[0] ?? [];
-    expect(argsContainText(args, "failed validation")).toBe(false);
   });
 });

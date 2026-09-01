@@ -222,6 +222,12 @@ const jobPayloadSchema = z.object({
   type: z.literal("job:payload"),
   ...messageEnvelopeBase,
   payload: z.object({
+    /** Per-repo agent knobs resolved by the controller at accept time.
+     * Declared here so the wire schema matches `AgentPolicy`; the
+     * producer lands with the isolated workflow runner. A plain
+     * `z.object` strips unknown keys, so without this the daemon would
+     * silently drop a policy a future producer sent. */
+    policy: AgentPolicySchema.optional(),
     context: z.record(z.string(), z.unknown()),
     installationToken: z.string(),
     /** GitHub App installation id (App mode only; absent in PAT mode). The

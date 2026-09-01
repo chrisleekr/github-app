@@ -1,14 +1,15 @@
 import { z } from "zod";
 
 /**
- * DispatchTarget records the execution protocol selected for an execution.
- * Shared jobs use the daemon WebSocket; structured workflows use one isolated
- * workflow-runner Pod.
+ * DispatchTarget: after the daemon-only collapse, every job goes through the
+ * daemon WebSocket protocol. The value is retained as a singleton rather than
+ * removed entirely so DB rows, log lines, and the `ws-messages.ts` schema stay
+ * stable across future extensions.
  *
  * The Postgres `executions.dispatch_target` and `triage_results.mode` CHECK
- * constraints mirror this list (see migration `017_workflow_run_leases.sql`).
+ * constraints mirror this list (see migration `004_collapse_dispatch_to_daemon.sql`).
  */
-export const DISPATCH_TARGETS = ["daemon", "workflow-runner"] as const;
+export const DISPATCH_TARGETS = ["daemon"] as const;
 
 export type DispatchTarget = (typeof DISPATCH_TARGETS)[number];
 
@@ -44,14 +45,12 @@ export function isDispatchTarget(value: unknown): value is DispatchTarget {
  *   ephemeral-daemon-triage  : triage flagged the request as heavy, ephemeral daemon spawned
  *   ephemeral-daemon-overflow: persistent queue at/above threshold, ephemeral daemon spawned
  *   ephemeral-spawn-failed   : spawn was required but the K8s API call failed
- *   workflow-runner          : structured workflow claimed by an isolated runner Pod
  */
 export const DISPATCH_REASONS = [
   "persistent-daemon",
   "ephemeral-daemon-triage",
   "ephemeral-daemon-overflow",
   "ephemeral-spawn-failed",
-  "workflow-runner",
 ] as const;
 
 export type DispatchReason = (typeof DISPATCH_REASONS)[number];

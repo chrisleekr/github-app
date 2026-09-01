@@ -8,7 +8,8 @@ const SPINNER_HTML = `<img src="https://github.com/user-attachments/assets/5ac38
 
 /**
  * Render the one-line "why here?" line required by SC-007. The dispatch
- * target identifies the shared-daemon or isolated-runner protocol.
+ * target is always `daemon`; the reason distinguishes persistent vs
+ * ephemeral routing.
  */
 export function renderDispatchReasonLine(reason: DispatchReason, target: DispatchTarget): string {
   switch (reason) {
@@ -20,8 +21,6 @@ export function renderDispatchReasonLine(reason: DispatchReason, target: Dispatc
       return `Routed to \`${target}\`, persistent queue at capacity; spawned an ephemeral daemon Pod.`;
     case "ephemeral-spawn-failed":
       return `\`${target}\` scale-up rejected: ephemeral-daemon Pod spawn failed (Kubernetes infrastructure unavailable).`;
-    case "workflow-runner":
-      return `Routed to \`${target}\`, claimed by an isolated one-attempt runner Pod.`;
   }
 }
 
@@ -90,33 +89,16 @@ export function deliveryMarker(deliveryId: string): string {
  * Create the initial tracking comment ("Working...").
  * Returns the comment ID for future updates.
  *
- * `configWarning` surfaces a repo-config problem (an invalid
- * `.github-app.yaml`) on the first thing the user sees. The bot still runs on
- * built-in defaults, so this is a notice, not an error, but it has to be
- * visible: a silently ignored config file looks identical to one that took
- * effect.
- *
  * Ported from claude-code-action's comment creation logic
  */
-export async function createTrackingComment(
-  ctx: BotContext,
-  configWarning?: string,
-): Promise<number> {
+export async function createTrackingComment(ctx: BotContext): Promise<number> {
   const { octokit, owner, repo, entityNumber, log } = ctx;
 
   // Embed the deliveryId marker so the bot can locate and update its own tracking
   // comment in place (see the `comment` MCP server). Not an idempotency mechanism
   // anymore (claimDelivery + idx_workflow_runs_inflight own that, #202; the Map +
   // marker-scan check were retired in #211).
-  // Same GitHub alert syntax as the workflow rail's `renderConfigNotice` in
-  // src/workflows/tracking-mirror.ts, but collapsed to one line: that rail
-  // splits a multi-line notice into paragraphs, while this rail only ever
-  // carries the single-line validation warning.
-  const warningLine =
-    configWarning !== undefined && configWarning.trim() !== ""
-      ? `\n\n> [!WARNING]\n> ${collapseWarning(configWarning)}`
-      : "";
-  const body = `${deliveryMarker(ctx.deliveryId)}\n${SPINNER_HTML} **${config.triggerPhrase}** is working on this...\n\n_Analyzing your request..._${warningLine}`;
+  const body = `${deliveryMarker(ctx.deliveryId)}\n${SPINNER_HTML} **${config.triggerPhrase}** is working on this...\n\n_Analyzing your request..._`;
 
   const guarded = await safePostToGitHub({
     body,
@@ -188,22 +170,8 @@ export async function updateTrackingComment(
 }
 
 /**
- * Collapse a config notice to a single line. `\s+`, not `\n`: a lone `\r` also
- * terminates the `> ` blockquote and orphans the rest of the notice.
- */
-function collapseWarning(warning: string): string {
-  return warning.trim().replace(/\s+/g, " ");
-}
-
-/**
  * Finalize the tracking comment with completion status.
  * Called after Claude finishes or errors.
- *
- * `configWarning` is re-appended here because the agent's
- * `update_claude_comment` MCP tool replaces the whole comment body, wiping the
- * banner `createTrackingComment` posted. Skipped when the original banner
- * survived, so a run where the agent never touched the comment does not show
- * the notice twice.
  */
 export async function finalizeTrackingComment(
   ctx: BotContext,
@@ -213,10 +181,9 @@ export async function finalizeTrackingComment(
     durationMs?: number;
     costUsd?: number;
     error?: string;
-    configWarning?: string;
   },
 ): Promise<void> {
-  const { success, durationMs, costUsd, error, configWarning } = opts;
+  const { success, durationMs, costUsd, error } = opts;
 
   let header: string;
   if (success) {
@@ -250,19 +217,10 @@ export async function finalizeTrackingComment(
 
   const errorSection = error !== undefined && error !== "" ? `\n\n---\n**Error:** ${error}` : "";
 
-  const collapsedWarning =
-    configWarning !== undefined && configWarning.trim() !== ""
-      ? collapseWarning(configWarning)
-      : "";
-  const warningSection =
-    collapsedWarning !== "" && !cleanedBody.includes(collapsedWarning)
-      ? `\n\n> [!WARNING]\n> ${collapsedWarning}`
-      : "";
-
   // Re-prepend the delivery marker so the tracking comment keeps its stable hidden marker
   // even if Claude's update_claude_comment call (which runs sanitizeContent) previously
   // stripped it. The marker locates the bot's comment, not idempotency (#202/#211).
-  const finalBody = `${deliveryMarker(ctx.deliveryId)}\n${header}${warningSection}\n\n---\n${cleanedBody}${errorSection}`;
+  const finalBody = `${deliveryMarker(ctx.deliveryId)}\n${header}\n\n---\n${cleanedBody}${errorSection}`;
 
   await updateTrackingComment(ctx, trackingCommentId, finalBody);
 }
