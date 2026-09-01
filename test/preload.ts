@@ -28,6 +28,7 @@ delete process.env["GITHUB_PERSONAL_ACCESS_TOKEN"];
 // validateDataLayerConfig). Individual tests that need to exercise missing
 // auth flip this back to undefined within a save/restore block.
 process.env["DAEMON_AUTH_TOKEN"] = "test-daemon-token";
+process.env["WORKFLOW_RUNNER_CAPABILITY_SECRET"] = "test-workflow-runner-capability-root-secret";
 
 // A developer's .env may set TRIGGER_PHRASE to a local-dev variant
 // (e.g. @chrisleekr-bot-dev) which would leak into tests that hardcode
@@ -59,5 +60,10 @@ setIfEmpty("ANTHROPIC_API_KEY", "test-anthropic-key");
 // Post-dispatch-collapse, validateDataLayerConfig requires DATABASE_URL and
 // VALKEY_URL in server mode (ORCHESTRATOR_URL unset). Without these, config
 // load aborts before any test can run in CI, where no .env is present.
-setIfEmpty("DATABASE_URL", "postgres://test:test@localhost:55432/test");
+const testDatabaseUrl = process.env["TEST_DATABASE_URL"];
+const databaseUrlFallback =
+  testDatabaseUrl === undefined || testDatabaseUrl === ""
+    ? "postgres://test:test@localhost:55432/test"
+    : testDatabaseUrl;
+setIfEmpty("DATABASE_URL", databaseUrlFallback);
 setIfEmpty("VALKEY_URL", "redis://localhost:56379");

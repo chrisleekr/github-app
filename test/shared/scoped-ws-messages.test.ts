@@ -7,7 +7,7 @@ import {
   type ScopedJobOfferMessage,
   serverMessageSchema,
   WS_REJECT_REASONS,
-} from "./ws-messages";
+} from "../../src/shared/ws-messages";
 
 describe("scoped-job-offer schema", () => {
   function buildOffer(overrides?: Partial<ScopedJobOfferMessage["payload"]>): unknown {

@@ -87,4 +87,23 @@ if (!daemonResult.success) {
   process.exit(1);
 }
 
+// Build 4: execute the real startup probe against the produced daemon image.
+const processBoundarySmokeResult = await Bun.build({
+  entrypoints: ["./src/daemon/process-boundary-smoke.ts"],
+  outdir: "./dist/daemon",
+  target: "bun",
+  minify: isProduction,
+  sourcemap: isProduction ? "external" : "inline",
+  splitting: false,
+  naming: "process-boundary-smoke.js",
+});
+
+if (!processBoundarySmokeResult.success) {
+  console.error("Build failed (process boundary smoke):");
+  for (const log of processBoundarySmokeResult.logs) {
+    console.error(log);
+  }
+  process.exit(1);
+}
+
 console.log("Build completed successfully");

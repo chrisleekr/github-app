@@ -165,6 +165,11 @@
     "kind": "config"
   },
   {
+    "env": "AUTO_REVIEW_USERS",
+    "group": "Group 5",
+    "kind": "config"
+  },
+  {
     "env": "VALKEY_URL",
     "group": "Group 6",
     "kind": "secret"
@@ -186,6 +191,16 @@
   },
   {
     "env": "DAEMON_AUTH_TOKEN_PREVIOUS",
+    "group": "Group 8",
+    "kind": "secret"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_CAPABILITY_SECRET",
+    "group": "Group 8",
+    "kind": "secret"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS",
     "group": "Group 8",
     "kind": "secret"
   },
@@ -250,6 +265,11 @@
     "kind": "config"
   },
   {
+    "env": "WORKFLOW_DISPATCH_TIMEOUT_MS",
+    "group": "Group 8",
+    "kind": "config"
+  },
+  {
     "env": "OFFER_TIMEOUT_MS",
     "group": "Group 8",
     "kind": "config"
@@ -290,6 +310,11 @@
     "kind": "config"
   },
   {
+    "env": "WORKFLOW_RUNNER",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
     "env": "EPHEMERAL_DAEMON_IDLE_TIMEOUT_MS",
     "group": "Group 9",
     "kind": "config"
@@ -306,6 +331,31 @@
   },
   {
     "env": "EPHEMERAL_DAEMON_NAMESPACE",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "EPHEMERAL_DAEMON_SECRET_NAME",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_NAMESPACE",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_NODE_LABEL",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_NODE_VALUE",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_IMAGE_PULL_SECRET",
     "group": "Group 9",
     "kind": "config"
   },

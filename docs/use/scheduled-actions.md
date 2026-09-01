@@ -17,9 +17,19 @@ Scheduled actions run only when the operator has set:
 - a non-empty `ALLOWED_OWNERS` (the action prompt is owner-trusted config, so
   the feature refuses to start without an owner allowlist)
 
+Repo-side, the file's `enabled` key is a master switch: `enabled: false` stops
+scheduled actions along with every other trigger, regardless of a per-action
+`enabled: true`. An unattended cron run writes to the repo with nobody watching,
+so turning the bot off has to silence it too.
+
 See [Configuration](../operate/configuration.md#scheduled-actions).
 
 ## `.github-app.yaml`
+
+Scheduled actions are one block in a larger per-repo config file. See
+[Repo configuration](repo-config.md) for the whole file, including the feature
+toggles and trigger filters; the filename comes from `REPO_CONFIG_FILE`
+(deprecated alias: `SCHEDULER_CONFIG_FILE`).
 
 Place the file at your repo's **default-branch root**.
 

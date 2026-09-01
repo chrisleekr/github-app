@@ -7,8 +7,8 @@ import type { AppliedReviewLearning } from "../../utils/review-learnings-filter"
  *
  * Empty input yields an empty string so the caller can spread the result
  * unconditionally. Newly-saved learnings (from `save_review_learning`) are
- * NOT included here because the persistence happens orchestrator-side after
- * the daemon emits the result; the next review will surface them.
+ * NOT included here because the controller persists them after the worker's
+ * terminal result; the next review will surface them.
  *
  * The block emits one fenced code section per learning so the layout stays
  * diffable and copy-pasteable, mirroring how operators read CI log blocks.

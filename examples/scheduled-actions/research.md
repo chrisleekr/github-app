@@ -67,7 +67,7 @@ Read the key files for the focus area:
 | idempotency    | src/webhook/router.ts, src/core/tracking-comment.ts               |
 | security       | src/utils/, src/config.ts                                         |
 | observability  | src/logger.ts (and grep for logger usage across src/)             |
-| testing        | src/\*\*/\*.test.ts (sample 3-5; do not read all)                 |
+| testing        | test/\*\*/\*.test.ts (sample 3-5; do not read all)                |
 | docs           | CLAUDE.md, README.md, docs/                                       |
 | infrastructure | .github/workflows/, Dockerfile.\*, package.json                   |
 | agent-sdk      | src/core/prompt-builder.ts, src/core/executor.ts                  |

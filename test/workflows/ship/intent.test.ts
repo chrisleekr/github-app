@@ -10,6 +10,8 @@
 import { SQL } from "bun";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 
+import { expectToReject } from "../../utils/assertions";
+
 const TEST_DATABASE_URL =
   process.env["TEST_DATABASE_URL"] ?? "postgres://bot:bot@localhost:55432/github_app_test";
 
@@ -50,6 +52,26 @@ const baseInput = (
   created_by_user: "alice",
   tracking_comment_marker: "<!-- ship-intent:test -->",
   ...overrides,
+});
+
+describe("createIntent Postgres error classification", () => {
+  it("rethrows a non-23505 error even when it names the active-intent constraint", async () => {
+    let queryCount = 0;
+    const wrongSqlState = Object.assign(new Error("foreign key violation"), {
+      code: "ERR_POSTGRES_SERVER_ERROR",
+      errno: "23503",
+      constraint: "ship_intents_one_active_per_pr",
+    });
+    const fakeSql = Object.assign((_strings: TemplateStringsArray, ..._values: unknown[]) => {
+      queryCount++;
+      if (queryCount === 1) return Promise.reject(wrongSqlState);
+      return Promise.resolve([{}]);
+    }, {}) as unknown as SQL;
+    const { createIntent } = await import("../../../src/workflows/ship/intent");
+
+    await expectToReject(createIntent(baseInput(), fakeSql), "foreign key violation");
+    expect(queryCount).toBe(1);
+  });
 });
 
 describe.skipIf(sql === null)("intent.ts state machine", () => {

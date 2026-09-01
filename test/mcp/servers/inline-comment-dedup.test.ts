@@ -55,15 +55,15 @@ describe("hasDuplicateAt", () => {
   });
 
   it("does not match a different line", () => {
-    expect(hasDuplicateAt([comment({ line: 43 })], TARGET, SELF)).toBe(false);
+    expect(hasDuplicateAt([comment({ line: 43 })], TARGET, null)).toBe(false);
   });
 
   it("does not match a different path", () => {
-    expect(hasDuplicateAt([comment({ path: "src/b.ts" })], TARGET, SELF)).toBe(false);
+    expect(hasDuplicateAt([comment({ path: "src/b.ts" })], TARGET, null)).toBe(false);
   });
 
   it("does not match the other side of the diff", () => {
-    expect(hasDuplicateAt([comment({ side: "LEFT" })], TARGET, SELF)).toBe(false);
+    expect(hasDuplicateAt([comment({ side: "LEFT" })], TARGET, null)).toBe(false);
   });
 
   it("finds a match anywhere in the list, not just first", () => {

@@ -2,12 +2,10 @@
 /**
  * CI guard: every `*.test.ts` file in the repo is reachable by the test
  * runner's glob set. `bun run test` shells out to `scripts/test-isolated.sh`,
- * which runs each match of a hard-coded glob in its own Bun process (per-file
+ * which runs each match of a hard-coded glob in its own Bun process. Per-file
  * isolation is required because `mock.module()` is process-global and bleeds
- * across files). A test file that lives outside the globbed roots is never
- * executed, yet CI stays green because the runner only inspects files it
- * already matched. The scheduler PR (#159) widened that dark spot from 1 to 4
- * colocated test files under src/ without anyone noticing. See issue #201.
+ * across files. The runner accepts only the canonical `test/` tree, so this
+ * guard also prevents tests from drifting back into production source.
  *
  * This guard derives the glob set from `scripts/test-isolated.sh` itself (the
  * single source of truth), enumerates every `*.test.ts` under the repo, and
@@ -132,10 +130,7 @@ function main(): void {
   for (const f of uncovered) {
     console.error(`  - ${f}`);
   }
-  console.error(
-    "\nThese files never run in CI. Fix: widen the `tests=( ... )` glob in\n" +
-      "scripts/test-isolated.sh to cover their root, e.g. add `src/**/*.test.ts`.",
-  );
+  console.error("\nThese files never run in CI. Move first-party tests under `test/`.");
   process.exit(1);
 }
 

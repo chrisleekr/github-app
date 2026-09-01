@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import type { Logger } from "../../logger";
-import { createForbiddenBashHook } from "./forbidden-bash";
+import { createForbiddenBashHook } from "../../../src/core/hooks/forbidden-bash";
+import type { Logger } from "../../../src/logger";
 
 // Minimal logger stub: records `.warn` calls so a deny can be asserted. The
 // factory's `log` param is a pino Logger in production; only `.warn` is used

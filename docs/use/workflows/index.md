@@ -51,7 +51,15 @@ The classifier prompt distinguishes `review` (proactive, find bugs, post inline 
 
 ## Label-path dispatch
 
-Both the label trigger and the in-registry classifier verdict run the same seven-step sequence in `src/workflows/dispatcher.ts`: registry lookup → context check → prior-output requirement → label mutex → idempotency insert → job enqueue → return. Prior-output is checked before the mutex, so refusing a workflow that lacks its prerequisite (e.g. `bot:implement` before any `bot:plan`) does not strip unrelated `bot:*` labels. The idempotency insert is the durable in-flight guard: a redelivered or concurrent label event for the same workflow and target is rejected at the database, not just at the best-effort Valkey claim.
+Both the label trigger and the in-registry classifier verdict run the same durable sequence in `src/workflows/dispatcher.ts`: registry lookup → [repo-config gate](../repo-config.md) → context check → prior-output requirement → label mutex → atomic `workflow_runs` plus `executions` insert → outbox publication → return. The repo-config gate runs second, immediately after the registry lookup, so a workflow disabled in `.github-app.yaml` leaves no run row, no label mutation, and no queue job. Prior-output is checked before the mutex, so refusing a workflow that lacks its prerequisite (e.g. `bot:implement` before any `bot:plan`) does not strip unrelated `bot:*` labels. The partial unique index is the durable in-flight guard: a redelivered or concurrent trigger for the same workflow and target is rejected by PostgreSQL, not just by the best-effort Valkey delivery claim. Queue publication happens only after the transaction commits. The reaper repairs both a null receipt from a failed publish and a stale receipt whose acknowledged Valkey item was later lost, while an atomic membership check keeps at most one stable copy across the queue and current processing list.
+
+## Per-workflow execution knobs
+
+The dispatch gate above only decides whether a workflow runs. The per-workflow `model`, `max_turns`, `timeout`, `extra_allowed_tools`, and (for `review`) `path_filters` / `instructions` knobs are a second gate. Structured workflows resolve it during controller-owned runner-payload preparation in `src/orchestrator/workflow-runner-payload.ts`; legacy direct jobs resolve it at shared-daemon accept in `src/orchestrator/connection-handler.ts`. Both clamp against the server-side env ceilings, so a repo can narrow the defaults but never exceed them.
+
+Six workflows honour those knobs: `review`, `resolve`, `implement`, `remember`, `plan`, and `triage`. The first four apply them through `runPipeline`; `plan` and `triage` own their prompts and bypass the pipeline, so they apply the same resolved values through the shared helper `src/core/agent-policy.ts` instead. `path_filters` / `instructions` remain pipeline-only, since both need fetched PR data and the prompt builder.
+
+`workflows.ship` accepts only `enabled`. Its handler is a composite orchestrator that enqueues the child workflows and never invokes an agent, so agent knobs there would be a permanent no-op; the children run under their own workflow names and resolve `workflows.<child>.*` over `defaults:`. See [Per-repo configuration](../repo-config.md) for the full schema and clamping rules.
 
 ## Conversational `chat-thread` (sub-threshold fallback)
 
