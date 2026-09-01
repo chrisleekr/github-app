@@ -1855,7 +1855,7 @@
 <li>Inline GHSA allowlist in <code>IGNORED</code> array; each entry has <code>ghsa</code>, <code>reason</code>, and <code>expires</code> (ISO date). Expired entries become warnings on next run.</li>
 </ul>
 <h2 id="ci-pipeline">CI pipeline<a class="headerlink" href="#ci-pipeline" title="Permanent link">&para;</a></h2>
-<p>Four workflow files form the pipeline; each owns one responsibility.</p>
+<p>Five pipeline files; each owns one responsibility.</p>
 <table>
 <thead>
 <tr>
@@ -1883,7 +1883,12 @@
 <tr>
 <td><code>.github/workflows/docker-build.yml</code></td>
 <td><code>workflow_call</code> + <code>workflow_dispatch</code></td>
-<td>Reusable image builder: matrix split-and-merge (amd64 on <code>ubuntu-24.04</code>, arm64 on <code>ubuntu-24.04-arm</code>), Trivy scan</td>
+<td>Reusable image builder: matrix split-and-merge (amd64 on <code>ubuntu-24.04</code>, arm64 on <code>ubuntu-24.04-arm</code>), Trivy scan. Tags each variant <code>&lt;version&gt;-&lt;variant&gt;</code> plus a mutable <code>latest-&lt;variant&gt;</code> on prod releases</td>
+</tr>
+<tr>
+<td><code>.gitlab-ci.yml</code></td>
+<td>every branch (gates) + <code>main</code> (images)</td>
+<td>GitLab CI: the same quality gates on every branch, then <code>latest-orchestrator</code> / <code>latest-daemon</code> to the GitLab container registry on <code>main</code></td>
 </tr>
 </tbody>
 </table>

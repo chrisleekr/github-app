@@ -1881,7 +1881,7 @@ Organization: <strong>Org settings → Developer settings → GitHub Apps → Ne
 </tr>
 </tbody>
 </table>
-<p>The path <code>/api/github</code> is set by <code>pathPrefix</code> in <code>createNodeMiddleware</code> (<code>src/app.ts</code>). Don't change the path unless you also change the source.</p>
+<p>The path <code>/api/github/webhooks</code> is the <code>WEBHOOK_PATH</code> constant in <code>src/http-router.ts</code>, passed as the <code>path</code> option to <code>createWebMiddleware</code> in <code>src/app.ts</code>. The router matches it explicitly before delegating, so changing it means changing both. Don't change the path unless you also change the source.</p>
 <p>For local dev, set the Webhook URL to a <a href="https://smee.io">smee.io</a> channel and relay it to your local server:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># SMEE_URL=https://smee.io/&lt;channel&gt; in .env, then:</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>bun<span class="w"> </span>run<span class="w"> </span>dev:smee
@@ -2016,10 +2016,10 @@ Organization: <strong>Org settings → Developer settings → GitHub Apps → Ne
 <li>Move it to a password manager or secrets vault. <strong>Never commit it.</strong></li>
 </ol>
 <p>The full PEM (including <code>-----BEGIN…</code> / <code>-----END…</code> lines) is the value of <code>GITHUB_APP_PRIVATE_KEY</code>. Single-line <code>.env</code> form:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nv">GITHUB_APP_PRIVATE_KEY</span><span class="o">=</span><span class="s2">&quot;-----BEGIN RSA PRIVATE KEY-----\n&lt;KEY&gt;\n-----END RSA PRIVATE KEY-----\n&quot;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nv">GITHUB_APP_PRIVATE_KEY</span><span class="o">=</span><span class="s2">"-----BEGIN RSA PRIVATE KEY-----\n&lt;KEY&gt;\n-----END RSA PRIVATE KEY-----\n"</span>
 </span></code></pre></div>
 <p>Or read from disk:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">GITHUB_APP_PRIVATE_KEY</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>awk<span class="w"> </span><span class="s1">&#39;NF {sub(/\r/, &quot;&quot;); printf &quot;%s\\n&quot;,$0;}&#39;</span><span class="w"> </span>chrisleekr-bot.private-key.pem<span class="k">)</span><span class="s2">&quot;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">GITHUB_APP_PRIVATE_KEY</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>awk<span class="w"> </span><span class="s1">'NF {sub(/\r/, ""); printf "%s\\n",$0;}'</span><span class="w"> </span>chrisleekr-bot.private-key.pem<span class="k">)</span><span class="s2">"</span>
 </span></code></pre></div>
 <p>See <a href="https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/managing-private-keys-for-github-apps">Managing private keys for GitHub Apps</a> for rotation.</p>
 <h2 id="3-note-the-app-id">3. Note the App ID<a class="headerlink" href="#3-note-the-app-id" title="Permanent link">&para;</a></h2>
