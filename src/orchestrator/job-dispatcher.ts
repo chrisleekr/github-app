@@ -1,9 +1,11 @@
 import { config } from "../config";
 import { logger } from "../logger";
 import type { DaemonCapabilities, PendingOffer } from "../shared/daemon-types";
-import type { WorkflowRunRef } from "../shared/workflow-types";
-import { createMessageEnvelope, type ScopedJobContext } from "../shared/ws-messages";
-import { markFailed as markWorkflowRunFailed } from "../workflows/runs-store";
+import {
+  type AgentPolicy,
+  createMessageEnvelope,
+  type ScopedJobContext,
+} from "../shared/ws-messages";
 import { getConnections, getDaemonInfo, isDaemonDraining } from "./connection-handler";
 import { getActiveDaemons, getDaemonActiveJobs } from "./daemon-registry";
 import { markExecutionFailed, markExecutionOffered, requeueExecution } from "./history";
@@ -138,11 +140,12 @@ export async function selectDaemon(requiredTools: string[]): Promise<string | nu
  * Dispatch a job to a daemon via the offer/accept/reject protocol.
  * Returns true if the job was offered to a daemon, false if no daemon available.
  *
- * Branches on `job.kind`:
- *   - `legacy` / `workflow-run` → existing `job:offer` envelope.
- *   - `scoped-*` → `scoped-job-offer` envelope.
+ * Workflow runs have their own isolated runner protocol and are rejected here.
  */
 export async function dispatchJob(job: QueuedJob): Promise<boolean> {
+  if (job.kind === "workflow-run") {
+    throw new Error("workflow-run jobs require an isolated workflow runner");
+  }
   const requiredTools = inferRequiredTools(job.labels, job.triggerBodyPreview);
   const daemonId = await selectDaemon(requiredTools);
   const fleetSize = getConnections().size;
@@ -184,13 +187,27 @@ export async function dispatchJob(job: QueuedJob): Promise<boolean> {
 
   const offerId = crypto.randomUUID();
 
-  await markExecutionOffered(job.deliveryId, daemonId);
+  const offerOutcome = await markExecutionOffered(job.deliveryId, daemonId);
+  if (offerOutcome === "daemon-inactive") return false;
+  if (offerOutcome === "stale") {
+    logger.info(
+      { deliveryId: job.deliveryId, daemonId },
+      "Execution receipt was no longer queued; consuming stale queue copy",
+    );
+    return true;
+  }
 
-  if (isScopedJob(job)) {
-    ws.sendText(JSON.stringify(buildScopedJobOfferEnvelope(offerId, job)));
-  } else {
-    ws.sendText(
-      JSON.stringify({
+  // The close callback removes the socket synchronously before its durable
+  // cleanup starts. Recheck after the DB await so no offer is assigned to a
+  // connection that disappeared while the receipt was being fenced.
+  if (connections.get(daemonId) !== ws) {
+    const requeued = await requeueExecution(job.deliveryId);
+    return !requeued;
+  }
+
+  const envelope = isScopedJob(job)
+    ? buildScopedJobOfferEnvelope(offerId, job)
+    : {
         type: "job:offer",
         ...createMessageEnvelope(offerId),
         payload: {
@@ -205,8 +222,19 @@ export async function dispatchJob(job: QueuedJob): Promise<boolean> {
           triggerBodyPreview: job.triggerBodyPreview,
           requiredTools,
         },
-      }),
-    );
+      };
+  let sent: number;
+  try {
+    sent = ws.sendText(JSON.stringify(envelope));
+  } catch (err) {
+    logger.warn({ err, daemonId, deliveryId: job.deliveryId }, "Daemon offer send threw");
+    const requeued = await requeueExecution(job.deliveryId);
+    return !requeued;
+  }
+  if (sent === 0) {
+    logger.warn({ daemonId, deliveryId: job.deliveryId }, "Daemon offer frame was dropped");
+    const requeued = await requeueExecution(job.deliveryId);
+    return !requeued;
   }
 
   const timer = setTimeout(() => {
@@ -228,7 +256,6 @@ export async function dispatchJob(job: QueuedJob): Promise<boolean> {
     triggerUsername: job.triggerUsername,
     labels: job.labels,
     triggerBodyPreview: job.triggerBodyPreview,
-    ...(job.kind === "workflow-run" ? { workflowRun: normalizeWorkflowRun(job.workflowRun) } : {}),
     ...(isScopedJob(job) ? { scoped: job } : {}),
   });
 
@@ -252,32 +279,7 @@ export async function dispatchJob(job: QueuedJob): Promise<boolean> {
 }
 
 /**
- * `WorkflowRunRef` declares optional fields without `| undefined`; the
- * Zod-inferred shape includes `| undefined` because Zod surfaces missing
- * keys as `undefined`. Strip the explicit `undefined` keys so the value
- * fits `exactOptionalPropertyTypes: true` consumers like `PendingOffer`.
- */
-function normalizeWorkflowRun(ref: {
-  runId: string;
-  workflowName: WorkflowRunRef["workflowName"];
-  parentRunId?: string | undefined;
-  parentStepIndex?: number | undefined;
-}): WorkflowRunRef {
-  const result: WorkflowRunRef = { runId: ref.runId, workflowName: ref.workflowName };
-  if (ref.parentRunId !== undefined && ref.parentStepIndex !== undefined) {
-    return { ...result, parentRunId: ref.parentRunId, parentStepIndex: ref.parentStepIndex };
-  }
-  if (ref.parentRunId !== undefined) {
-    return { ...result, parentRunId: ref.parentRunId };
-  }
-  if (ref.parentStepIndex !== undefined) {
-    return { ...result, parentStepIndex: ref.parentStepIndex };
-  }
-  return result;
-}
-
-/**
- * Build the `scoped-job-offer` envelope from a scoped queue payload. The
+ * Build the `scoped-job:offer` envelope from a scoped queue payload. The
  * shape mirrors `contracts/ws-messages.md`: only the per-kind discriminating
  * fields are included so the daemon can route via Zod discriminated-union
  * parse before any executor runs.
@@ -287,7 +289,7 @@ function buildScopedJobOfferEnvelope(
   job: ScopedQueuedJob,
 ): Record<string, unknown> {
   const base = {
-    type: "scoped-job-offer" as const,
+    type: "scoped-job:offer" as const,
     ...createMessageEnvelope(offerId),
   };
   switch (job.kind) {
@@ -423,29 +425,12 @@ function reconstructJobFromOffer(offer: PendingOffer): QueuedJob | null {
         "PendingOffer.scoped failed re-validation, failing job (do not fall back to legacy reconstruct)",
       );
       // Fail closed: a corrupted scoped offer must NOT be reconstructed as a
-      // legacy or workflow-run job: that would dispatch the wrong job kind
+      // legacy job: that would dispatch the wrong job kind
       // against the same repo/PR. Caller marks the execution failed.
       return null;
     }
     const scoped: ScopedQueuedJob = reparsed.data;
     return { ...scoped, retryCount: offer.retryCount, enqueuedAt: Date.now() };
-  }
-  if (offer.workflowRun !== undefined) {
-    return {
-      kind: "workflow-run",
-      deliveryId: offer.deliveryId,
-      repoOwner: offer.repoOwner,
-      repoName: offer.repoName,
-      entityNumber: offer.entityNumber,
-      isPR: offer.isPR,
-      eventName: offer.eventName,
-      triggerUsername: offer.triggerUsername,
-      labels: offer.labels,
-      triggerBodyPreview: offer.triggerBodyPreview,
-      enqueuedAt: Date.now(),
-      retryCount: offer.retryCount,
-      workflowRun: offer.workflowRun,
-    };
   }
   return {
     kind: "legacy",
@@ -498,8 +483,10 @@ export interface JobAcceptParams {
     sourceAuthor: string | null;
     createdAt?: string | undefined;
   }[];
-  /** Present for workflow-run jobs, forwarded verbatim into `job:payload`. */
-  workflowRun?: WorkflowRunRef;
+  /** Resolved per-repo agent knobs ("Gate 2"). Already clamped by
+   * `loadRepoPolicy`; forwarded verbatim. Omitted when the repo ships no
+   * `.github-app.yaml`, which keeps the pre-Gate-2 payload byte-identical. */
+  policy?: AgentPolicy;
   /** Present for scoped jobs, forwarded verbatim into `job:payload` so the
    * daemon's `runScopedJob` router can dispatch on `scoped.jobKind`. */
   scoped?: ScopedJobContext;
@@ -517,7 +504,7 @@ export function handleJobAccept({
   envVars,
   memory,
   reviewLearnings,
-  workflowRun,
+  policy,
   scoped,
 }: JobAcceptParams): void {
   // Note: the pending offer is already removed by handleAccept in connection-handler.ts
@@ -543,7 +530,7 @@ export function handleJobAccept({
         ...(Object.keys(envVars).length > 0 ? { envVars } : {}),
         ...(memory.length > 0 ? { memory } : {}),
         ...(reviewLearnings !== undefined && reviewLearnings.length > 0 ? { reviewLearnings } : {}),
-        ...(workflowRun !== undefined ? { workflowRun } : {}),
+        ...(policy !== undefined ? { policy } : {}),
         ...(scoped !== undefined ? { scoped } : {}),
       },
     }),
@@ -603,29 +590,11 @@ export async function handleJobReject(offerId: string, reason: string): Promise<
 }
 
 /**
- * Terminal failure write that covers both the legacy `executions` row (set by
- * `src/webhook/router.ts` for the `@chrisleekr-bot` mention path) and the
- * `workflow_runs` row (set by the workflow dispatcher path). Either or both
- * may be present for a given job; UPDATEs are no-ops when the row is absent.
- *
- * Marking the `workflow_runs` row as `failed` is essential: the partial
- * unique index `idx_workflow_runs_inflight` prevents future dispatches for
- * the same target until this row leaves the queued/running states.
+ * Mark a shared-daemon queue item terminal after exhausting offer retries.
  */
 export async function markJobTerminallyFailed(job: QueuedJob, reason: string): Promise<void> {
-  await markExecutionFailed(job.deliveryId, reason);
   if (job.kind === "workflow-run") {
-    try {
-      await markWorkflowRunFailed(job.workflowRun.runId, reason, {});
-    } catch (err) {
-      logger.error(
-        {
-          err: err instanceof Error ? err.message : String(err),
-          runId: job.workflowRun.runId,
-          deliveryId: job.deliveryId,
-        },
-        "Failed to mark workflow_runs row as failed, in-flight guard may block re-dispatch",
-      );
-    }
+    throw new Error("workflow-run terminalization belongs to the isolated runner");
   }
+  await markExecutionFailed(job.deliveryId, reason);
 }

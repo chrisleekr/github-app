@@ -34,9 +34,9 @@ function requireSql(): SQL {
   return sql;
 }
 
-const mockEnqueueJob = mock(() => Promise.resolve());
+const mockEnsureWorkflowJobQueued = mock(() => Promise.resolve(true));
 void mock.module("../../../src/orchestrator/job-queue", () => ({
-  enqueueJob: mockEnqueueJob,
+  ensureWorkflowJobQueued: mockEnsureWorkflowJobQueued,
   isScopedJob: () => false,
   SCOPED_JOB_KINDS: ["scoped-rebase", "scoped-fix-thread", "scoped-open-pr"],
 }));
@@ -51,6 +51,7 @@ describe.skipIf(sql === null)("runIteration", () => {
   beforeAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -73,6 +74,7 @@ describe.skipIf(sql === null)("runIteration", () => {
   afterAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -92,7 +94,8 @@ describe.skipIf(sql === null)("runIteration", () => {
   });
 
   beforeEach(() => {
-    mockEnqueueJob.mockClear();
+    mockEnsureWorkflowJobQueued.mockClear();
+    mockEnsureWorkflowJobQueued.mockImplementation(() => Promise.resolve(true));
   });
 
   async function seedActiveIntent(
@@ -145,11 +148,12 @@ describe.skipIf(sql === null)("runIteration", () => {
 
     expect(result.outcome).toBe("enqueued");
 
-    expect(mockEnqueueJob).toHaveBeenCalledTimes(1);
-    const enqueued = mockEnqueueJob.mock.calls[0]?.[0] as
+    expect(mockEnsureWorkflowJobQueued).toHaveBeenCalledTimes(1);
+    const enqueued = mockEnsureWorkflowJobQueued.mock.calls[0]?.[0] as
       | {
           kind: string;
           workflowRun: { runId: string; workflowName: string };
+          deliveryId: string;
           repoOwner: string;
           repoName: string;
           entityNumber: number;
@@ -160,11 +164,23 @@ describe.skipIf(sql === null)("runIteration", () => {
     expect(enqueued?.repoOwner).toBe(intent.owner);
     expect(enqueued?.entityNumber).toBe(intent.pr_number);
 
-    const runs: { id: string; state: Record<string, unknown> }[] = await requireSql()`
-      SELECT id, state FROM workflow_runs WHERE id = ${enqueued?.workflowRun.runId ?? ""}
+    const runs: {
+      id: string;
+      state: Record<string, unknown>;
+      execution_delivery_id: string | null;
+      dispatch_enqueued_at: Date | null;
+    }[] = await requireSql()`
+      SELECT id, state, execution_delivery_id, dispatch_enqueued_at
+        FROM workflow_runs WHERE id = ${enqueued?.workflowRun.runId ?? ""}
     `;
     expect(runs).toHaveLength(1);
     expect(runs[0]?.state["shipIntentId"]).toBe(intent.id);
+    expect(runs[0]?.execution_delivery_id).toBe(enqueued?.deliveryId);
+    expect(runs[0]?.dispatch_enqueued_at).toBeInstanceOf(Date);
+    const executions: { delivery_id: string; status: string }[] = await requireSql()`
+      SELECT delivery_id, status FROM executions WHERE delivery_id = ${enqueued?.deliveryId ?? ""}
+    `;
+    expect(executions).toEqual([{ delivery_id: enqueued?.deliveryId, status: "queued" }]);
 
     const iterRows: { iteration_n: number; kind: string }[] = await requireSql()`
       SELECT iteration_n, kind FROM ship_iterations
@@ -174,6 +190,35 @@ describe.skipIf(sql === null)("runIteration", () => {
     expect(iterRows).toHaveLength(2);
     expect(iterRows[0]?.kind).toBe("probe");
     expect(iterRows[1]?.kind).toBe("resolve");
+  });
+
+  it("returns enqueued and leaves the outbox pending when immediate publication fails", async () => {
+    const { runIteration } = await import("../../../src/workflows/ship/iteration");
+    const { getIntentById } = await import("../../../src/db/queries/ship");
+    const intent = await seedActiveIntent({ pr_number: 4247 });
+    const intentRow = await getIntentById(intent.id, requireSql());
+    if (intentRow === null) throw new Error("seed intent missing");
+    mockEnsureWorkflowJobQueued.mockImplementationOnce(() =>
+      Promise.reject(new Error("Valkey unavailable")),
+    );
+
+    const result = await runIteration({
+      intent: intentRow,
+      probeVerdict: {
+        ready: false,
+        reason: "open_threads",
+        detail: "1 thread unresolved",
+        checked_at: new Date().toISOString(),
+        head_sha: "head-sha",
+      },
+    });
+
+    expect(result.outcome).toBe("enqueued");
+    if (result.outcome !== "enqueued") throw new Error("expected enqueued result");
+    const rows: { dispatch_enqueued_at: Date | null }[] = await requireSql()`
+      SELECT dispatch_enqueued_at FROM workflow_runs WHERE id = ${result.runId}
+    `;
+    expect(rows).toEqual([{ dispatch_enqueued_at: null }]);
   });
 
   it("transitions intent to deadline_exceeded with iteration-cap blocker when cap is reached", async () => {
@@ -216,7 +261,7 @@ describe.skipIf(sql === null)("runIteration", () => {
     const refreshed = await getIntentById(intent.id, requireSql());
     expect(refreshed?.status).toBe("deadline_exceeded");
     expect(refreshed?.terminal_blocker_category).toBe("iteration-cap");
-    expect(mockEnqueueJob).toHaveBeenCalledTimes(0);
+    expect(mockEnsureWorkflowJobQueued).toHaveBeenCalledTimes(0);
   });
 
   it("transitions intent to deadline_exceeded when the wall-clock deadline has elapsed", async () => {
@@ -244,7 +289,7 @@ describe.skipIf(sql === null)("runIteration", () => {
     expect(result.outcome).toBe("terminal-deadline");
     const refreshed = await getIntentById(intent.id, requireSql());
     expect(refreshed?.status).toBe("deadline_exceeded");
-    expect(mockEnqueueJob).toHaveBeenCalledTimes(0);
+    expect(mockEnsureWorkflowJobQueued).toHaveBeenCalledTimes(0);
   });
 
   it("returns ready-shortcut without writing any rows when the verdict is ready", async () => {
@@ -265,7 +310,7 @@ describe.skipIf(sql === null)("runIteration", () => {
     });
 
     expect(result.outcome).toBe("ready-shortcut");
-    expect(mockEnqueueJob).toHaveBeenCalledTimes(0);
+    expect(mockEnsureWorkflowJobQueued).toHaveBeenCalledTimes(0);
 
     const iterRows: { count: number }[] = await requireSql()`
       SELECT COUNT(*)::int AS count FROM ship_iterations WHERE intent_id = ${intent.id}
@@ -316,7 +361,7 @@ describe.skipIf(sql === null)("runIteration", () => {
     if (result.outcome === "in-flight") {
       expect(result.runId).toBe(inflight.id);
     }
-    expect(mockEnqueueJob).toHaveBeenCalledTimes(0);
+    expect(mockEnsureWorkflowJobQueued).toHaveBeenCalledTimes(0);
 
     // No new ship_iterations rows either.
     const iterRows: { count: number }[] = await requireSql()`

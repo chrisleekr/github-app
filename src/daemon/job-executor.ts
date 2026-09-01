@@ -16,7 +16,6 @@ import {
   WS_REJECT_REASONS,
 } from "../shared/ws-messages";
 import { DAEMON_JOB_LOG_EVENTS } from "./log-fields";
-import { executeWorkflowRun } from "./workflow-executor";
 
 // Active job tracking (FM-9)
 
@@ -126,7 +125,7 @@ export function evaluateOffer(
 }
 
 /**
- * Evaluate a `scoped-job-offer`. Scoped jobs do not declare `requiredTools`
+ * Evaluate a `scoped-job:offer`. Scoped jobs do not declare `requiredTools`
  * (the four executors only need git + bun, both baseline) and do not consume
  * the legacy concurrency slot until `job:accept` is sent. The evaluator's
  * single responsibility is forward-compat: reject jobKinds this image does
@@ -246,7 +245,7 @@ export async function executeJob(
   // executor uses.
   if (payload.payload.scoped !== undefined) {
     // Register an AbortController so handleJobCancel can suppress the
-    // duplicate `scoped-job-completion` that runScopedJob would otherwise
+    // duplicate `scoped-job:completion` that runScopedJob would otherwise
     // send after the cancel path's synthetic `job:result`. Without this,
     // a cancel during a scoped run double-finalizes the execution and
     // double-decrements the orchestrator capacity counter.
@@ -272,14 +271,6 @@ export async function executeJob(
 
   if (!validateJobContext(context, offerId, send)) return;
 
-  // Workflow-run jobs route through a registry-driven executor instead of
-  // the legacy single-shot pipeline. Everything downstream of this branch
-  // assumes a traditional BotContext pipeline run.
-  if (payload.payload.workflowRun !== undefined) {
-    await executeWorkflowRun(payload, send);
-    return;
-  }
-
   const {
     installationToken,
     installationId,
@@ -288,6 +279,7 @@ export async function executeJob(
     envVars,
     memory,
     reviewLearnings,
+    policy,
   } = payload.payload;
 
   // Abort controller for cancel/execute race prevention (C1)
@@ -375,6 +367,9 @@ export async function executeJob(
     // even if the pipeline does not finish its own cleanup.
     const result = await runPipeline(fullCtx, {
       ...(maxTurns !== undefined ? { maxTurns } : {}),
+      // Gate-2 knobs on the direct rail. The workflow rail threads the same
+      // object through WorkflowRunContext instead.
+      ...(policy !== undefined ? { policy } : {}),
       allowedTools,
       onWorkDirReady: (wd: string) => {
         job.workDir = wd;
@@ -469,7 +464,7 @@ export async function executeJob(
  * surfaces a clean halt rather than a silent drop.
  *
  * Routes via the Zod-validated `payload.scoped.jobKind` discriminator,
- * matches the `scoped-job-offer` schema at the WS boundary, so a misrouted
+ * matches the `scoped-job:offer` schema at the WS boundary, so a misrouted
  * payload is impossible by construction.
  */
 async function runScopedJob(
@@ -488,10 +483,10 @@ async function runScopedJob(
   const startedAt = Date.now();
   const installationToken = payload.payload.installationToken;
 
-  // Wrap `send` so every scoped-job-completion is suppressed after a cancel,
+  // Wrap `send` so every scoped-job:completion is suppressed after a cancel,
   // matching the legacy executor's abort-then-skip-result pattern. The cancel
   // path emits its own synthetic `job:result`; we MUST NOT also emit a
-  // scoped-job-completion or the orchestrator will double-decrement capacity.
+  // scoped-job:completion or the orchestrator will double-decrement capacity.
   const sendIfNotAborted = (msg: unknown): void => {
     if (signal.aborted) return;
     send(msg);
@@ -541,7 +536,7 @@ async function runScopedJob(
           }
         })();
         sendIfNotAborted({
-          type: "scoped-job-completion",
+          type: "scoped-job:completion",
           ...createMessageEnvelope(offerId),
           payload: {
             offerId,
@@ -565,7 +560,7 @@ async function runScopedJob(
           triggerCommentId: scoped.triggerCommentId,
         });
         sendIfNotAborted({
-          type: "scoped-job-completion",
+          type: "scoped-job:completion",
           ...createMessageEnvelope(offerId),
           payload: {
             offerId,
@@ -595,7 +590,7 @@ async function runScopedJob(
           verdictSummary: scoped.verdictSummary,
         });
         sendIfNotAborted({
-          type: "scoped-job-completion",
+          type: "scoped-job:completion",
           ...createMessageEnvelope(offerId),
           payload: {
             offerId,
@@ -629,7 +624,7 @@ async function runScopedJob(
           ...(scoped.allowedTools !== undefined ? { allowedTools: scoped.allowedTools } : {}),
         });
         sendIfNotAborted({
-          type: "scoped-job-completion",
+          type: "scoped-job:completion",
           ...createMessageEnvelope(offerId),
           payload: {
             offerId,
@@ -659,7 +654,7 @@ async function runScopedJob(
           "runScopedJob received unknown jobKind",
         );
         sendIfNotAborted({
-          type: "scoped-job-completion",
+          type: "scoped-job:completion",
           ...createMessageEnvelope(offerId),
           payload: {
             offerId,
@@ -689,7 +684,7 @@ async function runScopedJob(
       "scoped-job execution failed",
     );
     sendIfNotAborted({
-      type: "scoped-job-completion",
+      type: "scoped-job:completion",
       ...createMessageEnvelope(offerId),
       payload: {
         offerId,

@@ -4,10 +4,8 @@ import { App, Octokit } from "octokit";
 import { config } from "../config";
 import { clearInFlightByJobId } from "../db/queries/scheduled-actions-store";
 import { logger } from "../logger";
+import { loadRepoPolicy, toAgentPolicy } from "../repo-config/effective";
 import { observableOctokit } from "../utils/octokit-observability";
-import { addReaction } from "../utils/reactions";
-import { findById, findInflightByOwner, type WorkflowRunRow } from "../workflows/runs-store";
-import { setState } from "../workflows/tracking-mirror";
 import { mintInstallationToken } from "./installation-token";
 import { DAEMON_HEARTBEAT_LOG_EVENTS, DISPATCHER_LOG_EVENTS } from "./log-fields";
 import type {
@@ -49,8 +47,10 @@ function isDaemonOutdated(daemon: string, orchestrator: string): boolean {
 }
 import type { DaemonInfo, HeartbeatState } from "../shared/daemon-types";
 import {
+  type AgentPolicy,
   createMessageEnvelope,
   type DaemonMessage,
+  PROTOCOL_VERSION,
   type ScopedJobContext,
   WS_CLOSE_CODES,
   WS_ERROR_CODES,
@@ -65,6 +65,7 @@ import {
   registerDaemon,
 } from "./daemon-registry";
 import {
+  failDisconnectedDaemon,
   getExecutionState,
   getOrphanedExecutions,
   markExecutionCompleted,
@@ -78,13 +79,28 @@ import {
   removePendingOffer,
 } from "./job-dispatcher";
 import { isScopedJob, QueuedJobSchema, type ScopedQueuedJob } from "./job-queue";
-import { sendError, type WsConnectionData } from "./ws-server";
+import { persistRepoKnowledge } from "./repo-knowledge-persistence";
+import { notifyDisconnectedDaemonWorkflows } from "./workflow-expiry-notifier";
+import { sendError, type WsConnectionData } from "./ws-connection";
 
 // In-memory state (per orchestrator process)
 
 const connections = new Map<string, ServerWebSocket<WsConnectionData>>();
 const daemonInfoMap = new Map<string, DaemonInfo>();
 const heartbeatTimers = new Map<string, HeartbeatState>();
+const disconnectCleanups = new Set<Promise<void>>();
+const disconnectCleanupsByDaemon = new Map<string, Promise<void>>();
+const registrationTransitionsByDaemon = new Map<string, Promise<void>>();
+const protocolUpdateTransitions = new Map<
+  ServerWebSocket<WsConnectionData>,
+  {
+    readonly daemonId: string;
+    readonly phase: "awaiting-ack" | "draining";
+    readonly timer: Timer;
+  }
+>();
+const PROTOCOL_UPDATE_ACK_TIMEOUT_MS = 5_000;
+const PROTOCOL_UPDATE_DRAIN_GRACE_MS = 2_000;
 
 /** Daemon IDs that sent daemon:draining, excluded from dispatch. */
 const drainingDaemons = new Set<string>();
@@ -131,8 +147,19 @@ export function handleWsClose(
   _code: number,
   _reason: string,
 ): void {
+  const protocolUpdate = protocolUpdateTransitions.get(ws);
+  if (protocolUpdate !== undefined) {
+    clearTimeout(protocolUpdate.timer);
+    protocolUpdateTransitions.delete(ws);
+  }
+
   const daemonId = ws.data.daemonId;
   if (daemonId === undefined) return;
+  ws.data.daemonId = undefined;
+
+  // A superseded socket must not tear down the newer connection that now owns
+  // this per-boot daemon ID.
+  if (connections.get(daemonId) !== ws) return;
 
   const hb = heartbeatTimers.get(daemonId);
   if (hb !== undefined) {
@@ -145,8 +172,23 @@ export function handleWsClose(
   daemonInfoMap.delete(daemonId);
   drainingDaemons.delete(daemonId);
 
-  // Async cleanup: deregister from Valkey/Postgres, handle orphaned executions
-  void cleanupAfterDisconnect(daemonId);
+  void startDisconnectCleanup(daemonId);
+}
+
+function startDisconnectCleanup(daemonId: string): Promise<void> {
+  const pending = disconnectCleanupsByDaemon.get(daemonId);
+  if (pending !== undefined) return pending;
+
+  const cleanup = cleanupAfterDisconnect(daemonId);
+  disconnectCleanups.add(cleanup);
+  disconnectCleanupsByDaemon.set(daemonId, cleanup);
+  void cleanup.finally(() => {
+    disconnectCleanups.delete(cleanup);
+    if (disconnectCleanupsByDaemon.get(daemonId) === cleanup) {
+      disconnectCleanupsByDaemon.delete(daemonId);
+    }
+  });
+  return cleanup;
 }
 
 /**
@@ -155,181 +197,42 @@ export function handleWsClose(
  */
 async function cleanupAfterDisconnect(daemonId: string): Promise<void> {
   try {
-    await deregisterDaemon(daemonId);
-
-    // Scan for orphaned executions
-    const orphans = await getOrphanedExecutions(daemonId);
-    for (const orphan of orphans) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        await markExecutionFailed(orphan.deliveryId, "daemon disconnected during execution");
-        // eslint-disable-next-line no-await-in-loop
-        await releaseScheduledActionLock(orphan.deliveryId);
-      } catch (err) {
-        logger.error(
-          { err, deliveryId: orphan.deliveryId },
-          "Failed to mark orphaned execution as failed",
-        );
-      }
-    }
-
-    if (orphans.length > 0) {
+    const failed = await failDisconnectedDaemon(daemonId);
+    await notifyDisconnectedDaemonWorkflows(failed.workflowRunIds);
+    if (failed.executionDeliveryIds.length > 0 || failed.workflowRunIds.length > 0) {
       logger.warn(
-        { daemonId, orphanCount: orphans.length },
+        {
+          daemonId,
+          orphanCount: failed.executionDeliveryIds.length,
+          workflowRunCount: failed.workflowRunIds.length,
+        },
         "Cleaned up orphaned executions after daemon disconnect",
       );
     }
-
-    // User-facing notification: any in-flight workflow_runs owned by this
-    // daemon will be flipped to 'failed' by the liveness reaper. We update
-    // the user's tracking comment + react on the trigger comment now so the
-    // user sees the failure immediately instead of staring at a stale
-    // "starting…" comment.
-    await notifyOrphanedWorkflowRuns(daemonId);
   } catch (err) {
-    logger.error({ err, daemonId }, "Failed to cleanup after daemon disconnect");
+    logger.error({ err, daemonId }, "Failed durable daemon disconnect cleanup");
   }
-}
 
-/**
- * Update the user-facing tracking comment + add a `confused` reaction on the
- * originating comment for every in-flight workflow_run owned by the dying
- * daemon. Walks the parent chain so a child step's failure shows up on the
- * top-level run's surface (the surface the user is actually watching) rather
- * than on a per-child comment they may not have noticed.
- *
- * Best-effort throughout: a missing GitHub App config or a comment-update
- * failure must never bubble up and prevent the rest of cleanup from running.
- */
-async function notifyOrphanedWorkflowRuns(daemonId: string): Promise<void> {
-  let inflight: WorkflowRunRow[];
   try {
-    inflight = await findInflightByOwner("daemon", daemonId);
+    await deregisterDaemon(daemonId);
   } catch (err) {
-    logger.error({ err, daemonId }, "Failed to query in-flight workflow_runs for orphan cleanup");
-    return;
-  }
-
-  if (inflight.length === 0) return;
-
-  // Dedupe by ancestor so a single ship cascade (ship → plan → implement)
-  // only updates one comment + one reaction even if multiple of its rows
-  // were owned by this daemon at the moment of disconnect.
-  const ancestorIds = new Set<string>();
-  for (const row of inflight) {
-    // eslint-disable-next-line no-await-in-loop
-    const ancestor = await findTopAncestor(row);
-    if (ancestor === null) continue;
-    if (ancestorIds.has(ancestor.id)) continue;
-    ancestorIds.add(ancestor.id);
-
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      await postOrphanNotification(ancestor);
-    } catch (err) {
-      logger.warn(
-        {
-          err: err instanceof Error ? err.message : String(err),
-          ancestorRunId: ancestor.id,
-          daemonId,
-        },
-        "Orphan notification (comment/reaction) failed",
-      );
-    }
+    logger.error({ err, daemonId }, "Failed best-effort daemon registry cleanup");
   }
 }
 
-/**
- * Walk parent_run_id up to the topmost row. Returns the input row if it has
- * no parent, or null if the parent chain is broken (orphaned mid-walk) or
- * exceeds the safety cap. Returning the cap-iteration row would be a silent
- * bug: it still has a non-null parent_run_id, so we'd update the wrong
- * (mid-chain) tracking comment.
- */
-async function findTopAncestor(row: WorkflowRunRow): Promise<WorkflowRunRow | null> {
-  let current: WorkflowRunRow | null = row;
-  // Bound at 8 levels of nesting, defensive cap for a chain that should
-  // realistically never exceed depth 2 (ship → step). A null parent ends
-  // the walk naturally.
-  for (let i = 0; i < 8; i++) {
-    if (current === null) return null;
-    if (current.parent_run_id === null) return current;
-    // eslint-disable-next-line no-await-in-loop
-    current = await findById(current.parent_run_id);
+/** Wait until every registration and close callback has finished its durable work. */
+export async function drainDisconnectCleanups(): Promise<void> {
+  while (registrationTransitionsByDaemon.size > 0 || disconnectCleanups.size > 0) {
+    // eslint-disable-next-line no-await-in-loop -- connection transitions can enqueue cleanup while settling
+    await Promise.allSettled([...registrationTransitionsByDaemon.values(), ...disconnectCleanups]);
   }
-  logger.warn(
-    { startRunId: row.id, lastSeenRunId: current?.id ?? null },
-    "findTopAncestor: parent chain exceeded 8 levels, skipping orphan notification to avoid touching the wrong comment",
-  );
-  return null;
 }
 
-async function postOrphanNotification(ancestor: WorkflowRunRow): Promise<void> {
-  if (config.appId === undefined || config.privateKey === undefined) {
-    logger.debug(
-      { ancestorRunId: ancestor.id },
-      "Skipping orphan notification, GitHub App credentials not configured",
-    );
-    return;
-  }
-
-  // PAT mode short-circuit: when GITHUB_PERSONAL_ACCESS_TOKEN is set, the
-  // contract is that the PAT replaces the installation token for ALL GitHub
-  // API calls, orphan-notification comments and reactions included, so the
-  // operator-visible identity stays consistent with other bot replies.
-  let octokit: Awaited<ReturnType<App["getInstallationOctokit"]>> | Octokit;
-  if (config.githubPersonalAccessToken !== undefined) {
-    octokit = new Octokit({ auth: config.githubPersonalAccessToken });
-  } else {
-    const app = getOrCreateApp();
-    const { data: installation } = await app.octokit.rest.apps.getRepoInstallation({
-      owner: ancestor.target_owner,
-      repo: ancestor.target_repo,
-    });
-    octokit = (
-      await mintInstallationToken({
-        app,
-        installationId: installation.id,
-        via: "postOrphanNotification",
-        log: logger,
-      })
-    ).octokit;
-  }
-
-  const humanMessage = [
-    `❌ **Daemon disconnected during execution**, likely an OOM kill on the workflow pod.`,
-    ``,
-    `The in-flight step has been marked failed. Its workflow_run row will be flipped`,
-    `to \`failed\` by the liveness reaper. To resume, re-trigger the workflow:`,
-    ``,
-    `- For \`ship\`: re-apply the \`bot:ship\` label, or comment again. Resume picks up`,
-    `  from the failed step and reuses prior succeeded steps.`,
-    `- For standalone workflows: re-comment with the same trigger.`,
-  ].join("\n");
-
-  // Re-uses tracking-mirror.setState so the cascade refresh and `_lastHumanMessage`
-  // bookkeeping stay consistent, and so the parent's composite body picks up the
-  // failure narrative on the next render.
-  const installationOctokit = octokit as unknown as Octokit;
-  await setState(
-    { octokit: installationOctokit, logger },
-    {
-      runId: ancestor.id,
-      patch: { phase: "orphaned" },
-      humanMessage,
-    },
-  );
-
-  if (ancestor.trigger_comment_id !== null && ancestor.trigger_event_type !== null) {
-    await addReaction({
-      octokit: installationOctokit,
-      logger,
-      owner: ancestor.target_owner,
-      repo: ancestor.target_repo,
-      commentId: ancestor.trigger_comment_id,
-      eventType: ancestor.trigger_event_type,
-      content: "confused",
-    });
+/** Start exact-incarnation cleanup before the WebSocket server drain timer. */
+export function beginDaemonConnectionShutdown(): void {
+  for (const ws of [...connections.values()]) {
+    handleWsClose(ws, 1001, "orchestrator shutting down");
+    ws.close(1001, "orchestrator shutting down");
   }
 }
 
@@ -340,7 +243,7 @@ export function handleDaemonMessage(
 ): void {
   switch (msg.type) {
     case "daemon:register":
-      void handleRegister(ws, msg);
+      queueRegistration(ws, msg);
       break;
     case "heartbeat:pong":
       handleHeartbeatPong(ws, msg);
@@ -357,7 +260,7 @@ export function handleDaemonMessage(
     case "job:result":
       handleJobMessage(ws, msg);
       break;
-    case "scoped-job-completion":
+    case "scoped-job:completion":
       void handleScopedJobCompletion(ws, msg);
       break;
   }
@@ -365,11 +268,92 @@ export function handleDaemonMessage(
 
 // daemon:register handler (FM-8 reconnection logic)
 
+function queueRegistration(
+  ws: ServerWebSocket<WsConnectionData>,
+  msg: Extract<DaemonMessage, { type: "daemon:register" }>,
+): void {
+  const { daemonId } = msg.payload;
+  const previous = registrationTransitionsByDaemon.get(daemonId);
+  const transition = (previous?.catch(() => undefined) ?? Promise.resolve()).then(() =>
+    handleRegister(ws, msg),
+  );
+  registrationTransitionsByDaemon.set(daemonId, transition);
+  void transition
+    .catch((err: unknown) => {
+      logger.error({ err, daemonId }, "Unhandled daemon registration failure");
+    })
+    .finally(() => {
+      if (registrationTransitionsByDaemon.get(daemonId) === transition) {
+        registrationTransitionsByDaemon.delete(daemonId);
+      }
+    });
+}
+
 async function handleRegister(
   ws: ServerWebSocket<WsConnectionData>,
   msg: Extract<DaemonMessage, { type: "daemon:register" }>,
 ): Promise<void> {
   const { daemonId } = msg.payload;
+
+  // A socket that entered the update transition cannot re-register under a
+  // different schema while its update acknowledgement is pending.
+  if (protocolUpdateTransitions.has(ws)) return;
+
+  // Reject mixed schemas before this socket can mutate daemon state. Older
+  // daemons can acknowledge update-required and drain before we close them.
+  const ourMajor = PROTOCOL_VERSION.split(".", 1)[0] ?? "";
+  const theirMajor = msg.payload.protocolVersion.split(".", 1)[0] ?? "";
+  if (theirMajor !== ourMajor) {
+    const ourMajorNumber = Number(ourMajor);
+    const theirMajorNumber = Number(theirMajor);
+    if (
+      /^\d+$/.test(ourMajor) &&
+      /^\d+$/.test(theirMajor) &&
+      Number.isInteger(ourMajorNumber) &&
+      Number.isInteger(theirMajorNumber) &&
+      theirMajorNumber < ourMajorNumber
+    ) {
+      logger.warn(
+        {
+          daemonId,
+          daemonProtocolVersion: msg.payload.protocolVersion,
+          orchestratorProtocolVersion: PROTOCOL_VERSION,
+        },
+        "Daemon protocol is outdated, sending daemon:update-required",
+      );
+      const timer = setTimeout(() => {
+        protocolUpdateTransitions.delete(ws);
+        ws.close(
+          WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.code,
+          WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.reason,
+        );
+      }, PROTOCOL_UPDATE_ACK_TIMEOUT_MS);
+      timer.unref();
+      protocolUpdateTransitions.set(ws, { daemonId, phase: "awaiting-ack", timer });
+      ws.sendText(
+        JSON.stringify({
+          type: "daemon:update-required",
+          ...createMessageEnvelope(msg.id),
+          payload: {
+            targetVersion: ORCHESTRATOR_APP_VERSION,
+            reason: `Orchestrator protocol is ${PROTOCOL_VERSION}; daemon protocol is ${msg.payload.protocolVersion}`,
+            urgent: true,
+          },
+        }),
+      );
+    } else {
+      ws.close(
+        WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.code,
+        WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.reason,
+      );
+    }
+    return;
+  }
+
+  // A transport reconnect reuses the same per-boot daemon ID. Finish fencing
+  // the closed socket before restoring that identity in PostgreSQL or Valkey.
+  const pendingCleanup = disconnectCleanupsByDaemon.get(daemonId);
+  if (pendingCleanup !== undefined) await pendingCleanup;
 
   // FM-8: Check for existing connection with same daemon ID
   const existing = connections.get(daemonId);
@@ -405,21 +389,13 @@ async function handleRegister(
     }
   }
 
-  // Version compatibility check (T042, Phase 7, basic check here)
-  // Major protocol version mismatch -> reject
-  const ourMajor = "1";
-  const theirMajor = msg.payload.protocolVersion.split(".")[0];
-  if (theirMajor !== ourMajor) {
-    ws.close(
-      WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.code,
-      WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.reason,
-    );
-    return;
-  }
-
   // Register in Valkey + Postgres
   try {
     const info = await registerDaemon(msg);
+    if (ws.readyState !== 1) {
+      await startDisconnectCleanup(daemonId);
+      return;
+    }
     daemonInfoMap.set(daemonId, info);
   } catch (err) {
     logger.error({ err, daemonId }, "Failed to register daemon");
@@ -597,6 +573,34 @@ function handleUpdateAcknowledged(
   ws: ServerWebSocket<WsConnectionData>,
   msg: Extract<DaemonMessage, { type: "daemon:update-acknowledged" }>,
 ): void {
+  const protocolUpdate = protocolUpdateTransitions.get(ws);
+  if (protocolUpdate !== undefined) {
+    if (protocolUpdate.phase === "draining") return;
+    clearTimeout(protocolUpdate.timer);
+    const timer = setTimeout(() => {
+      protocolUpdateTransitions.delete(ws);
+      ws.close(
+        WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.code,
+        WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.reason,
+      );
+    }, config.daemonDrainTimeoutMs + PROTOCOL_UPDATE_DRAIN_GRACE_MS);
+    timer.unref();
+    protocolUpdateTransitions.set(ws, {
+      daemonId: protocolUpdate.daemonId,
+      phase: "draining",
+      timer,
+    });
+    logger.info(
+      {
+        daemonId: protocolUpdate.daemonId,
+        strategy: msg.payload.strategy,
+        delayMs: msg.payload.delayMs,
+      },
+      "Outdated daemon acknowledged protocol update",
+    );
+    return;
+  }
+
   const daemonId = ws.data.daemonId;
   if (daemonId === undefined) return;
 
@@ -631,7 +635,7 @@ async function releaseScheduledActionLock(deliveryId: string): Promise<void> {
 // Job message handling (T032-T033)
 
 /**
- * Server-side bridge for `scoped-job-completion` (T033b). The daemon
+ * Server-side bridge for `scoped-job:completion` (T033b). The daemon
  * executor reports the structured outcome here; the orchestrator releases
  * the pending offer + capacity slot and emits a telemetry log line. The
  * user-facing Octokit reply is posted by the daemon executor itself
@@ -645,7 +649,7 @@ async function releaseScheduledActionLock(deliveryId: string): Promise<void> {
  */
 async function handleScopedJobCompletion(
   ws: ServerWebSocket<WsConnectionData>,
-  msg: Extract<DaemonMessage, { type: "scoped-job-completion" }>,
+  msg: Extract<DaemonMessage, { type: "scoped-job:completion" }>,
 ): Promise<void> {
   const daemonId = ws.data.daemonId;
   const offerId = msg.payload.offerId;
@@ -661,7 +665,7 @@ async function handleScopedJobCompletion(
 
   // Ownership + late-result guard. The in-memory offer is removed by
   // handleAccept right after dispatch to handleScopedAccept, so by the
-  // time a real scoped-job-completion arrives `getPendingOffer(offerId)`
+  // time a real scoped-job:completion arrives `getPendingOffer(offerId)`
   // is almost always undefined and an offer-based check is ineffective.
   // Mirror handleResult: validate against durable execution state so a
   // replayed/forged completion cannot decrement capacity counters or
@@ -677,7 +681,7 @@ async function handleScopedJobCompletion(
         assignedDaemon: state?.daemonId ?? null,
         currentStatus: state?.status ?? null,
       },
-      "scoped-job-completion failed ownership/finality validation, ignoring",
+      "scoped-job:completion failed ownership/finality validation, ignoring",
     );
     return;
   }
@@ -808,6 +812,30 @@ function handleJobMessage(ws: ServerWebSocket<WsConnectionData>, msg: DaemonMess
   }
 }
 
+/**
+ * Drop `instructions` from the Gate-2 policy for every workflow but `review`.
+ *
+ * The pipeline renders `instructions` as trusted repo policy that OVERRIDES
+ * the agent's default heuristics. That surface was designed for `review`
+ * alone. The schema scopes the field to `workflows.review` today,
+ * so this is a no-op guard, but keeping the restriction here means a future
+ * hoist to `defaults` cannot silently hand `implement` (which writes code and
+ * pushes commits) an override block with no pipeline change to review.
+ *
+ * Enforced at the accept site, not in the daemon: the daemon stays dumb about
+ * which knobs each workflow may see. Exported so the guard can be tested
+ * directly: the schema makes the bad input unreachable through YAML today,
+ * which is exactly why the guard needs its own test.
+ */
+export function stripInstructionsUnlessReview(
+  policy: AgentPolicy | undefined,
+  workflowName: string | undefined,
+): AgentPolicy | undefined {
+  if (policy?.instructions === undefined || workflowName === "review") return policy;
+  const { instructions: _dropped, ...rest } = policy;
+  return Object.keys(rest).length > 0 ? rest : undefined;
+}
+
 async function handleAccept(
   daemonId: string,
   msg: Extract<DaemonMessage, { type: "job:accept" }>,
@@ -852,7 +880,7 @@ async function handleAccept(
   // do not need the legacy `executions.context_json` lookup or the
   // `BotContext`-shaped allowed-tool resolution. Mint the installation
   // token directly from `offer.scoped.installationId` and forward the
-  // scoped payload verbatim. The `scoped-job-completion` handler decrements
+  // scoped payload verbatim. The `scoped-job:completion` handler decrements
   // capacity on completion.
   if (offer.scoped !== undefined) {
     await handleScopedAccept(daemonId, offerId, offer);
@@ -937,11 +965,49 @@ async function handleAccept(
       }));
     }
 
-    // No turn cap by default: workflows must run end-to-end without losing
-    // progress to a mid-run cap. `AGENT_MAX_TURNS` and `DEFAULT_MAXTURNS`
-    // remain as opt-in escape hatches for ops; when both are unset we pass
-    // `undefined` to the SDK and the agent decides when it's done.
-    const maxTurns = config.agentMaxTurns ?? config.defaultMaxTurns;
+    // Gate 2: resolve `.github-app.yaml` into the agent knobs shipped with
+    // the job. `loadRepoPolicy` is the only entry point used here on purpose,
+    // it clamps `max_turns` / `timeout` against the server ceilings, so a
+    // repo cannot raise them by editing YAML. Never throws: a missing,
+    // unreachable, or invalid file yields DEFAULT_REPO_POLICY.
+    const repoPolicy = await loadRepoPolicy({ octokit: acceptOctokit, owner, repo, log: logger });
+    const executionPolicy = repoPolicy.defaults;
+
+    // Repo value first, then the pre-Gate-2 env chain verbatim. Keeping the
+    // env tail byte-identical is what makes a repo with no config file behave
+    // exactly as before. `AGENT_MAX_TURNS` doubles as the CEILING the resolver
+    // already clamped `workflowPolicy.maxTurns` against, so a repo can only
+    // lower the cap here, never raise it.
+    const maxTurns = executionPolicy.maxTurns ?? config.agentMaxTurns ?? config.defaultMaxTurns;
+    const policy = stripInstructionsUnlessReview(
+      toAgentPolicy(executionPolicy, repoPolicy.warning),
+      undefined,
+    );
+    // `maxTurns` is checked separately: `toAgentPolicy` never projects it (it
+    // rides the top-level payload field), so a repo whose only knob is
+    // `max_turns` resolves to `policy === undefined` and would otherwise log
+    // nothing at all, leaving "did this run honour the repo's knobs?"
+    // unanswerable.
+    if (policy !== undefined || executionPolicy.maxTurns !== undefined) {
+      logger.info(
+        {
+          event: "repo_config.policy_applied",
+          owner,
+          repo,
+          deliveryId: offer.deliveryId,
+          workflow: "none",
+          model: policy?.model,
+          maxTurns,
+          timeoutMs: policy?.timeoutMs,
+          extraAllowedToolCount: policy?.extraAllowedTools?.length ?? 0,
+          pathFilterCount: policy?.pathFilters?.length ?? 0,
+          // Text stays out of the log line: it can be 10KB of repo prose.
+          hasInstructions: policy?.instructions !== undefined,
+          warned: policy?.warning !== undefined,
+        },
+        "Per-repo agent policy applied",
+      );
+    }
     const { resolveAllowedTools } = await import("../core/prompt-builder");
 
     // Reconstruct a minimal BotContext-shaped object for resolveAllowedTools.
@@ -1002,7 +1068,7 @@ async function handleAccept(
             })),
           }
         : {}),
-      ...(offer.workflowRun !== undefined ? { workflowRun: offer.workflowRun } : {}),
+      ...(policy !== undefined ? { policy } : {}),
     });
   } catch (err) {
     logger.error({ err, offerId, daemonId }, "Failed to mint installation token for job");
@@ -1298,120 +1364,6 @@ async function loadReviewLearningsRag(
   }
 }
 
-/**
- * Persist learnings and deletions from a daemon execution to repo_memory
- * and (for review/resolve workflows) review_learnings. Extracted to reduce
- * nesting depth in handleResult.
- */
-async function persistRepoKnowledge(
-  deliveryId: string,
-  learnings: { category: string; content: string }[] | undefined,
-  deletions: string[] | undefined,
-  reviewLearningSaves:
-    | {
-        directive: string;
-        rationale?: string | undefined;
-        fileGlob?: string | undefined;
-        scope?: "local" | "global" | undefined;
-        sourcePr?: number | undefined;
-        sourceThread?: string | undefined;
-        sourceAuthor?: string | undefined;
-      }[]
-    | undefined,
-  reviewLearningDeletes: string[] | undefined,
-  appliedReviewLearningIds: string[] | undefined,
-): Promise<void> {
-  try {
-    const { saveRepoLearnings, deleteRepoMemories } = await import("./repo-knowledge");
-    const { requireDb } = await import("../db");
-    const knowledgeDb = requireDb();
-    const execRows: { repo_owner: string; repo_name: string }[] = await knowledgeDb`
-      SELECT repo_owner, repo_name FROM executions WHERE delivery_id = ${deliveryId}
-    `;
-    const exec = execRows[0];
-    if (exec === undefined) return;
-
-    if (learnings !== undefined && learnings.length > 0) {
-      const saved = await saveRepoLearnings(exec.repo_owner, exec.repo_name, learnings);
-      if (saved > 0) {
-        logger.info({ deliveryId, saved }, "Persisted repo learnings from execution");
-      }
-    }
-    if (deletions !== undefined && deletions.length > 0) {
-      const deleted = await deleteRepoMemories(deletions);
-      if (deleted > 0) {
-        logger.info({ deliveryId, deleted }, "Deleted outdated repo memories per daemon request");
-      }
-    }
-    // Kill-switch: when disabled, drop any review-learning actions an agent
-    // managed to emit (e.g. because the operator flipped the flag mid-run
-    // or a daemon was started before the flag flipped). Log so the drop is
-    // visible in audits.
-    if (
-      config.reviewLearningsEnabled &&
-      reviewLearningSaves !== undefined &&
-      reviewLearningSaves.length > 0
-    ) {
-      const { saveReviewLearnings } = await import("./review-learnings");
-      const saved = await saveReviewLearnings(exec.repo_owner, exec.repo_name, reviewLearningSaves);
-      if (saved > 0) {
-        logger.info({ deliveryId, saved }, "Persisted review learnings from execution");
-      }
-    } else if (reviewLearningSaves !== undefined && reviewLearningSaves.length > 0) {
-      logger.warn(
-        { deliveryId, dropped: reviewLearningSaves.length },
-        "Dropped review-learning saves: REVIEW_LEARNINGS_ENABLED=false",
-      );
-    }
-    if (
-      config.reviewLearningsEnabled &&
-      reviewLearningDeletes !== undefined &&
-      reviewLearningDeletes.length > 0
-    ) {
-      const { deleteReviewLearnings } = await import("./review-learnings");
-      // Owner/repo-scoped delete: an id that doesn't belong to this job's
-      // (owner, repo) is silently no-opped (1.5.D). The caller-supplied
-      // exec.repo_owner / exec.repo_name come from the executions row we
-      // already SELECTed above.
-      const deleted = await deleteReviewLearnings(
-        exec.repo_owner,
-        exec.repo_name,
-        reviewLearningDeletes,
-      );
-      if (deleted > 0) {
-        logger.info(
-          { deliveryId, deleted },
-          "Deleted outdated review learnings per daemon request",
-        );
-      }
-    } else if (reviewLearningDeletes !== undefined && reviewLearningDeletes.length > 0) {
-      // Symmetric audit log: when the kill-switch is off and the daemon sent
-      // deletes anyway (e.g. flag flipped mid-run), record the drop just like
-      // we do for save actions above.
-      logger.warn(
-        { deliveryId, dropped: reviewLearningDeletes.length },
-        "Dropped review-learning deletes: REVIEW_LEARNINGS_ENABLED=false",
-      );
-    }
-    // 1.5.E: bump use_count for the IDs the daemon actually applied to a
-    // prompt this run. Behind the same kill-switch.
-    if (
-      config.reviewLearningsEnabled &&
-      appliedReviewLearningIds !== undefined &&
-      appliedReviewLearningIds.length > 0
-    ) {
-      const { bumpReviewLearningUsage } = await import("./review-learnings");
-      await bumpReviewLearningUsage(appliedReviewLearningIds);
-      logger.info(
-        { deliveryId, applied: appliedReviewLearningIds.length },
-        "Bumped use_count for applied review learnings",
-      );
-    }
-  } catch (err) {
-    logger.error({ err, deliveryId }, "Failed to persist repo knowledge");
-  }
-}
-
 /** Persist execution outcome to the database. */
 async function finalizeExecution(
   deliveryId: string,
@@ -1518,14 +1470,20 @@ async function handleResult(
     (reviewLearningDeletes !== undefined && reviewLearningDeletes.length > 0) ||
     (appliedReviewLearningIds !== undefined && appliedReviewLearningIds.length > 0)
   ) {
-    await persistRepoKnowledge(
-      actualDeliveryId,
-      learnings,
-      deletions,
-      reviewLearningSaves,
-      reviewLearningDeletes,
-      appliedReviewLearningIds,
-    );
+    try {
+      await persistRepoKnowledge({
+        deliveryId: actualDeliveryId,
+        daemonActions: {
+          learnings: learnings ?? [],
+          deletions: deletions ?? [],
+          ...(reviewLearningSaves !== undefined ? { reviewLearningSaves } : {}),
+          ...(reviewLearningDeletes !== undefined ? { reviewLearningDeletes } : {}),
+        },
+        ...(appliedReviewLearningIds !== undefined ? { appliedReviewLearningIds } : {}),
+      });
+    } catch (err) {
+      logger.error({ err, deliveryId: actualDeliveryId }, "Failed to persist repo knowledge");
+    }
   }
 
   logger.info(

@@ -65,7 +65,6 @@ function buildCallLlm(): (input: {
         system: params.systemPrompt,
         messages: [{ role: "user", content: params.userPrompt }],
         maxTokens: 800,
-        temperature: 0.1,
         tools: params.tools,
         onToolCall: params.onToolCall,
       });
@@ -76,7 +75,6 @@ function buildCallLlm(): (input: {
       system: params.systemPrompt,
       messages: [{ role: "user", content: params.userPrompt }],
       maxTokens: 800,
-      temperature: 0.1,
     });
     return res.text;
   };

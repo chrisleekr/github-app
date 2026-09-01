@@ -23,13 +23,7 @@ export function daemonEnvironmentBoundaryFailure(input: {
   return `daemon environment isolation probe failed with exit code ${String(input.probeExitCode)}`;
 }
 
-/**
- * Throw if a same-UID child can read this process's environment.
- *
- * Called by `process-boundary-smoke.ts`, the entrypoint the daemon image build
- * runs to prove the guard is installed and effective in the built image. The
- * daemon startup path wires it separately.
- */
+/** Fail daemon startup if a same-UID child can inspect the parent environment. */
 export function assertDaemonEnvironmentPrivate(): void {
   const runtimePlatform = platform();
   if (runtimePlatform !== "linux") return;

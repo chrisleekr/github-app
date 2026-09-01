@@ -1,7 +1,6 @@
 import type { SQL } from "bun";
 
 import { requireDb } from "../db";
-import { logger } from "../logger";
 import { sanitizeRepoMemoryContent } from "../utils/sanitize";
 
 // Types
@@ -107,7 +106,7 @@ export async function getRepoMemory(
 export async function saveRepoLearnings(
   owner: string,
   repo: string,
-  learnings: { category: string; content: string }[],
+  learnings: readonly { category: string; content: string }[],
   db: SQL = requireDb(),
 ): Promise<number> {
   if (learnings.length === 0) return 0;
@@ -123,28 +122,27 @@ export async function saveRepoLearnings(
     // collapsed to nothing after sanitization.
     const safeContent = sanitizeRepoMemoryContent(learning.content);
     if (safeContent === "") continue;
-    try {
-      // Upsert: insert if new, bump updated_at if duplicate
-      // eslint-disable-next-line no-await-in-loop
-      const result: { id: string }[] = await db`
-          INSERT INTO repo_memory (repo_owner, repo_name, category, content, pinned)
-          VALUES (${owner}, ${repo}, ${learning.category}, ${safeContent}, false)
-          ON CONFLICT DO NOTHING
-          RETURNING id
-        `;
-      if (result.length > 0) {
-        saved++;
-      } else {
-        // Duplicate, bump updated_at to keep it relevant in LRU
-        // eslint-disable-next-line no-await-in-loop
-        await db`
-          UPDATE repo_memory SET updated_at = now()
-          WHERE repo_owner = ${owner} AND repo_name = ${repo}
-            AND category = ${learning.category} AND content = ${safeContent}
-        `;
-      }
-    } catch (err) {
-      logger.warn({ err, owner, repo, category: learning.category }, "Failed to save learning");
+    // eslint-disable-next-line no-await-in-loop -- bounded action list preserves result order
+    const result: { id: string }[] = await db`
+      INSERT INTO repo_memory (repo_owner, repo_name, category, content, pinned)
+      VALUES (${owner}, ${repo}, ${learning.category}, ${safeContent}, false)
+      ON CONFLICT (
+        repo_owner,
+        repo_name,
+        category,
+        content_sha256
+      ) WHERE category <> 'env_var' DO NOTHING
+      RETURNING id
+    `;
+    if (result.length > 0) {
+      saved++;
+    } else {
+      // eslint-disable-next-line no-await-in-loop -- bounded action list preserves result order
+      await db`
+        UPDATE repo_memory SET updated_at = now()
+        WHERE repo_owner = ${owner} AND repo_name = ${repo}
+          AND category = ${learning.category} AND content = ${safeContent}
+      `;
     }
   }
 
@@ -155,10 +153,19 @@ export async function saveRepoLearnings(
  * Delete repo memory entries by ID.
  * Used when Claude identifies outdated or incorrect memories.
  */
-export async function deleteRepoMemories(ids: string[], db: SQL = requireDb()): Promise<number> {
+export async function deleteRepoMemories(
+  owner: string,
+  repo: string,
+  ids: readonly string[],
+  db: SQL = requireDb(),
+): Promise<number> {
   if (ids.length === 0) return 0;
   const deleted: { id: string }[] = await db`
-    DELETE FROM repo_memory WHERE id IN ${db(ids)} RETURNING id
+    DELETE FROM repo_memory
+     WHERE id IN ${db(ids)}
+       AND repo_owner = ${owner}
+       AND repo_name = ${repo}
+    RETURNING id
   `;
   return deleted.length;
 }

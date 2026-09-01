@@ -1,3 +1,4 @@
+import type { SQL } from "bun";
 import type pino from "pino";
 
 import { createExecution } from "../orchestrator/history";
@@ -6,14 +7,13 @@ import type { TriggerEventType } from "../shared/dispatch-types";
 import type { DispatchTarget } from "./dispatcher";
 
 /**
- * Builds the `context_json` shape the accept handler on
- * `src/orchestrator/connection-handler.ts` reads when a daemon claims a
- * workflow-dispatched job. Mirrors the fields `buildSyntheticBotContext`
+ * Builds the `context_json` shape the controller reads while preparing an
+ * isolated workflow-runner payload. Mirrors the fields `buildSyntheticBotContext`
  * (in handlers/plan.ts) fills and `serializeBotContext` emits: the only
  * keys consumed downstream on the workflow branch are `owner`, `repo`,
  * `isPR`, `labels`, plus the four fields `validateJobContext` hard-requires
  * (`deliveryId`, `owner`, `repo`, `entityNumber`). All other fields are
- * carried for forward-compat parity with the legacy pipeline shape.
+ * carried for compatibility with the shared pipeline shape.
  *
  * `eventName` defaults to `"issue_comment"` for label-triggered runs (no
  * originating comment) and is set to the real event when the dispatcher
@@ -47,12 +47,9 @@ export function buildWorkflowContextJson(params: {
 }
 
 /**
- * Persist an `executions` row and take a concurrency slot for a
- * workflow-dispatched job. MUST be called before `enqueueJob` so the
- * daemon's accept handler can resolve context_json via the delivery_id.
- * On failure, the caller must release the slot + unwind the workflow_runs
- * row: see `dispatcher.ts` / `orchestrator.ts` for the compensation
- * pattern.
+ * Persist the execution-history half of a workflow dispatch. Callers write
+ * it in the same transaction as `workflow_runs`, then publish only after the
+ * transaction commits so the controller never dispatches an incomplete pair.
  */
 export async function recordWorkflowExecution(params: {
   deliveryId: string;
@@ -64,6 +61,7 @@ export async function recordWorkflowExecution(params: {
   logger: pino.Logger;
   triggerCommentId?: number;
   triggerEventType?: TriggerEventType;
+  sql?: SQL;
 }): Promise<void> {
   const { deliveryId, target, senderLogin, workflowName, runId, labels, logger } = params;
   const { triggerCommentId, triggerEventType } = params;
@@ -77,20 +75,24 @@ export async function recordWorkflowExecution(params: {
     ...(triggerEventType !== undefined ? { triggerEventType } : {}),
   });
 
-  await createExecution({
-    deliveryId,
-    repoOwner: target.owner,
-    repoName: target.repo,
-    entityNumber: target.number,
-    entityType: target.type === "pr" ? "pull_request" : "issue",
-    eventName: triggerEventType ?? "issue_comment",
-    triggerUsername: senderLogin,
-    dispatchMode: "daemon",
-    dispatchReason: "persistent-daemon",
-    contextJson,
-    ...(triggerCommentId !== undefined ? { triggerCommentId } : {}),
-    ...(triggerEventType !== undefined ? { triggerEventType } : {}),
-  });
+  await createExecution(
+    {
+      deliveryId,
+      repoOwner: target.owner,
+      repoName: target.repo,
+      entityNumber: target.number,
+      entityType: target.type === "pr" ? "pull_request" : "issue",
+      eventName: triggerEventType ?? "issue_comment",
+      triggerUsername: senderLogin,
+      dispatchMode: "workflow-runner",
+      dispatchTarget: "workflow-runner",
+      dispatchReason: "workflow-runner",
+      contextJson,
+      ...(triggerCommentId !== undefined ? { triggerCommentId } : {}),
+      ...(triggerEventType !== undefined ? { triggerEventType } : {}),
+    },
+    params.sql,
+  );
 
   logger.info(
     {

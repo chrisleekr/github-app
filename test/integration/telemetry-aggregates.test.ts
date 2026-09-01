@@ -33,6 +33,7 @@ describe.skipIf(sql === null)("FR-014 aggregate queries, dispatch-stats.ts", () 
     const db = requireSql();
     await db.unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -51,10 +52,9 @@ describe.skipIf(sql === null)("FR-014 aggregate queries, dispatch-stats.ts", () 
     const { runMigrations } = await import("../../src/db/migrate");
     await runMigrations(db);
 
-    // Post-collapse dispatch values: target always 'daemon'; reason in
-    // {persistent-daemon, ephemeral-daemon-triage, ephemeral-daemon-overflow,
-    // ephemeral-spawn-failed}. All rows inside the default 30-day window
-    // except the '60 days' out-of-window row used for window-filter coverage.
+    // Shared jobs retain the daemon target and structured workflows use the
+    // workflow-runner target. All rows are inside the default 30-day window
+    // except the 60-day row used for window-filter coverage.
     await db`
       INSERT INTO executions (
         delivery_id, repo_owner, repo_name, entity_number, entity_type,
@@ -67,6 +67,7 @@ describe.skipIf(sql === null)("FR-014 aggregate queries, dispatch-stats.ts", () 
         ('d-4',  'o', 'r', 4,  'issue', 'issue_comment', 'u', 'daemon', 'daemon', 'ephemeral-spawn-failed',    NULL, NULL, 'queued', NOW() - INTERVAL '2 days'),
         ('d-5',  'o', 'r', 5,  'issue', 'issue_comment', 'u', 'daemon', 'daemon', 'persistent-daemon',         NULL, NULL, 'queued', NOW() - INTERVAL '2 days'),
         ('d-6',  'o', 'r', 6,  'issue', 'issue_comment', 'u', 'daemon', 'daemon', 'ephemeral-daemon-overflow', NULL, NULL, 'queued', NOW() - INTERVAL '2 days'),
+        ('d-7',  'o', 'r', 7,  'issue', 'issue_comment', 'u', 'workflow-runner', 'workflow-runner', 'workflow-runner', NULL, NULL, 'queued', NOW() - INTERVAL '6 hours'),
         ('d-old','o', 'r', 99, 'issue', 'issue_comment', 'u', 'daemon', 'daemon', 'persistent-daemon',         NULL, NULL, 'queued', NOW() - INTERVAL '60 days')
     `;
 
@@ -87,6 +88,7 @@ describe.skipIf(sql === null)("FR-014 aggregate queries, dispatch-stats.ts", () 
     const db = requireSql();
     await db.unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -105,13 +107,13 @@ describe.skipIf(sql === null)("FR-014 aggregate queries, dispatch-stats.ts", () 
     await db.close();
   });
 
-  it("eventsPerTarget, all rows collapse to 'daemon' post-migration", async () => {
+  it("eventsPerTarget separates shared daemons from isolated workflow runners", async () => {
     const { eventsPerTarget } = await import("../../src/db/queries/dispatch-stats");
     const rows = await eventsPerTarget(30, requireSql());
-    expect(rows.length).toBe(1);
-    expect(rows[0]?.dispatch_target).toBe("daemon");
-    // 6 rows in the 30-day window; the 60-day row is excluded.
-    expect(rows[0]?.events).toBe(6);
+    expect(rows).toEqual([
+      { dispatch_target: "daemon", events: 6 },
+      { dispatch_target: "workflow-runner", events: 1 },
+    ]);
   });
 
   it("triageRate: counts ephemeral-daemon-triage as triaged", async () => {
@@ -120,7 +122,7 @@ describe.skipIf(sql === null)("FR-014 aggregate queries, dispatch-stats.ts", () 
 
     const totalTriaged = rows.reduce((acc, r) => acc + r.triaged, 0);
     const totalAll = rows.reduce((acc, r) => acc + r.total, 0);
-    // Only d-2 has reason='ephemeral-daemon-triage'; 6 total in-window.
+    // Only d-2 has reason='ephemeral-daemon-triage'; the runner row is excluded.
     expect(totalTriaged).toBe(1);
     expect(totalAll).toBe(6);
 
@@ -155,11 +157,12 @@ describe.skipIf(sql === null)("FR-014 aggregate queries, dispatch-stats.ts", () 
   it("queries honour the `days` parameter, shrinking the window drops rows", async () => {
     const { eventsPerTarget, triageSpend } = await import("../../src/db/queries/dispatch-stats");
 
-    // 1-day window: only d-1, d-2, d-3 survive (3 rows).
+    // 1-day window: d-1, d-2, d-3, and d-7 survive.
     const rows = await eventsPerTarget(1, requireSql());
-    expect(rows.length).toBe(1);
-    expect(rows[0]?.dispatch_target).toBe("daemon");
-    expect(rows[0]?.events).toBe(3);
+    expect(rows).toEqual([
+      { dispatch_target: "daemon", events: 3 },
+      { dispatch_target: "workflow-runner", events: 1 },
+    ]);
 
     const spend = await triageSpend(1, requireSql());
     expect(spend.total_triage_spend_usd).toBeCloseTo(0.0017, 6);

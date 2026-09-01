@@ -1,15 +1,21 @@
 import type { Octokit } from "octokit";
 import type pino from "pino";
 
+import type { CommandIntent } from "../shared/ship-types";
 import { safePostToGitHub } from "../utils/github-output-guard";
 import type { WorkflowName } from "./registry";
 import {
+  assertCurrentWorkflowAttempt,
   clearTrackingCommentId,
+  clearTrackingCommentIdForAttempt,
   findById,
   findPriorTrackingComments,
   listChildrenByParent,
+  mergeAttemptState,
   mergeState,
+  StaleWorkflowAttemptError,
   tryReserveTrackingCommentId,
+  type WorkflowAttempt,
   type WorkflowRunRow,
 } from "./runs-store";
 
@@ -20,7 +26,40 @@ import {
  * across child step updates. Underscore prefix marks it as an internal field
  * not meant for handler-visible state.
  */
-const LAST_HUMAN_MESSAGE_KEY = "_lastHumanMessage";
+export const LAST_HUMAN_MESSAGE_KEY = "_lastHumanMessage";
+
+/**
+ * State key holding the run's `.github-app.yaml` notice (invalid-config
+ * fail-open warning and/or the `review.path_filters` scope reduction).
+ *
+ * Persisted on the row rather than prepended to one message because
+ * `renderCommentBody` rebuilds the body from scratch on every write: a
+ * one-shot prepend is erased by the next progress or terminal update.
+ *
+ * Underscore prefix per this file's convention: the key shares the flat
+ * `workflow_runs.state` namespace that handlers merge into via `ctx.setState`,
+ * and marks it as internal rather than handler-visible state.
+ */
+export const CONFIG_NOTICE_KEY = "_configNotice";
+
+/**
+ * Render the persisted config notice as a GitHub alert block. Each stored
+ * line becomes its own paragraph inside the alert.
+ *
+ * Whitespace is collapsed per line: a lone `\r` breaks out of the `> ` line
+ * and orphans the rest of the notice outside the blockquote. A blank or
+ * non-string value renders nothing, so a whitespace-only warning is treated
+ * as absent (same rule as the direct rail's `createTrackingComment`).
+ */
+function renderConfigNotice(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const lines = raw
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line !== "");
+  if (lines.length === 0) return "";
+  return `> [!WARNING]\n${lines.map((line) => `> ${line}`).join("\n>\n")}\n\n`;
+}
 
 /**
  * Hidden HTML-comment marker embedded in every tracking-comment body. Used
@@ -57,7 +96,8 @@ export interface TrackingMirrorDeps {
  */
 export function renderCommentBody(row: WorkflowRunRow, humanMessage: string): string {
   const header = `**bot workflow \`${row.workflow_name}\`**, ${row.status}`;
-  return `${runMarker(row.id)}\n${header}\n\n${humanMessage}`;
+  const notice = renderConfigNotice(row.state[CONFIG_NOTICE_KEY]);
+  return `${runMarker(row.id)}\n${header}\n\n${notice}${humanMessage}`;
 }
 
 /**
@@ -91,6 +131,12 @@ export interface SetStateParams {
   readonly runId: string;
   readonly patch: Record<string, unknown>;
   readonly humanMessage: string;
+  readonly attempt?: WorkflowAttempt;
+}
+
+async function assertAttempt(attempt: WorkflowAttempt | undefined): Promise<void> {
+  if (attempt === undefined) return;
+  await assertCurrentWorkflowAttempt(attempt);
 }
 
 /**
@@ -106,14 +152,22 @@ export async function setState(
   params: SetStateParams,
 ): Promise<WorkflowRunRow> {
   const { octokit, logger } = deps;
-  const { runId, patch, humanMessage } = params;
+  const { runId, patch, humanMessage, attempt } = params;
+  if (attempt !== undefined && attempt.runId !== runId) {
+    throw new Error("tracking-mirror.setState received a mismatched workflow attempt");
+  }
 
   // Persist the human message alongside the caller's patch so the cascade
   // refresh can re-render the parent's composite body without losing this
   // run's narrative.
-  await mergeState(runId, { ...patch, [LAST_HUMAN_MESSAGE_KEY]: humanMessage });
-
-  const row = await findById(runId);
+  const mergedPatch = { ...patch, [LAST_HUMAN_MESSAGE_KEY]: humanMessage };
+  let row: WorkflowRunRow | null;
+  if (attempt === undefined) {
+    await mergeState(runId, mergedPatch);
+    row = await findById(runId);
+  } else {
+    row = await mergeAttemptState(attempt, mergedPatch);
+  }
   if (row === null) {
     throw new Error(`tracking-mirror.setState: run ${runId} not found after merge`);
   }
@@ -122,27 +176,29 @@ export async function setState(
 
   let resultRow: WorkflowRunRow;
   if (row.tracking_comment_id === null) {
-    resultRow = await createOrAdoptTrackingComment(deps, row, body, humanMessage);
+    resultRow = await createOrAdoptTrackingComment(deps, row, body, humanMessage, attempt);
     // First touch for this run: AFTER the new comment is safely created and
     // reserved, delete this workflow's stale tracking comment(s) from earlier
     // runs so re-running a workflow does not pile up comments. Ordered after
     // create so a create failure never leaves the thread with no comment.
     // Best-effort: never blocks.
-    await cleanupPriorTrackingComments(deps, resultRow);
+    await cleanupPriorTrackingComments(deps, resultRow, attempt);
   } else {
     const commentId = row.tracking_comment_id;
     await safePostToGitHub({
       body,
-      source: "system",
+      source: "agent",
       callsite: "workflows.tracking-mirror.update",
       log: logger,
-      post: (cleanBody) =>
-        octokit.rest.issues.updateComment({
+      post: async (cleanBody) => {
+        await assertAttempt(attempt);
+        return octokit.rest.issues.updateComment({
           owner: row.target_owner,
           repo: row.target_repo,
           comment_id: commentId,
           body: cleanBody,
-        }),
+        });
+      },
     });
     resultRow = row;
   }
@@ -153,16 +209,19 @@ export async function setState(
   // failure must never bubble up because the child's own write already
   // succeeded.
   if (resultRow.parent_run_id !== null) {
-    await refreshParentCompositeBody(deps, resultRow.parent_run_id).catch((err: unknown) => {
-      logger.warn(
-        {
-          err: err instanceof Error ? err.message : String(err),
-          parentRunId: resultRow.parent_run_id,
-          childRunId: runId,
-        },
-        "Cascade refresh of parent composite body failed",
-      );
-    });
+    await refreshParentCompositeBody(deps, resultRow.parent_run_id, attempt).catch(
+      (err: unknown) => {
+        if (err instanceof StaleWorkflowAttemptError) throw err;
+        logger.warn(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            parentRunId: resultRow.parent_run_id,
+            childRunId: runId,
+          },
+          "Cascade refresh of parent composite body failed",
+        );
+      },
+    );
   }
 
   return resultRow;
@@ -183,6 +242,7 @@ export async function setState(
 async function cleanupPriorTrackingComments(
   deps: TrackingMirrorDeps,
   row: WorkflowRunRow,
+  attempt: WorkflowAttempt | undefined,
 ): Promise<void> {
   const { octokit, logger } = deps;
   try {
@@ -194,6 +254,8 @@ async function cleanupPriorTrackingComments(
     for (const prior of priors) {
       if (prior.runId === row.parent_run_id) continue;
       try {
+        // eslint-disable-next-line no-await-in-loop
+        await assertAttempt(attempt);
         await octokit.rest.issues.deleteComment({
           owner: row.target_owner,
           repo: row.target_repo,
@@ -201,7 +263,10 @@ async function cleanupPriorTrackingComments(
         });
         // Clear the prior row's id so a future re-run does not re-list and
         // re-attempt a 404 delete on this already-removed comment.
-        await clearTrackingCommentId(prior.runId);
+        // eslint-disable-next-line no-await-in-loop
+        if (attempt === undefined) await clearTrackingCommentId(prior.runId);
+        // eslint-disable-next-line no-await-in-loop
+        else await clearTrackingCommentIdForAttempt(prior.runId, attempt);
         logger.info(
           {
             runId: row.id,
@@ -212,6 +277,7 @@ async function cleanupPriorTrackingComments(
           "Deleted prior-run tracking comment on workflow re-run",
         );
       } catch (err) {
+        if (err instanceof StaleWorkflowAttemptError) throw err;
         logger.warn(
           {
             runId: row.id,
@@ -224,6 +290,7 @@ async function cleanupPriorTrackingComments(
       }
     }
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     logger.warn(
       { runId: row.id, err: err instanceof Error ? err.message : String(err) },
       "Prior tracking-comment lookup failed, skipping re-run cleanup",
@@ -251,27 +318,30 @@ async function createOrAdoptTrackingComment(
   row: WorkflowRunRow,
   body: string,
   humanMessage: string,
+  attempt: WorkflowAttempt | undefined,
 ): Promise<WorkflowRunRow> {
   const { octokit, logger } = deps;
   const runId = row.id;
 
-  const adopted = await tryAdoptExistingMarkerComment(deps, row, humanMessage);
+  const adopted = await tryAdoptExistingMarkerComment(deps, row, humanMessage, attempt);
   if (adopted !== null) return adopted;
 
   let createErr: unknown = null;
   try {
     const guarded = await safePostToGitHub({
       body,
-      source: "system",
+      source: "agent",
       callsite: "workflows.tracking-mirror.create",
       log: deps.logger,
-      post: (cleanBody) =>
-        octokit.rest.issues.createComment({
+      post: async (cleanBody) => {
+        await assertAttempt(attempt);
+        return octokit.rest.issues.createComment({
           owner: row.target_owner,
           repo: row.target_repo,
           issue_number: row.target_number,
           body: cleanBody,
-        }),
+        });
+      },
     });
     // safePostToGitHub returns posted:false when the body is emptied by
     // secret redaction. Surface that as a synthetic createErr so the
@@ -319,7 +389,10 @@ async function createOrAdoptTrackingComment(
   // its canonical comment silently deleted by us. After CAS, the canonical
   // id is whatever the row holds, every other marker comment is a true
   // duplicate and safe to delete.
-  const reservation = await tryReserveTrackingCommentId(runId, candidate.id);
+  const reservation =
+    attempt === undefined
+      ? await tryReserveTrackingCommentId(runId, candidate.id)
+      : await tryReserveTrackingCommentId(runId, candidate.id, attempt);
   const winningId = reservation.trackingCommentId;
   const losers = matches.filter((m) => m.id !== winningId);
 
@@ -338,12 +411,15 @@ async function createOrAdoptTrackingComment(
 
   for (const loser of losers) {
     try {
+      // eslint-disable-next-line no-await-in-loop
+      await assertAttempt(attempt);
       await octokit.rest.issues.deleteComment({
         owner: row.target_owner,
         repo: row.target_repo,
         comment_id: loser.id,
       });
     } catch (deleteErr) {
+      if (deleteErr instanceof StaleWorkflowAttemptError) throw deleteErr;
       logger.warn(
         {
           runId,
@@ -368,16 +444,18 @@ async function createOrAdoptTrackingComment(
   const latest = (await findById(runId)) ?? row;
   await safePostToGitHub({
     body: renderCommentBody(latest, humanMessage),
-    source: "system",
+    source: "agent",
     callsite: "workflows.tracking-mirror.post-create-update",
     log: deps.logger,
-    post: (cleanBody) =>
-      octokit.rest.issues.updateComment({
+    post: async (cleanBody) => {
+      await assertAttempt(attempt);
+      return octokit.rest.issues.updateComment({
         owner: latest.target_owner,
         repo: latest.target_repo,
         comment_id: winningId,
         body: cleanBody,
-      }),
+      });
+    },
   });
   return { ...latest, tracking_comment_id: winningId };
 }
@@ -392,6 +470,7 @@ async function tryAdoptExistingMarkerComment(
   deps: TrackingMirrorDeps,
   row: WorkflowRunRow,
   humanMessage: string,
+  attempt: WorkflowAttempt | undefined,
 ): Promise<WorkflowRunRow | null> {
   const { octokit, logger } = deps;
   const matches = await findCommentsByMarker(deps, row);
@@ -403,7 +482,10 @@ async function tryAdoptExistingMarkerComment(
   // CAS first, delete after, see createOrAdoptTrackingComment for the
   // race that justifies this ordering. The reservation determines the
   // canonical id; every non-canonical marker comment is then deleted.
-  const reservation = await tryReserveTrackingCommentId(row.id, candidate.id);
+  const reservation =
+    attempt === undefined
+      ? await tryReserveTrackingCommentId(row.id, candidate.id)
+      : await tryReserveTrackingCommentId(row.id, candidate.id, attempt);
   const winningId = reservation.trackingCommentId;
   const losers = matches.filter((m) => m.id !== winningId);
 
@@ -419,12 +501,15 @@ async function tryAdoptExistingMarkerComment(
 
   for (const loser of losers) {
     try {
+      // eslint-disable-next-line no-await-in-loop
+      await assertAttempt(attempt);
       await octokit.rest.issues.deleteComment({
         owner: row.target_owner,
         repo: row.target_repo,
         comment_id: loser.id,
       });
     } catch (deleteErr) {
+      if (deleteErr instanceof StaleWorkflowAttemptError) throw deleteErr;
       logger.warn(
         {
           runId: row.id,
@@ -439,16 +524,18 @@ async function tryAdoptExistingMarkerComment(
   const latest = (await findById(row.id)) ?? row;
   await safePostToGitHub({
     body: renderCommentBody(latest, humanMessage),
-    source: "system",
+    source: "agent",
     callsite: "workflows.tracking-mirror.adopt-update",
     log: deps.logger,
-    post: (cleanBody) =>
-      octokit.rest.issues.updateComment({
+    post: async (cleanBody) => {
+      await assertAttempt(attempt);
+      return octokit.rest.issues.updateComment({
         owner: latest.target_owner,
         repo: latest.target_repo,
         comment_id: winningId,
         body: cleanBody,
-      }),
+      });
+    },
   });
   return { ...latest, tracking_comment_id: winningId };
 }
@@ -462,6 +549,7 @@ async function tryAdoptExistingMarkerComment(
 async function refreshParentCompositeBody(
   deps: TrackingMirrorDeps,
   parentRunId: string,
+  attempt: WorkflowAttempt | undefined,
 ): Promise<void> {
   const { octokit } = deps;
 
@@ -475,16 +563,18 @@ async function refreshParentCompositeBody(
 
   await safePostToGitHub({
     body,
-    source: "system",
+    source: "agent",
     callsite: "workflows.tracking-mirror.composite-refresh",
     log: deps.logger,
-    post: (cleanBody) =>
-      octokit.rest.issues.updateComment({
+    post: async (cleanBody) => {
+      await assertAttempt(attempt);
+      return octokit.rest.issues.updateComment({
         owner: parent.target_owner,
         repo: parent.target_repo,
         comment_id: commentId,
         body: cleanBody,
-      }),
+      });
+    },
   });
 }
 
@@ -570,18 +660,23 @@ function truncateForComposite(text: string): string {
  * purely cosmetic: the DB is already authoritative, so a transient GitHub
  * API blip must not bubble up into `dispatchByLabel` / `dispatchByIntent` and
  * surface as a webhook 500.
+ *
+ * `label` names what the user asked for. The dispatcher passes a registry
+ * workflow name; the canonical ship rail passes a `CommandIntent`, since most
+ * of its verbs are scoped actions with no registry entry and echoing
+ * "unknown" back at someone who typed `bot:summarize` explains nothing.
  */
 export async function postRefusalComment(
   deps: TrackingMirrorDeps,
   target: { owner: string; repo: string; number: number },
-  workflowName: WorkflowName | "unknown",
+  workflowName: WorkflowName | CommandIntent | "unknown",
   reason: string,
 ): Promise<void> {
   const body = `**bot workflow \`${workflowName}\`** refused: ${reason}`;
   try {
     await safePostToGitHub({
       body,
-      source: "system",
+      source: "agent",
       callsite: "workflows.tracking-mirror.postRefusalComment",
       log: deps.logger,
       post: (cleanBody) =>

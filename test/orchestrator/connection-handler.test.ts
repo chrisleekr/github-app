@@ -12,10 +12,15 @@
  * to avoid mock.module() conflicts when all tests run in the same process.
  */
 
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, jest, mock, spyOn } from "bun:test";
 
 import type { DaemonCapabilities, DaemonInfo } from "../../src/shared/daemon-types";
-import type { DaemonMessage } from "../../src/shared/ws-messages";
+import {
+  type DaemonMessage,
+  daemonMessageSchema,
+  PROTOCOL_VERSION,
+  serverMessageSchema,
+} from "../../src/shared/ws-messages";
 
 // ─── Leaf dependency mocks (shared across all orchestrator tests) ─────────────
 // These MUST be declared and registered before any SUT import.
@@ -32,7 +37,7 @@ const mockRegisterDaemon = mock(
       osVersion: "6.1",
       capabilities: makeFakeCapabilities(),
       status: "active",
-      protocolVersion: "1.0.0",
+      protocolVersion: PROTOCOL_VERSION,
       appVersion: "0.1.0",
       activeJobs: 0,
       lastSeenAt: Date.now(),
@@ -63,20 +68,29 @@ const mockGetOrphanedExecutions = mock(
 const mockMarkExecutionFailed = mock(() => Promise.resolve());
 const mockMarkExecutionRunning = mock(() => Promise.resolve());
 const mockMarkExecutionCompleted = mock(() => Promise.resolve());
-const mockMarkExecutionOffered = mock(() => Promise.resolve());
-const mockRequeueExecution = mock(() => Promise.resolve());
+const mockMarkExecutionOffered = mock(() => Promise.resolve("offered" as const));
+const mockRequeueExecution = mock(() => Promise.resolve(true));
+const mockFailDisconnectedDaemon = mock(() =>
+  Promise.resolve({ executionDeliveryIds: [] as string[], workflowRunIds: [] as string[] }),
+);
 const mockGetExecutionState = mock(
   (): Promise<{ status: string; daemonId: string | null } | null> => Promise.resolve(null),
 );
 
 void mock.module("../../src/orchestrator/history", () => ({
   getOrphanedExecutions: mockGetOrphanedExecutions,
+  failDisconnectedDaemon: mockFailDisconnectedDaemon,
   markExecutionFailed: mockMarkExecutionFailed,
   markExecutionRunning: mockMarkExecutionRunning,
   markExecutionCompleted: mockMarkExecutionCompleted,
   markExecutionOffered: mockMarkExecutionOffered,
   getExecutionState: mockGetExecutionState,
   requeueExecution: mockRequeueExecution,
+}));
+
+const mockNotifyDisconnectedDaemonWorkflows = mock(() => Promise.resolve());
+void mock.module("../../src/orchestrator/workflow-expiry-notifier", () => ({
+  notifyDisconnectedDaemonWorkflows: mockNotifyDisconnectedDaemonWorkflows,
 }));
 
 // job-queue
@@ -110,12 +124,48 @@ void mock.module("../../src/orchestrator/concurrency", () => ({
 // Mock octokit App
 const mockGetRepoInstallation = mock(() => Promise.resolve({ data: { id: 123 } }));
 const mockAuth = mock(() => Promise.resolve({ token: "ghs_fake_token" }));
-const mockGetInstallationOctokit = mock(() => Promise.resolve({ auth: mockAuth }));
+
+/**
+ * Body served for `.github-app.yaml` by the accept-path octokit. `null` (the
+ * default) means "no file", so the real `fetchRepoConfig` returns `absent` and
+ * every pre-existing test keeps its default-policy behaviour.
+ */
+let repoConfigYaml: string | null = null;
+
+function makeAcceptOctokit(): unknown {
+  return {
+    auth: mockAuth,
+    rest: {
+      repos: {
+        getContent: mock(() => {
+          if (repoConfigYaml === null) {
+            const err = new Error("Not Found") as Error & { status: number };
+            err.status = 404;
+            return Promise.reject(err);
+          }
+          return Promise.resolve({
+            data: {
+              type: "file",
+              content: Buffer.from(repoConfigYaml, "utf-8").toString("base64"),
+              sha: "cfg-sha",
+            },
+            headers: {},
+          });
+        }),
+      },
+    },
+  };
+}
+
+const mockGetInstallationOctokit = mock(() => Promise.resolve(makeAcceptOctokit()));
 
 void mock.module("octokit", () => ({
   App: class MockApp {
     octokit = {
       rest: { apps: { getRepoInstallation: mockGetRepoInstallation } },
+      // `mintInstallationToken` installs a before-hook to detect a cache-miss
+      // network mint, then removes it in a finally.
+      hook: { before: mock(() => {}), remove: mock(() => {}) },
     };
     getInstallationOctokit = mockGetInstallationOctokit;
   },
@@ -189,10 +239,12 @@ void mock.module("../../src/core/prompt-builder", () => ({
 const {
   handleWsOpen,
   handleWsClose,
+  drainDisconnectCleanups,
   handleDaemonMessage,
   getConnections,
   getDaemonInfo,
   isDaemonDraining,
+  stripInstructionsUnlessReview,
 } = await import("../../src/orchestrator/connection-handler");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -218,6 +270,7 @@ function makeFakeCapabilities(): DaemonCapabilities {
 
 function makeFakeWs(daemonId?: string): {
   data: { authenticated: boolean; remoteAddr: string; daemonId: string | undefined };
+  readyState: number;
   sendText: ReturnType<typeof mock>;
   close: ReturnType<typeof mock>;
 } {
@@ -227,6 +280,7 @@ function makeFakeWs(daemonId?: string): {
       remoteAddr: "127.0.0.1",
       daemonId,
     },
+    readyState: 1,
     sendText: mock(() => {}),
     close: mock(() => {}),
   };
@@ -234,7 +288,7 @@ function makeFakeWs(daemonId?: string): {
 
 function makeRegisterMsg(
   daemonId = "daemon-1",
-  protocolVersion = "1.0.0",
+  protocolVersion = PROTOCOL_VERSION,
 ): Extract<DaemonMessage, { type: "daemon:register" }> {
   return {
     type: "daemon:register",
@@ -336,6 +390,8 @@ function resetAllMocks(): void {
     mockMarkExecutionOffered,
     mockGetExecutionState,
     mockRequeueExecution,
+    mockFailDisconnectedDaemon,
+    mockNotifyDisconnectedDaemonWorkflows,
     mockDecrementActiveCount,
     mockIncrementDaemonActiveJobs,
     mockDecrementDaemonActiveJobs,
@@ -366,7 +422,7 @@ function resetAllMocks(): void {
       osVersion: "6.1",
       capabilities: makeFakeCapabilities(),
       status: "active",
-      protocolVersion: "1.0.0",
+      protocolVersion: PROTOCOL_VERSION,
       appVersion: "0.1.0",
       activeJobs: 0,
       lastSeenAt: Date.now(),
@@ -378,9 +434,12 @@ function resetAllMocks(): void {
   mockMarkExecutionFailed.mockImplementation(() => Promise.resolve());
   mockMarkExecutionRunning.mockImplementation(() => Promise.resolve());
   mockMarkExecutionCompleted.mockImplementation(() => Promise.resolve());
-  mockMarkExecutionOffered.mockImplementation(() => Promise.resolve());
+  mockMarkExecutionOffered.mockImplementation(() => Promise.resolve("offered"));
   mockGetExecutionState.mockImplementation(() => Promise.resolve(null));
-  mockRequeueExecution.mockImplementation(() => Promise.resolve());
+  mockRequeueExecution.mockImplementation(() => Promise.resolve(true));
+  mockFailDisconnectedDaemon.mockImplementation(() =>
+    Promise.resolve({ executionDeliveryIds: [], workflowRunIds: [] }),
+  );
   mockGetActiveDaemons.mockImplementation(() => Promise.resolve([]));
   mockGetDaemonActiveJobs.mockImplementation(() => Promise.resolve(0));
   mockRequeueJob.mockImplementation(() => Promise.resolve(true));
@@ -391,7 +450,8 @@ function resetAllMocks(): void {
   mockRequireDb.mockImplementation(() => fakeDb);
   mockGetRepoInstallation.mockImplementation(() => Promise.resolve({ data: { id: 123 } }));
   mockAuth.mockImplementation(() => Promise.resolve({ token: "ghs_fake_token" }));
-  mockGetInstallationOctokit.mockImplementation(() => Promise.resolve({ auth: mockAuth }));
+  repoConfigYaml = null;
+  mockGetInstallationOctokit.mockImplementation(() => Promise.resolve(makeAcceptOctokit()));
   mockSaveRepoLearnings.mockImplementation(() => Promise.resolve(0));
   mockDeleteRepoMemories.mockImplementation(() => Promise.resolve(0));
 }
@@ -401,6 +461,10 @@ function resetAllMocks(): void {
 beforeEach(() => {
   getConnections().clear();
   resetAllMocks();
+});
+
+afterEach(() => {
+  jest.useRealTimers();
 });
 
 describe("handleWsOpen", () => {
@@ -431,65 +495,57 @@ describe("handleWsClose", () => {
 
     expect(getConnections().has("daemon-1")).toBe(false);
 
-    await new Promise((r) => setTimeout(r, 30));
+    await drainDisconnectCleanups();
     expect(mockDeregisterDaemon).toHaveBeenCalledWith("daemon-1");
   });
 
-  it("marks orphaned executions as failed during cleanup", async () => {
+  it("runs the exact durable fencing transaction during cleanup", async () => {
     const ws = makeFakeWs("daemon-2");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getConnections().set("daemon-2", ws as any);
 
-    mockGetOrphanedExecutions.mockImplementation(() =>
-      Promise.resolve([{ deliveryId: "orphan-1", status: "running" }]),
-    );
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    handleWsClose(ws as any, 1000, "normal");
-
-    await new Promise((r) => setTimeout(r, 30));
-    expect(mockMarkExecutionFailed).toHaveBeenCalledWith(
-      "orphan-1",
-      "daemon disconnected during execution",
-    );
-  });
-
-  it("handles cleanup errors gracefully", async () => {
-    const ws = makeFakeWs("daemon-err");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getConnections().set("daemon-err", ws as any);
-
-    mockDeregisterDaemon.mockImplementation(() => Promise.reject(new Error("Valkey down")));
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    handleWsClose(ws as any, 1000, "normal");
-    await new Promise((r) => setTimeout(r, 30));
-    // Should not throw
-  });
-
-  it("handles individual orphan failure gracefully", async () => {
-    const ws = makeFakeWs("daemon-orf");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    getConnections().set("daemon-orf", ws as any);
-
-    mockGetOrphanedExecutions.mockImplementation(() =>
-      Promise.resolve([
-        { deliveryId: "orf-1", status: "running" },
-        { deliveryId: "orf-2", status: "running" },
-      ]),
-    );
-    let calls = 0;
-    mockMarkExecutionFailed.mockImplementation(() => {
-      calls++;
-      if (calls === 1) return Promise.reject(new Error("DB error"));
-      return Promise.resolve();
+    mockFailDisconnectedDaemon.mockResolvedValueOnce({
+      executionDeliveryIds: ["orphan-1"],
+      workflowRunIds: ["workflow-orphan-1"],
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handleWsClose(ws as any, 1000, "normal");
 
-    await new Promise((r) => setTimeout(r, 50));
-    expect(mockMarkExecutionFailed).toHaveBeenCalledTimes(2);
+    await drainDisconnectCleanups();
+    expect(mockFailDisconnectedDaemon).toHaveBeenCalledWith("daemon-2");
+    expect(mockNotifyDisconnectedDaemonWorkflows).toHaveBeenCalledWith(["workflow-orphan-1"]);
+  });
+
+  it("still runs durable fencing when registry cleanup fails", async () => {
+    const ws = makeFakeWs("daemon-err");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getConnections().set("daemon-err", ws as any);
+
+    mockDeregisterDaemon.mockImplementation(() => Promise.reject(new Error("Valkey down")));
+    mockFailDisconnectedDaemon.mockResolvedValueOnce({
+      executionDeliveryIds: ["orphan-valkey"],
+      workflowRunIds: [],
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleWsClose(ws as any, 1000, "normal");
+    await drainDisconnectCleanups();
+    expect(mockFailDisconnectedDaemon).toHaveBeenCalledWith("daemon-err");
+  });
+
+  it("still attempts registry cleanup when durable fencing fails", async () => {
+    const ws = makeFakeWs("daemon-orf");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getConnections().set("daemon-orf", ws as any);
+
+    mockFailDisconnectedDaemon.mockRejectedValueOnce(new Error("DB error"));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleWsClose(ws as any, 1000, "normal");
+
+    await drainDisconnectCleanups();
+    expect(mockDeregisterDaemon).toHaveBeenCalledWith("daemon-orf");
   });
 });
 
@@ -535,9 +591,9 @@ describe("handleDaemonMessage - daemon:register", () => {
     expect(newWs.data.daemonId).toBe("daemon-rc");
   });
 
-  it("rejects incompatible protocol version", async () => {
+  it("rejects a newer incompatible protocol version", async () => {
     const ws = makeFakeWs();
-    const msg = makeRegisterMsg("daemon-v2", "2.0.0");
+    const msg = makeRegisterMsg("daemon-v3", "3.0.0");
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handleDaemonMessage(ws as any, msg);
@@ -546,6 +602,96 @@ describe("handleDaemonMessage - daemon:register", () => {
     expect(ws.close).toHaveBeenCalled();
     const closeArgs = ws.close.mock.calls[0];
     expect(closeArgs?.[0]).toBe(4003);
+  });
+
+  it("requests an urgent update from an older protocol before closing", async () => {
+    const currentWs = makeFakeWs("daemon-v1");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getConnections().set("daemon-v1", currentWs as any);
+    const staleWs = makeFakeWs();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(staleWs as any, makeRegisterMsg("daemon-v1", "1.0.0"));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(mockRegisterDaemon).not.toHaveBeenCalled();
+    expect(currentWs.close).not.toHaveBeenCalled();
+    expect(staleWs.close).not.toHaveBeenCalled();
+    const update = JSON.parse(staleWs.sendText.mock.calls[0]?.[0] as string) as {
+      id: string;
+      type: string;
+      payload: { urgent: boolean };
+    };
+    expect(update.type).toBe("daemon:update-required");
+    expect(update.payload.urgent).toBe(true);
+    expect(serverMessageSchema.safeParse(update).success).toBe(true);
+
+    const acknowledgement = {
+      type: "daemon:update-acknowledged",
+      id: update.id,
+      timestamp: Date.now(),
+      payload: { strategy: "exit", delayMs: 0 },
+    } satisfies DaemonMessage;
+    expect(daemonMessageSchema.safeParse(acknowledgement).success).toBe(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(staleWs as any, acknowledgement);
+
+    expect(staleWs.close).not.toHaveBeenCalled();
+    expect(getConnections().get("daemon-v1")).toBe(currentWs);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleWsClose(staleWs as any, 1000, "graceful shutdown");
+  });
+
+  it("keeps an acknowledged older daemon connected while it drains", async () => {
+    jest.useFakeTimers();
+    const ws = makeFakeWs();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(ws as any, makeRegisterMsg("daemon-draining", "1.0.0"));
+    await drainDisconnectCleanups();
+    const update = JSON.parse(ws.sendText.mock.calls[0]?.[0] as string) as { id: string };
+    const acknowledgement = {
+      type: "daemon:update-acknowledged",
+      id: update.id,
+      timestamp: Date.now(),
+      payload: { strategy: "exit", delayMs: 0 },
+    } satisfies DaemonMessage;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(ws as any, acknowledgement);
+    const { config: currentConfig } = await import("../../src/config");
+
+    jest.advanceTimersByTime(currentConfig.daemonDrainTimeoutMs + 1_999);
+    expect(ws.close).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+    expect(ws.close).toHaveBeenCalledWith(4003, "incompatible protocol version");
+  });
+
+  it("closes an older protocol when the update acknowledgement times out", async () => {
+    jest.useFakeTimers();
+    const ws = makeFakeWs();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(ws as any, makeRegisterMsg("daemon-timeout", "1.0.0"));
+    await drainDisconnectCleanups();
+    expect(ws.close).not.toHaveBeenCalled();
+
+    jest.advanceTimersByTime(5_000);
+
+    expect(ws.close).toHaveBeenCalledWith(4003, "incompatible protocol version");
+  });
+
+  it("cancels the protocol-update timeout when the socket closes", async () => {
+    jest.useFakeTimers();
+    const ws = makeFakeWs();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(ws as any, makeRegisterMsg("daemon-closed", "1.0.0"));
+    await drainDisconnectCleanups();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleWsClose(ws as any, 1006, "transport lost");
+    jest.advanceTimersByTime(5_000);
+
+    expect(ws.close).not.toHaveBeenCalled();
   });
 
   it("sends error on registration failure", async () => {
@@ -579,6 +725,80 @@ describe("handleDaemonMessage - daemon:register", () => {
       "prev-orphan-1",
       "daemon reconnected, previous session orphaned",
     );
+  });
+
+  it("waits for same-daemon disconnect cleanup before re-registering", async () => {
+    const oldWs = makeFakeWs("daemon-race");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getConnections().set("daemon-race", oldWs as any);
+    let releaseCleanup:
+      | ((value: { executionDeliveryIds: string[]; workflowRunIds: string[] }) => void)
+      | undefined;
+    mockFailDisconnectedDaemon.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseCleanup = resolve;
+        }),
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleWsClose(oldWs as any, 1006, "transport lost");
+    const newWs = makeFakeWs();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(newWs as any, makeRegisterMsg("daemon-race"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mockRegisterDaemon).not.toHaveBeenCalled();
+
+    releaseCleanup?.({ executionDeliveryIds: [], workflowRunIds: [] });
+    await drainDisconnectCleanups();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mockDeregisterDaemon).toHaveBeenCalledWith("daemon-race");
+    expect(mockRegisterDaemon).toHaveBeenCalledTimes(1);
+    expect(newWs.data.daemonId).toBe("daemon-race");
+  });
+
+  it("serializes simultaneous registrations for the same daemon ID", async () => {
+    const releases: (() => void)[] = [];
+    mockRegisterDaemon.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releases.push(() => {
+            resolve({
+              id: "daemon-simultaneous",
+              hostname: "host-1",
+              platform: "linux",
+              osVersion: "6.1",
+              capabilities: makeFakeCapabilities(),
+              status: "active",
+              protocolVersion: PROTOCOL_VERSION,
+              appVersion: "0.1.0",
+              activeJobs: 0,
+              lastSeenAt: Date.now(),
+              firstSeenAt: Date.now(),
+            });
+          });
+        }),
+    );
+
+    const firstWs = makeFakeWs();
+    const secondWs = makeFakeWs();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(firstWs as any, makeRegisterMsg("daemon-simultaneous"));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(secondWs as any, makeRegisterMsg("daemon-simultaneous"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(mockRegisterDaemon).toHaveBeenCalledTimes(1);
+    releases[0]?.();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mockRegisterDaemon).toHaveBeenCalledTimes(2);
+    expect(firstWs.close).toHaveBeenCalled();
+
+    releases[1]?.();
+    await drainDisconnectCleanups();
+    expect(firstWs.data.daemonId).toBeUndefined();
+    expect(secondWs.data.daemonId).toBe("daemon-simultaneous");
+    expect(getConnections().get("daemon-simultaneous")).toBe(secondWs);
   });
 });
 
@@ -1208,7 +1428,7 @@ describe("handleDaemonMessage - job:result", () => {
 
     await new Promise((r) => setTimeout(r, 80));
 
-    expect(mockDeleteRepoMemories).toHaveBeenCalledWith(["mem-1", "mem-2"]);
+    expect(mockDeleteRepoMemories).toHaveBeenCalledWith("o", "r", ["mem-1", "mem-2"], fakeDb);
   });
 
   it("handles failed result with default error message", async () => {
@@ -1338,7 +1558,7 @@ describe("handleDaemonMessage - job:result", () => {
 // C4: handleScopedJobCompletion must decrement active-count and
 // daemon-active-jobs for both succeeded and halted/failed branches,
 // otherwise every scoped run leaks one capacity slot.
-describe("handleDaemonMessage - scoped-job-completion (C4)", () => {
+describe("handleDaemonMessage - scoped-job:completion (C4)", () => {
   beforeEach(() => {
     mockDecrementActiveCount.mockClear();
     mockDecrementDaemonActiveJobs.mockClear();
@@ -1356,7 +1576,7 @@ describe("handleDaemonMessage - scoped-job-completion (C4)", () => {
     );
 
     const completionMsg = {
-      type: "scoped-job-completion",
+      type: "scoped-job:completion",
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       payload: {
@@ -1389,7 +1609,7 @@ describe("handleDaemonMessage - scoped-job-completion (C4)", () => {
     );
 
     const completionMsg = {
-      type: "scoped-job-completion",
+      type: "scoped-job:completion",
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       payload: {
@@ -1425,7 +1645,7 @@ describe("handleDaemonMessage - scoped-job-completion (C4)", () => {
     );
 
     const completionMsg = {
-      type: "scoped-job-completion",
+      type: "scoped-job:completion",
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       payload: {
@@ -1463,7 +1683,7 @@ describe("handleDaemonMessage - scoped-job-completion (C4)", () => {
     );
 
     const completionMsg = {
-      type: "scoped-job-completion",
+      type: "scoped-job:completion",
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       payload: {
@@ -1496,7 +1716,7 @@ describe("handleDaemonMessage - scoped-job-completion (C4)", () => {
     );
 
     const completionMsg = {
-      type: "scoped-job-completion",
+      type: "scoped-job:completion",
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       payload: {
@@ -1517,5 +1737,210 @@ describe("handleDaemonMessage - scoped-job-completion (C4)", () => {
     expect(mockDecrementActiveCount).not.toHaveBeenCalled();
     expect(mockDecrementDaemonActiveJobs).not.toHaveBeenCalled();
     expect(mockMarkExecutionCompleted).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Per-repo agent policy resolution at accept time (Gate 2) ───────────────
+
+const { config } = await import("../../src/config");
+const { logger: realLogger } = await import("../../src/logger");
+const { __resetRepoConfigCaches } = await import("../../src/repo-config/fetcher");
+
+describe("handleDaemonMessage - job:accept resolves the per-repo policy", () => {
+  interface MutableConfig {
+    agentMaxTurns?: number | undefined;
+    defaultMaxTurns?: number | undefined;
+    agentTimeoutMs: number;
+    reviewLearningsEnabled: boolean;
+  }
+  const saved = {
+    agentMaxTurns: config.agentMaxTurns,
+    defaultMaxTurns: config.defaultMaxTurns,
+    agentTimeoutMs: config.agentTimeoutMs,
+    reviewLearningsEnabled: config.reviewLearningsEnabled,
+  };
+
+  beforeEach(() => {
+    __resetRepoConfigCaches();
+    // Ceilings are pinned so the clamp is observable: both turn knobs are
+    // unset in the test env, which would make every clamp a no-op.
+    (config as MutableConfig).agentMaxTurns = 100;
+    (config as MutableConfig).defaultMaxTurns = undefined;
+    (config as MutableConfig).agentTimeoutMs = 600_000;
+    // The review-learnings loader hits the same accept-path octokit and the
+    // mocked DB; off here so the assertions are about policy only.
+    (config as MutableConfig).reviewLearningsEnabled = false;
+  });
+
+  afterEach(() => {
+    (config as MutableConfig).agentMaxTurns = saved.agentMaxTurns;
+    (config as MutableConfig).defaultMaxTurns = saved.defaultMaxTurns;
+    (config as MutableConfig).agentTimeoutMs = saved.agentTimeoutMs;
+    (config as MutableConfig).reviewLearningsEnabled = saved.reviewLearningsEnabled;
+  });
+
+  /** Dispatch and accept one shared-daemon job, then return its payload. */
+  async function acceptAndReadPayload(daemonId: string): Promise<Record<string, unknown>> {
+    const ws = makeFakeWs();
+    await registerDaemon(ws, daemonId);
+
+    const { dispatchJob: realDispatch } = await import("../../src/orchestrator/job-dispatcher");
+    mockGetActiveDaemons.mockImplementation(() => Promise.resolve([daemonId]));
+
+    const base = {
+      deliveryId: `del-${daemonId}`,
+      repoOwner: "test-owner",
+      repoName: "test-repo",
+      entityNumber: 1,
+      isPR: true,
+      eventName: "issue_comment",
+      triggerUsername: "user1",
+      labels: [],
+      triggerBodyPreview: "test body",
+      enqueuedAt: Date.now(),
+      retryCount: 0,
+    };
+    const job = {
+      kind: "legacy" as const,
+      ...base,
+    };
+    await realDispatch(job as Parameters<typeof realDispatch>[0]);
+
+    const acceptMsg: DaemonMessage = {
+      type: "job:accept",
+      id: extractOfferId(ws),
+      timestamp: Date.now(),
+      payload: {},
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    handleDaemonMessage(ws as any, acceptMsg);
+    await new Promise((r) => setTimeout(r, 120));
+
+    const payloadCall = ws.sendText.mock.calls.find((c) => {
+      const p = JSON.parse(c[0] as string) as { type: string };
+      return p.type === "job:payload";
+    });
+    if (payloadCall === undefined) throw new Error("Expected a job:payload message");
+    return (JSON.parse(payloadCall[0] as string) as { payload: Record<string, unknown> }).payload;
+  }
+
+  it("caps maxTurns at the repo's configured value (C2)", async () => {
+    repoConfigYaml = "version: 1\ndefaults:\n  max_turns: 20\n";
+
+    const payload = await acceptAndReadPayload("daemon-pol-turns");
+
+    expect(payload.maxTurns).toBe(20);
+  });
+
+  it("clamps repo max_turns and timeout down to the server ceilings (C9)", async () => {
+    repoConfigYaml = "version: 1\ndefaults:\n  max_turns: 500\n  timeout: 60m\n";
+
+    const payload = await acceptAndReadPayload("daemon-pol-clamp");
+
+    // AGENT_MAX_TURNS=100, AGENT_TIMEOUT_MS=600000 both win over the YAML.
+    expect(payload.maxTurns).toBe(100);
+    expect((payload.policy as Record<string, unknown> | undefined)?.timeoutMs).toBe(600_000);
+  });
+
+  it("forwards the repo model and extra tools on the wire (C1/C4)", async () => {
+    repoConfigYaml =
+      "version: 1\ndefaults:\n  model: claude-repo-pinned-model\n  extra_allowed_tools:\n    - WebFetch\n";
+
+    const payload = await acceptAndReadPayload("daemon-pol-model");
+    const policy = payload.policy as Record<string, unknown> | undefined;
+
+    expect(policy?.model).toBe("claude-repo-pinned-model");
+    expect(policy?.extraAllowedTools).toEqual(["WebFetch"]);
+  });
+
+  it("carries a fail-open warning when the config fails validation (C7)", async () => {
+    // `version: 2` is not the schema's `z.literal(1)`.
+    repoConfigYaml = "version: 2\ndefaults:\n  max_turns: 20\n";
+
+    const payload = await acceptAndReadPayload("daemon-pol-invalid");
+    const policy = payload.policy as Record<string, unknown> | undefined;
+
+    expect(typeof policy?.warning).toBe("string");
+    expect(policy?.warning).toContain("failed validation");
+    // Fail-open: the invalid file's max_turns must NOT be honoured.
+    expect(payload.maxTurns).toBe(100);
+  });
+
+  it("keeps the pre-Gate-2 payload when the repo has no config file (C8)", async () => {
+    repoConfigYaml = null;
+
+    const payload = await acceptAndReadPayload("daemon-pol-absent");
+
+    // Unchanged fallback: AGENT_MAX_TURNS ?? DEFAULT_MAXTURNS.
+    expect(payload.maxTurns).toBe(100);
+    expect(payload.policy).toBeUndefined();
+  });
+
+  /**
+   * Capture what the REAL emitter writes. Spied rather than module-mocked:
+   * `src/logger` is shared by the orchestrator modules this file deliberately
+   * imports unmocked, and `mock.module` is process-wide.
+   */
+  function capturePolicyLogs(): { lines: Record<string, unknown>[]; restore: () => void } {
+    const lines: Record<string, unknown>[] = [];
+    const spy = spyOn(realLogger, "info").mockImplementation(((obj: unknown) => {
+      if (obj !== null && typeof obj === "object") lines.push(obj as Record<string, unknown>);
+    }) as typeof realLogger.info);
+    return {
+      lines,
+      restore: () => {
+        spy.mockRestore();
+      },
+    };
+  }
+
+  it("logs repo_config.policy_applied when max_turns is the only resolved knob", async () => {
+    repoConfigYaml = "version: 1\ndefaults:\n  max_turns: 20\n";
+    const captured = capturePolicyLogs();
+
+    try {
+      const payload = await acceptAndReadPayload("daemon-pol-log-turns");
+
+      // `toAgentPolicy` never projects max_turns, so `policy` is absent here.
+      // The event fires anyway because the emitter checks the cap separately,
+      // otherwise this run would answer nothing about the repo's knobs.
+      expect(payload.policy).toBeUndefined();
+      const line = captured.lines.find((l) => l["event"] === "repo_config.policy_applied");
+      expect(line).toBeDefined();
+      expect(line?.["maxTurns"]).toBe(20);
+    } finally {
+      captured.restore();
+    }
+  });
+});
+
+// ─── Gate 2: `instructions` is a review-only knob ───────────────────────────
+
+describe("stripInstructionsUnlessReview", () => {
+  // The schema scopes `instructions` to `workflows.review`, so YAML cannot
+  // reach a non-review workflow with one today. The guard exists so a future
+  // hoist to `defaults` cannot silently hand `implement` (which writes code
+  // and pushes commits) a trusted "this overrides your defaults" block.
+  const policy = { model: "m", instructions: "reject migrations without a rollback" };
+
+  it("drops instructions for implement even when the resolved policy carries one", () => {
+    expect(stripInstructionsUnlessReview(policy, "implement")).toEqual({ model: "m" });
+  });
+
+  it("drops instructions on the direct-pipeline rail, which has no workflow name", () => {
+    expect(stripInstructionsUnlessReview(policy, undefined)).toEqual({ model: "m" });
+  });
+
+  it("keeps instructions for review", () => {
+    expect(stripInstructionsUnlessReview(policy, "review")).toEqual(policy);
+  });
+
+  it("collapses to undefined when instructions was the only knob", () => {
+    expect(stripInstructionsUnlessReview({ instructions: "x" }, "implement")).toBeUndefined();
+  });
+
+  it("passes an instruction-free policy through untouched", () => {
+    const clean = { model: "m", timeoutMs: 1000 };
+    expect(stripInstructionsUnlessReview(clean, "implement")).toBe(clean);
   });
 });

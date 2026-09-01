@@ -1,9 +1,9 @@
 import { config } from "../../config";
 import { runPipeline } from "../../core/pipeline";
-import type { BotContext } from "../../types";
+import type { BotContext, ExecutionResult } from "../../types";
 import { fetchAndBuildDigest, renderDigestSection } from "../discussion-digest";
 import type { WorkflowHandler } from "../registry";
-import { findLatestSucceededForTarget } from "../runs-store";
+import { StaleWorkflowAttemptError } from "../runs-store";
 
 /**
  * `implement` handler (T022): reuses `src/core/pipeline.ts` end-to-end.
@@ -20,27 +20,20 @@ import { findLatestSucceededForTarget } from "../runs-store";
  */
 export const handler: WorkflowHandler = async (ctx) => {
   const { octokit, target, logger: log, deliveryId, runId } = ctx;
+  let daemonActions: ExecutionResult["daemonActions"];
 
   try {
     if (target.type !== "issue") {
       return { status: "failed", reason: "implement requires issue target" };
     }
 
-    // Consults succeeded rows only, matches the dispatcher's
-    // `requiresPrior: 'plan'` gate (which calls `findLatestSucceededForTarget`).
-    // A later failed `plan` re-run must not shadow an earlier valid plan.
-    const planRow = await findLatestSucceededForTarget("plan", {
-      owner: target.owner,
-      repo: target.repo,
-      number: target.number,
-    });
-    if (planRow === null) {
+    // The controller loads the most recent succeeded plan before it gives the
+    // runner a payload. A later failed plan cannot shadow this snapshot.
+    const planState = ctx.priorPlanState;
+    if (planState === undefined) {
       return { status: "failed", reason: "no succeeded plan row found for target" };
     }
-    const planMarkdown = typeof planRow.state["plan"] === "string" ? planRow.state["plan"] : "";
-    if (planMarkdown.length === 0) {
-      return { status: "failed", reason: "plan row has empty state.plan" };
-    }
+    const planMarkdown = planState.plan;
 
     const { data: issue } = await octokit.rest.issues.get({
       owner: target.owner,
@@ -123,14 +116,19 @@ export const handler: WorkflowHandler = async (ctx) => {
       defaultBranch,
       labels: [],
       skipTrackingComments: true,
+      ...(ctx.repoMemory !== undefined ? { repoMemory: ctx.repoMemory } : {}),
       octokit,
       log,
     };
 
     const result = await runPipeline(botCtx, {
       captureFiles: ["IMPLEMENT.md"],
+      ...(ctx.policy !== undefined ? { policy: ctx.policy } : {}),
+      ...(ctx.maxTurns !== undefined ? { maxTurns: ctx.maxTurns } : {}),
       ...(digestSection.length > 0 ? { discussionDigest: digestSection } : {}),
+      ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
     });
+    daemonActions = result.daemonActions;
     if (!result.success) {
       // `reason` is internal (DB state.failedReason → orchestrator quota
       // detection + operator logs); `humanMessage` is the public tracking
@@ -139,6 +137,7 @@ export const handler: WorkflowHandler = async (ctx) => {
         status: "failed",
         reason: result.errorMessage ?? "implement pipeline execution failed",
         humanMessage: "implement pipeline execution failed, see server logs for details.",
+        ...(daemonActions !== undefined ? { daemonActions } : {}),
       };
     }
 
@@ -154,6 +153,7 @@ export const handler: WorkflowHandler = async (ctx) => {
       return {
         status: "failed",
         reason: "implement completed but no PR was found",
+        ...(daemonActions !== undefined ? { daemonActions } : {}),
       };
     }
 
@@ -179,20 +179,26 @@ export const handler: WorkflowHandler = async (ctx) => {
         ? `\n\n${report}`
         : `\n\n_(no IMPLEMENT.md report, agent did not write one)_`;
     const humanMessage = `🛠️ **Implement complete**, opened PR [#${String(opened.number)}](${opened.url}) on branch \`${opened.branch}\`.${reportSection}${metaLine}`;
-    await ctx.setState(state, humanMessage);
 
     log.info(
       { prNumber: opened.number, branch: opened.branch, costUsd: result.costUsd },
       "implement handler succeeded",
     );
-    return { status: "succeeded", state, humanMessage };
+    return {
+      status: "succeeded",
+      state,
+      humanMessage,
+      ...(daemonActions !== undefined ? { daemonActions } : {}),
+    };
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     log.warn({ err }, "implement handler caught error");
     return {
       status: "failed",
       reason: `implement failed: ${message}`,
       humanMessage: "implement pipeline execution failed, see server logs for details.",
+      ...(daemonActions !== undefined ? { daemonActions } : {}),
     };
   }
 };
@@ -296,6 +302,7 @@ async function postStartingComment(
   try {
     await ctx.setState({ phase: "starting" }, body);
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     ctx.logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       "implement starting-comment write failed, continuing without up-front comment",

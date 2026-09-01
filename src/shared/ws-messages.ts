@@ -63,7 +63,7 @@ const REVIEW_LEARNING_FILE_GLOB_MAX = 500;
 const REVIEW_LEARNING_SOURCE_THREAD_MAX = 200;
 const REVIEW_LEARNING_SOURCE_AUTHOR_MAX = 100;
 
-const reviewLearningPayloadSchema = z.object({
+export const ReviewLearningPayloadSchema = z.object({
   // UUID; conservatively capped to leave room for tagged formats.
   id: z.string().max(64),
   scope: z.enum(["local", "global"]),
@@ -90,22 +90,8 @@ const reviewLearningSaveSchema = z.object({
 });
 
 /**
- * Workflow run reference piggybacking on the existing job payload. Presence
- * of this field signals the daemon to route the job through
- * `src/daemon/workflow-executor.ts` instead of the legacy pipeline. Kept as
- * a pure literal z.enum here to avoid importing the registry module from the
- * shared schema layer (registry import pulls handler transitive deps).
- */
-const workflowRunRefSchema = z.object({
-  runId: z.string().min(1),
-  workflowName: z.enum(["triage", "plan", "implement", "review", "resolve", "ship"]),
-  parentRunId: z.string().min(1).optional(),
-  parentStepIndex: z.number().int().nonnegative().optional(),
-});
-
-/**
  * Per-kind context passed alongside `job:payload` for scoped jobs. Mirrors
- * the discriminator in `scoped-job-offer` so the daemon's executor can route
+ * the discriminator in `scoped-job:offer` so the daemon's executor can route
  * via the same Zod parse: discriminator at the schema level, not via runtime
  * presence checks (per contracts/ws-messages.md validation requirement).
  */
@@ -222,12 +208,6 @@ const jobPayloadSchema = z.object({
   type: z.literal("job:payload"),
   ...messageEnvelopeBase,
   payload: z.object({
-    /** Per-repo agent knobs resolved by the controller at accept time.
-     * Declared here so the wire schema matches `AgentPolicy`; the
-     * producer lands with the isolated workflow runner. A plain
-     * `z.object` strips unknown keys, so without this the daemon would
-     * silently drop a policy a future producer sent. */
-    policy: AgentPolicySchema.optional(),
     context: z.record(z.string(), z.unknown()),
     installationToken: z.string(),
     /** GitHub App installation id (App mode only; absent in PAT mode). The
@@ -242,9 +222,11 @@ const jobPayloadSchema = z.object({
     /** Pre-loaded review learnings (all rows for owner+repo plus global rows
      * for the owner). Daemon-side review/resolve handlers filter by changed
      * files before injecting into the prompt; other workflows ignore. */
-    reviewLearnings: z.array(reviewLearningPayloadSchema).optional(),
-    workflowRun: workflowRunRefSchema.optional(),
-    /** Present only when the originating offer was a `scoped-job-offer`.
+    reviewLearnings: z.array(ReviewLearningPayloadSchema).optional(),
+    /** Resolved `.github-app.yaml` agent knobs ("Gate 2"). Absent when the
+     * repo ships no config, which keeps the pre-Gate-2 payload byte-identical. */
+    policy: AgentPolicySchema.optional(),
+    /** Present only when the originating offer was a `scoped-job:offer`.
      * The daemon's job-executor routes on this field's presence and on the
      * inner `jobKind` discriminator. */
     scoped: scopedJobContextSchema.optional(),
@@ -253,7 +235,7 @@ const jobPayloadSchema = z.object({
 
 /** Server-to-daemon scoped job offer (parallel to `job:offer`). */
 const scopedJobOfferSchema = z.object({
-  type: z.literal("scoped-job-offer"),
+  type: z.literal("scoped-job:offer"),
   ...messageEnvelopeBase,
   payload: scopedJobContextSchema,
 });
@@ -315,7 +297,7 @@ const scopedJobResultSchema = z.discriminatedUnion("jobKind", [
 ]);
 
 const scopedJobCompletionSchema = z.object({
-  type: z.literal("scoped-job-completion"),
+  type: z.literal("scoped-job:completion"),
   ...messageEnvelopeBase,
   payload: z
     .object({
@@ -525,7 +507,7 @@ export type DaemonDrainingMessage = z.infer<typeof daemonDrainingSchema>;
 // WebSocket protocol version
 
 /** Current protocol version. Major bump = breaking change = reject connection. */
-export const PROTOCOL_VERSION = "1.0.0";
+export const PROTOCOL_VERSION = "2.0.0";
 
 // Custom WebSocket close codes
 

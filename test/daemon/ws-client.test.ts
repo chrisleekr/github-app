@@ -20,6 +20,7 @@ void mock.module("../../src/logger", () => ({
 
 import { DaemonWsClient } from "../../src/daemon/ws-client";
 import type { DaemonCapabilities } from "../../src/shared/daemon-types";
+import { WS_CLOSE_CODES } from "../../src/shared/ws-messages";
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -108,6 +109,18 @@ describe("DaemonWsClient reconnect-timer lifecycle", () => {
     expect((client as unknown as InternalState).reconnectTimer).not.toBeNull();
 
     client.close();
+
+    expect((client as unknown as InternalState).reconnectTimer).toBeNull();
+  });
+
+  it("does not reconnect after an incompatible-protocol close", () => {
+    const client = makeClient();
+    client.connect();
+
+    FakeWebSocket.last?.fireClose(
+      WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.code,
+      WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.reason,
+    );
 
     expect((client as unknown as InternalState).reconnectTimer).toBeNull();
   });

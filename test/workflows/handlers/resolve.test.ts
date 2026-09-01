@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { Octokit } from "octokit";
 import type pino from "pino";
 
+import type { BotContext } from "../../../src/types";
 import type { WorkflowRunContext } from "../../../src/workflows/registry";
 
 interface PipelineResultStub {
@@ -22,21 +23,18 @@ interface PipelineResultStub {
   durationMs?: number;
   errorMessage?: string;
   capturedFiles?: Record<string, string>;
+  daemonActions?: {
+    learnings: { category: "gotchas"; content: string }[];
+    deletions: string[];
+  };
 }
 
 let pipelineResult: PipelineResultStub;
 
-void mock.module("../../../src/core/pipeline", () => ({
-  runPipeline: mock(async () => Promise.resolve(pipelineResult)),
-}));
+const mockRunPipeline = mock(async () => Promise.resolve(pipelineResult));
 
-void mock.module("../../../src/workflows/runs-store", () => ({
-  findById: mock(async () =>
-    Promise.resolve({
-      id: "run-1",
-      tracking_comment_id: 12345,
-    }),
-  ),
+void mock.module("../../../src/core/pipeline", () => ({
+  runPipeline: mockRunPipeline,
 }));
 
 const { handler: resolveHandler } = await import("../../../src/workflows/handlers/resolve");
@@ -71,7 +69,7 @@ interface BuildCtxOptions {
    * see a "the agent pushed commits" scenario.
    */
   postHeadSha?: string;
-  reviewComments?: { in_reply_to_id?: number }[];
+  reviewComments?: { in_reply_to_id?: number; user?: { login?: string; type?: string } }[];
   targetType?: "pr" | "issue";
 }
 
@@ -142,7 +140,7 @@ function buildCtx(opts: BuildCtxOptions = {}): WorkflowRunContext & {
     },
   } as unknown as Octokit;
 
-  const setStateMock = mock(async () => Promise.resolve());
+  const setStateMock = mock(async () => Promise.resolve({ trackingCommentId: 12345 }));
 
   return {
     runId: "run-1",
@@ -212,7 +210,7 @@ describe("resolve handler", () => {
       expect(post["all_green"]).toBe(true);
       expect(post["failing_checks"]).toEqual([]);
     }
-    expect(ctx.setStateMock).toHaveBeenCalledTimes(2);
+    expect(ctx.setStateMock).toHaveBeenCalledTimes(1);
   });
 
   it("returns incomplete when post-pipeline CI still has failing checks", async () => {
@@ -223,6 +221,10 @@ describe("resolve handler", () => {
       capturedFiles: {
         "RESOLVE.md":
           "## Summary\n\nGave up.\n\n## Outstanding\n\n- typecheck still red, could not isolate root cause",
+      },
+      daemonActions: {
+        learnings: [{ category: "gotchas", content: "CI needs a local service." }],
+        deletions: [],
       },
     };
     const ctx = buildCtx({
@@ -242,6 +244,7 @@ describe("resolve handler", () => {
       expect(post["all_green"]).toBe(false);
       expect(post["failing_checks"]).toEqual(["typecheck"]);
       expect(post["outstanding_present"]).toBe(true);
+      expect(result.daemonActions).toEqual(pipelineResult.daemonActions);
     }
   });
 
@@ -311,15 +314,148 @@ describe("resolve handler", () => {
   });
 
   it("returns failed when runPipeline reports failure (regression guard)", async () => {
-    pipelineResult = { success: false, errorMessage: "agent crashed" };
+    pipelineResult = {
+      success: false,
+      errorMessage: "agent crashed",
+      daemonActions: {
+        learnings: [{ category: "gotchas", content: "The agent needs a service." }],
+        deletions: [],
+      },
+    };
     const ctx = buildCtx({
       preChecks: [{ status: "completed", conclusion: "failure", name: "test" }],
     });
+    const repoMemory = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        category: "gotchas" as const,
+        content: "Start the local service.",
+        pinned: false,
+      },
+    ];
+    (ctx as { repoMemory?: typeof repoMemory }).repoMemory = repoMemory;
     const result = await resolveHandler(ctx);
     expect(result.status).toBe("failed");
     if (result.status === "failed") {
       expect(result.reason).toContain("agent crashed");
       expect(result.humanMessage).toContain("see server logs");
     }
+    expect((mockRunPipeline.mock.calls.at(-1)?.[0] as BotContext).repoMemory).toEqual(repoMemory);
+    expect("daemonActions" in result ? result.daemonActions : undefined).toEqual(
+      pipelineResult.daemonActions,
+    );
+  });
+});
+
+// ─── Per-repo agent policy, `.github-app.yaml` Gate 2 ───────────────────────
+
+describe("resolve handler: per-repo policy forwarding", () => {
+  beforeEach(() => {
+    mockRunPipeline.mockClear();
+    pipelineResult = {
+      success: true,
+      capturedFiles: { "RESOLVE.md": "## Summary\n\nDone." },
+    };
+  });
+
+  it("forwards the run-context policy into the pipeline overrides", async () => {
+    const policy = {
+      model: "claude-repo-pinned-model",
+      timeoutMs: 900_000,
+      extraAllowedTools: ["WebFetch"],
+      pathFilters: ["**/__snapshots__/**"],
+      instructions: "reject migrations without a rollback",
+    };
+    const ctx = buildCtx();
+    (ctx as unknown as Record<string, unknown>)["policy"] = policy;
+
+    await resolveHandler(ctx);
+
+    expect(mockRunPipeline).toHaveBeenCalledTimes(1);
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as
+      | { policy?: Record<string, unknown> }
+      | undefined;
+    expect(overrides?.policy).toEqual(policy);
+  });
+
+  it("forwards the run-context maxTurns into the pipeline overrides", async () => {
+    // The turn cap rides the top-level payload field, not `policy`, so it
+    // needs its own hop. Without it `workflows.resolve.max_turns` is inert.
+    const ctx = buildCtx();
+    (ctx as unknown as Record<string, unknown>)["maxTurns"] = 12;
+
+    await resolveHandler(ctx);
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as { maxTurns?: number } | undefined;
+    expect(overrides?.maxTurns).toBe(12);
+  });
+
+  it("forwards the daemon attempt signal into the pipeline overrides", async () => {
+    const ctx = buildCtx();
+    const signal = new AbortController().signal;
+    (ctx as unknown as Record<string, unknown>)["signal"] = signal;
+
+    await resolveHandler(ctx);
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as { signal?: AbortSignal } | undefined;
+    expect(overrides?.signal).toBe(signal);
+  });
+
+  it("passes no policy or maxTurns key when the run context carries neither (C8)", async () => {
+    await resolveHandler(buildCtx());
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as Record<string, unknown> | undefined;
+    expect(overrides).toBeDefined();
+    // `exactOptionalPropertyTypes`: absent, not `undefined`-valued.
+    expect(Object.hasOwn(overrides ?? {}, "policy")).toBe(false);
+    expect(Object.hasOwn(overrides ?? {}, "maxTurns")).toBe(false);
+    // Existing overrides must survive the addition.
+    expect(overrides?.["captureFiles"]).toEqual(["RESOLVE.md"]);
+    expect(overrides?.["enableReviewLearnings"]).toBe(true);
+  });
+});
+
+// ─── review comments are NOT filtered by author (work item #1) ────────────
+
+describe("resolve acts on bot-authored review comments", () => {
+  beforeEach(() => {
+    mockRunPipeline.mockClear();
+    pipelineResult = {
+      success: true,
+      capturedFiles: { "RESOLVE.md": "## Summary\n\nDone." },
+    };
+  });
+
+  // `enableResolveReviewThread` is set iff at least one top-level review comment
+  // survives, so it is the observable signal for what `resolve` saw.
+  function sawOpenThreads(): boolean {
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as Record<string, unknown> | undefined;
+    return overrides?.["enableResolveReviewThread"] === true;
+  }
+
+  it("acts on our own review findings, which is ship's review -> resolve handoff", async () => {
+    // ship runs review immediately before resolve on the same PR. Filtering our
+    // own findings out here would make resolve a CI-only fixer and silently drop
+    // the review it just ran.
+    await resolveHandler(
+      buildCtx({ reviewComments: [{ user: { login: "chrisleekr-bot[bot]", type: "Bot" } }] }),
+    );
+    expect(sawOpenThreads()).toBe(true);
+  });
+
+  it("acts on a third-party review bot's findings", async () => {
+    // CodeRabbit / Copilot / Sonar are all `type: "Bot"`. A type-based author
+    // filter would discard exactly the reviewer feedback resolve exists for.
+    await resolveHandler(
+      buildCtx({ reviewComments: [{ user: { login: "coderabbitai[bot]", type: "Bot" } }] }),
+    );
+    expect(sawOpenThreads()).toBe(true);
+  });
+
+  it("acts on a human's review comment", async () => {
+    await resolveHandler(
+      buildCtx({ reviewComments: [{ user: { login: "someone", type: "User" } }] }),
+    );
+    expect(sawOpenThreads()).toBe(true);
   });
 });
