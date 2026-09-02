@@ -106,6 +106,20 @@ function readyMessage(clientFenceMs = 25, heartbeatIntervalMs = 10, includeJob =
   };
 }
 
+/**
+ * The controller's answer when it has already persisted this attempt's terminal
+ * payload: the runner reconnected after the result landed, so there is no job
+ * and no session to install.
+ */
+function completedMessage(): unknown {
+  return {
+    type: "workflow-runner:registered",
+    id: crypto.randomUUID(),
+    timestamp: Date.now(),
+    payload: { state: "completed" },
+  };
+}
+
 function sentMessage(
   socket: FakeWebSocket,
   type: string,
@@ -163,6 +177,57 @@ describe("WorkflowRunnerClient attempt fence", () => {
 
     expect(await client.waitForJob()).toBeNull();
     expect(client.signal.aborted).toBe(true);
+  });
+
+  it("settles a pending hand-off and the job wait when the controller reports the attempt completed", async () => {
+    jest.useFakeTimers();
+    const client = makeClient();
+    client.connect();
+    const first = FakeWebSocket.instances[0];
+    if (first === undefined) throw new Error("Expected first workflow runner socket");
+    first.fireOpen();
+    first.fireMessage(readyMessage(2_500, 500));
+    await client.waitForJob();
+
+    const handOffPromise = client.command({
+      type: "hand-off-child",
+      workflowName: "implement",
+      target: { type: "issue", owner: "acme", repo: "widgets", number: 16 },
+      parentStepIndex: 0,
+      state: { phase: "handing-off" },
+      humanMessage: "Handing off to the child run.",
+    });
+    const handOff = sentMessage(first, "workflow-runner:command");
+    first.fireClose();
+    jest.advanceTimersByTime(1_000);
+
+    const second = FakeWebSocket.instances[1];
+    if (second === undefined) throw new Error("Expected reconnected workflow runner socket");
+    second.fireOpen();
+    // The controller answers `completed`: it already stored the terminal payload
+    // for this attempt, so it hands back no job and installs no session.
+    second.fireMessage(completedMessage());
+
+    // The command id IS the child run id. `queueHandOffChild` mints
+    // `{ childRunId: commandId }` (`workflow-runner-controller.ts:500`), so the
+    // runner can settle the promise without the controller replaying a receipt.
+    expect(await handOffPromise).toEqual({ childRunId: handOff.id });
+    expect(client.signal.aborted).toBe(false);
+  });
+
+  it("settles the job wait with null when the attempt completed before the runner registered", async () => {
+    const client = makeClient();
+    client.connect();
+    const socket = FakeWebSocket.instances[0];
+    if (socket === undefined) throw new Error("Expected first workflow runner socket");
+    socket.fireOpen();
+    // No job was ever handed out, so this is the branch that actually settles
+    // `waitForJob`. Resolving it with `null` is what lets `main.ts` exit rather
+    // than waiting out the Pod's activeDeadlineSeconds.
+    socket.fireMessage(completedMessage());
+
+    expect(await client.waitForJob()).toBeNull();
+    expect(client.signal.aborted).toBe(false);
   });
 
   it("replays stable command and result messages after reconnecting before the fence", async () => {
