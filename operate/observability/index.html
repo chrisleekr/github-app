@@ -2756,7 +2756,7 @@
 </table>
 <p>Alerts worth having: <code>queue_depth</code> rising while <code>persistent_free_slots &gt; 0</code> for several snapshots (suggests broken capability matching, work isn't reaching idle daemons); <code>active_daemons_total</code> dropping to 0 while <code>queue_depth &gt; 0</code> (no workers).</p>
 <h2 id="dispatcher-log-fields">Dispatcher log fields<a class="headerlink" href="#dispatcher-log-fields" title="Permanent link">&para;</a></h2>
-<p>The job dispatcher (<code>src/orchestrator/job-dispatcher.ts</code>) and the accept handler in <code>src/orchestrator/connection-handler.ts</code> emit the offer lifecycle as structured events. The four <code>dispatcher.offer.*</code> keys are pinned per-event by a <code>z.discriminatedUnion</code> (<code>src/orchestrator/log-fields.ts:75#DispatcherOfferLogSchema</code>), so each event carries exactly its own fields; <code>dispatcher.no_eligible_daemon</code> has its own shape. Event-key constants live in <code>src/orchestrator/log-fields.ts:28#DISPATCHER_LOG_EVENTS</code>, and the co-located test rejects field drift.</p>
+<p>The job dispatcher (<code>src/orchestrator/job-dispatcher.ts</code>) and the accept handler in <code>src/orchestrator/connection-handler.ts</code> emit the offer lifecycle as structured events. The four <code>dispatcher.offer.*</code> keys are pinned per-event by a <code>z.discriminatedUnion</code> (<code>src/orchestrator/log-fields.ts:82#DispatcherOfferLogSchema</code>), so each event carries exactly its own fields; <code>dispatcher.no_eligible_daemon</code> has its own shape. Event-key constants live in <code>src/orchestrator/log-fields.ts:28#DISPATCHER_LOG_EVENTS</code>, and the co-located test rejects field drift.</p>
 <table>
 <thead>
 <tr>
@@ -2796,7 +2796,7 @@
 <p><code>offer_latency_ms</code> and <code>queue_wait_ms</code> are the snake_case fields, matching the <code>delta_ms</code> metric idiom; ids stay camelCase, consistent with the app-wide pino correlation fields.</p>
 <p><code>queue_wait_ms</code> is <code>max(0, Date.now() - job.enqueuedAt)</code> at the moment of the event. <strong>It is per-attempt, not end-to-end:</strong> <code>enqueuedAt</code> is reset to <code>Date.now()</code> on every requeue (the <code>requeueJob</code> paths in <code>src/orchestrator/job-queue.ts</code> and the <code>reconstructJobFromOffer</code> paths in <code>src/orchestrator/job-dispatcher.ts</code>), so a job that bounces through <code>no_eligible_daemon</code> or a daemon reject restarts the clock. Read it as "how long this attempt waited for a dispatch decision," the saturation signal (USE-method "time waiting" / Sidekiq queue latency), not total time in system. Alert: a sustained p99 <code>queue_wait_ms</code> over ~30s on <code>dispatcher.offer.sent</code> indicates fleet undersizing; cross-check against <code>offer_latency_ms</code> (rising there instead points to slow daemons, not too few of them).</p>
 <h2 id="daemon-heartbeat-fields">Daemon heartbeat fields<a class="headerlink" href="#daemon-heartbeat-fields" title="Permanent link">&para;</a></h2>
-<p>The orchestrator pings each connected daemon every <code>HEARTBEAT_INTERVAL_MS</code> (default 30s) and evicts one that misses pongs past <code>HEARTBEAT_TIMEOUT_MS</code> (default 90s). The heartbeat lifecycle in <code>src/orchestrator/connection-handler.ts</code> emits three structured events pinned per-event by a <code>z.discriminatedUnion</code> (<code>src/orchestrator/log-fields.ts:142#DaemonHeartbeatLogSchema</code>), so <code>missedPongs</code> is pinned to <code>pong_missed</code> and <code>ttl_refresh_failed</code> carries its <code>err</code>; constants live in <code>src/orchestrator/log-fields.ts:36#DAEMON_HEARTBEAT_LOG_EVENTS</code>.</p>
+<p>The orchestrator pings each connected daemon every <code>HEARTBEAT_INTERVAL_MS</code> (default 30s) and evicts one that misses pongs past <code>HEARTBEAT_TIMEOUT_MS</code> (default 90s). The heartbeat lifecycle in <code>src/orchestrator/connection-handler.ts</code> emits three structured events pinned per-event by a <code>z.discriminatedUnion</code> (<code>src/orchestrator/log-fields.ts:149#DaemonHeartbeatLogSchema</code>), so <code>missedPongs</code> is pinned to <code>pong_missed</code> and <code>ttl_refresh_failed</code> carries its <code>err</code>; constants live in <code>src/orchestrator/log-fields.ts:36#DAEMON_HEARTBEAT_LOG_EVENTS</code>.</p>
 <table>
 <thead>
 <tr>
@@ -2971,7 +2971,7 @@
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>| count by pr.repo
 </span></code></pre></div>
 <h2 id="dispatch-reasons">Dispatch reasons<a class="headerlink" href="#dispatch-reasons" title="Permanent link">&para;</a></h2>
-<p>Canonical source: <code>src/shared/dispatch-types.ts</code>. Four values; all land on <code>dispatch_target=daemon</code>.</p>
+<p>Canonical source: <code>src/shared/dispatch-types.ts</code>. Five values across two targets: the four daemon-fleet reasons land on <code>dispatch_target=daemon</code>, and <code>workflow-runner</code> lands on <code>dispatch_target=workflow-runner</code>.</p>
 <table>
 <thead>
 <tr>
@@ -2995,6 +2995,10 @@
 <tr>
 <td><code>ephemeral-spawn-failed</code></td>
 <td>A spawn was required but the K8s API call failed. The job is rejected with a tracking-comment infra error.</td>
+</tr>
+<tr>
+<td><code>workflow-runner</code></td>
+<td>A structured workflow (<code>triage</code>, <code>plan</code>, <code>implement</code>, <code>review</code>, <code>resolve</code>) claimed by the controller and run in a one-attempt isolated Pod, not on the shared daemon fleet.</td>
 </tr>
 </tbody>
 </table>
@@ -3185,7 +3189,7 @@ daemon executor.</p>
 </tr>
 </tbody>
 </table>
-<p><code>via</code> is one of <code>handleAccept</code>, <code>handleScopedAccept</code>, <code>postOrphanNotification</code>, <code>shipTickleResume</code>, <code>proposalPoller</code>, <code>schedulerRunAction</code>. The token, App JWT, and private key are never logged (security invariant 2); <code>err</code> is serialized through the secret-scrubbing pino error serializer.</p>
+<p><code>via</code> is one of <code>handleAccept</code>, <code>handleScopedAccept</code>, <code>shipTickleResume</code>, <code>proposalPoller</code>, <code>schedulerRunAction</code>, <code>notifyExpiredWorkflowAttempts</code>, <code>notifyExpiredWorkflowDispatches</code>, <code>notifyRunnerStartFailures</code>, <code>notifyDisconnectedDaemonWorkflows</code>, <code>notifyMigrationInterruptedWorkflows</code>, <code>reconcileWorkflowCascade</code>, <code>workflowRunnerPayload</code>, <code>workflowRunnerResult</code> (canonical source: <code>TOKEN_MINT_VIA</code> in <code>src/orchestrator/log-fields.ts</code>). The token, App JWT, and private key are never logged (security invariant 2); <code>err</code> is serialized through the secret-scrubbing pino error serializer.</p>
 <h2 id="inbound-http-boundary">Inbound HTTP boundary<a class="headerlink" href="#inbound-http-boundary" title="Permanent link">&para;</a></h2>
 <p>Structured access-log family for the webhook server's inbound HTTP surface (webhook entry, HMAC verification failure, readiness probe, operator scheduler endpoint). Schema pinned in <code>src/app-log-fields.ts#HttpLogFieldsSchema</code>; emit sites in <code>src/app.ts</code>. All lines carry bounded metadata only, never the webhook secret, the <code>X-Hub-Signature-256</code> bytes, the raw request body, or <code>Authorization</code> headers.</p>
 <table>

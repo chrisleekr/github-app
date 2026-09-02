@@ -1720,7 +1720,7 @@ clears.</p>
 (<code>last_run_at</code>, <code>last_content_sha</code>, <code>in_flight_job_id</code>, <code>in_flight_started_at</code>).</p>
 <h2 id="stuck-in_flight_job_id">Stuck <code>in_flight_job_id</code><a class="headerlink" href="#stuck-in_flight_job_id" title="Permanent link">&para;</a></h2>
 <p>The single-flight lock is taken when a run is claimed. It is normally cleared
-the moment the run completes (the <code>scoped-job-completion</code> handler), so a healthy
+the moment the run completes (the <code>scoped-job:completion</code> handler), so a healthy
 run releases it immediately. As a backstop it is also <strong>self-healing</strong>: the
 claim treats a lock older than <code>2 × AGENT_TIMEOUT_MS</code> (always longer than the
 longest possible run) as released, so a daemon that died mid-run does not

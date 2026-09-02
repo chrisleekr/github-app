@@ -1901,7 +1901,7 @@
 <h3 id="single-target-four-reasons">Single target, four reasons<a class="headerlink" href="#single-target-four-reasons" title="Permanent link">&para;</a></h3>
 <p>Canonical source: <code>src/shared/dispatch-types.ts</code>.</p>
 <ul>
-<li><code>DispatchTarget</code> = <code>"daemon"</code> (singleton: kept as a field for DB/log stability).</li>
+<li><code>DispatchTarget</code> is <code>"daemon"</code> (the shared fleet) or <code>"workflow-runner"</code> (a one-attempt isolated Pod per structured-workflow attempt).</li>
 <li><code>DispatchReason</code> is one of:</li>
 </ul>
 <table>
@@ -1927,6 +1927,10 @@
 <tr>
 <td><code>ephemeral-spawn-failed</code></td>
 <td>Spawn was required but the K8s API call failed. Job rejected with a tracking-comment infra error.</td>
+</tr>
+<tr>
+<td><code>workflow-runner</code></td>
+<td>A structured workflow claimed by the controller, run in its own one-attempt Pod rather than on the fleet.</td>
 </tr>
 </tbody>
 </table>

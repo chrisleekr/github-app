@@ -760,6 +760,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#duplicate-findings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Duplicate findings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#method" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -830,6 +841,17 @@
     <span class="md-ellipsis">
       
         Review learnings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-repo-review-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-repo review policy
       
     </span>
   </a>
@@ -1596,6 +1618,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#duplicate-findings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Duplicate findings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#method" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1672,6 +1705,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#per-repo-review-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-repo review policy
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1716,6 +1760,10 @@
 <td><code>@chrisleekr-bot review this PR</code> · <code>@chrisleekr-bot do a code review</code> · <code>@chrisleekr-bot check for issues</code></td>
 </tr>
 <tr>
+<td>Auto-trigger</td>
+<td>A push to an open PR by an <code>AUTO_REVIEW_USERS</code> login, when the repo sets <code>workflows.review.auto: true</code>. See <a href="../../repo-config/#auto-review">Auto review</a></td>
+</tr>
+<tr>
 <td>Accepted target</td>
 <td>Pull request</td>
 </tr>
@@ -1729,7 +1777,7 @@
 </tr>
 <tr>
 <td>Side effects</td>
-<td>Inline review comments via <code>mcp__github_inline_comment__create_inline_comment</code>; force-push of a clean rebase if branch is behind base</td>
+<td>Inline review comments via <code>mcp__github_inline_comment__create_inline_comment</code></td>
 </tr>
 <tr>
 <td>Source</td>
@@ -1737,6 +1785,24 @@
 </tr>
 </tbody>
 </table>
+<h2 id="duplicate-findings">Duplicate findings<a class="headerlink" href="#duplicate-findings" title="Permanent link">&para;</a></h2>
+<p>Each finding is posted as its own review thread, and re-running the workflow does
+not repost a finding that is still open: a new comment is skipped when this bot
+already has a live comment on the same file, line, and diff side.</p>
+<p>Matching is by location, not wording, because the agent rewords the same finding
+between runs. Two consequences worth knowing:</p>
+<ul>
+<li>What happens once the code around a finding moves is deliberately not relied
+  on. The REST reference documents no nulling rule for a review comment's <code>line</code>,
+  so the finding is either re-reported on its new line or stays suppressed while
+  that thread lives. Settling it means switching the check to GraphQL
+  <code>PullRequestReviewThread.isOutdated</code>.</li>
+<li>A genuinely <em>different</em> second finding on an already-commented line is
+  suppressed. The prompt already asks for one comment per finding on the most
+  relevant line, so this is rare.</li>
+</ul>
+<p>This matters most under <a href="../../repo-config/#auto-review">auto review</a>, where the
+workflow can run on every push.</p>
 <h2 id="method">Method<a class="headerlink" href="#method" title="Permanent link">&para;</a></h2>
 <p>The agent operates as a senior engineer:</p>
 <ul>
@@ -1836,10 +1902,12 @@
 <p>Every failure path (<code>runPipeline</code> failure, the outer handler catch, or any sync/async throw before the pipeline runs) returns <code>status: "failed"</code> with two distinct outputs:</p>
 <ul>
 <li><strong>Public tracking comment</strong>: a safe constant: <code>"review pipeline execution failed, see server logs for details."</code> Never carries the raw error string, since octokit error stacks include the request URL with the installation token (<code>https://x-access-token:GHS_xxx@…</code>).</li>
-<li><strong>Operator surfaces (DB + logs)</strong>: <code>state.failedReason</code> on the <code>workflow_runs</code> row, <code>pino</code> log line on the daemon, and <code>ExecutionResult.errorMessage</code> returned to the caller. These carry the full SDK message so an operator can diagnose without tailing daemon stderr.</li>
+<li><strong>Operator surfaces (DB + logs)</strong>: <code>state.failedReason</code> on the <code>workflow_runs</code> row plus runner and controller <code>pino</code> lines. The controller applies the credential-output boundary before persisting the runner's SDK reason.</li>
 </ul>
 <h2 id="review-learnings">Review learnings<a class="headerlink" href="#review-learnings" title="Permanent link">&para;</a></h2>
 <p><code>review</code> is one of two workflows (with <code>resolve</code>) that loads persisted review-policy directives from the <code>review_learnings</code> table and renders them into the prompt. Loaded directives whose <code>file_glob</code> matches at least one changed file are surfaced verbatim in a <code>&lt;review_learnings_…&gt;</code> block ahead of the diff, and their IDs flow back through <code>appliedReviewLearningIds</code> on the handler result so the orchestrator can bump <code>use_count</code> precisely. The tracking comment ends with a <code>🧠 Learnings used</code> collapsible footer when at least one directive applied. See <code>docs/use/review-learnings.md</code> for the full feature, gating (<code>REVIEW_LEARNINGS_ENABLED</code>, per-repo <code>.github-app.yaml</code> opt-out), and operator notes.</p>
+<h2 id="per-repo-review-policy">Per-repo review policy<a class="headerlink" href="#per-repo-review-policy" title="Permanent link">&para;</a></h2>
+<p>A repo's <code>.github-app.yaml</code> can shape this workflow through two <code>workflows.review</code> keys: <code>instructions</code> (owner-trusted review policy injected into the prompt, overriding the agent's default heuristics) and <code>path_filters</code> (changed files matching a glob are dropped from the prompt the reviewer sees). Both are resolved during controller-owned runner payload preparation, and <code>path_filters</code> is advisory prose only, not an access boundary. See <a href="../../repo-config/">Per-repo configuration</a> for the schema, ceilings, and trust model.</p>
 
 
 
