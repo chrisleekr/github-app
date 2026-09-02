@@ -2,6 +2,11 @@
 # Preload test environment setup before each test file
 preload = ["./test/preload.ts"]
 
+# Test timeout (ms) -- prevent hung tests in CI. `scripts/test-isolated.sh` passes
+# the same value explicitly; this key covers `test:fast`, `test:watch`, and
+# `test:coverage`, which would otherwise fall back to Bun's 5s default.
+timeout = 30000
+
 # Coverage configuration.
 # coverageThreshold is applied per-file: every file must meet both minimums.
 # See https://bun.sh/docs/test/code-coverage#coverage-thresholds

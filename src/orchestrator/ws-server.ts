@@ -19,6 +19,7 @@ import {
   parseWorkflowRunnerPath,
 } from "./workflow-runner-capability";
 import {
+  drainRunnerSessionReleases,
   handleWorkflowRunnerClose,
   handleWorkflowRunnerMessage,
   handleWorkflowRunnerOpen,
@@ -327,6 +328,7 @@ export async function stopWebSocketServer(): Promise<void> {
       new Promise<void>((resolve) => setTimeout(resolve, STOP_DRAIN_TIMEOUT_MS)),
     ]);
     await drainDisconnectCleanups();
+    await drainRunnerSessionReleases();
     logger.info("WebSocket server stopped");
   }
 }

@@ -65,6 +65,10 @@ interface RunnerSession {
 
 const sessions = new Map<string, RunnerSession>();
 const attemptChains = new Map<string, Promise<void>>();
+// Token revocation is started fire-and-forget on close, so shutdown has to be
+// able to wait for it. Without this, `stopWebSocketServer` can return while an
+// installation token is still live.
+const pendingSessionReleases = new Set<Promise<void>>();
 
 async function revokeUndeliveredRunnerToken(job: WorkflowRunnerPayload): Promise<void> {
   await revokeInstallationTokenValue(job.installationToken, logger, {
@@ -83,6 +87,29 @@ async function revokeRunnerSessionToken(session: RunnerSession): Promise<void> {
 async function releaseRunnerSessionToken(session: RunnerSession): Promise<void> {
   await (attemptChains.get(session.attempt.attemptId) ?? Promise.resolve()).catch(() => undefined);
   await revokeRunnerSessionToken(session);
+}
+
+/** Start a session release and keep it drainable by `drainRunnerSessionReleases`. */
+function startRunnerSessionRelease(session: RunnerSession): void {
+  const release = releaseRunnerSessionToken(session)
+    .catch((err: unknown) => {
+      logger.warn(
+        { err, attemptId: session.attempt.attemptId },
+        "Workflow runner session token release failed",
+      );
+    })
+    .finally(() => {
+      pendingSessionReleases.delete(release);
+    });
+  pendingSessionReleases.add(release);
+}
+
+/** Await every in-flight runner token revocation so shutdown cannot outrun it. */
+export async function drainRunnerSessionReleases(): Promise<void> {
+  while (pendingSessionReleases.size > 0) {
+    // eslint-disable-next-line no-await-in-loop -- a release can enqueue another
+    await Promise.all([...pendingSessionReleases]);
+  }
 }
 
 function send(ws: ServerWebSocket<WsConnectionData>, message: unknown): boolean {
@@ -105,6 +132,7 @@ function closePolicy(ws: ServerWebSocket<WsConnectionData>, reason: string): voi
 
 export function handleWorkflowRunnerOpen(ws: ServerWebSocket<WsConnectionData>): void {
   ws.data.runnerRegistered = false;
+  ws.data.runnerRegisterInFlight = false;
 }
 
 export function handleWorkflowRunnerClose(ws: ServerWebSocket<WsConnectionData>): void {
@@ -113,7 +141,7 @@ export function handleWorkflowRunnerClose(ws: ServerWebSocket<WsConnectionData>)
   const session = sessions.get(attemptId);
   if (session?.ws !== ws) return;
   sessions.delete(attemptId);
-  void releaseRunnerSessionToken(session);
+  startRunnerSessionRelease(session);
 }
 
 export function handleWorkflowRunnerMessage(
@@ -155,7 +183,7 @@ async function registerRunner(
   ws: ServerWebSocket<WsConnectionData>,
   message: Extract<WorkflowRunnerClientMessage, { type: "workflow-runner:register" }>,
 ): Promise<void> {
-  if (ws.data.runnerRegistered === true) {
+  if (ws.data.runnerRegistered === true || ws.data.runnerRegisterInFlight === true) {
     closePolicy(ws, "duplicate workflow runner registration");
     return;
   }
@@ -163,6 +191,11 @@ async function registerRunner(
     closePolicy(ws, "incompatible workflow runner protocol");
     return;
   }
+  // Claim the socket synchronously, before the first await. `runnerRegistered`
+  // is only set after several suspension points, so two register frames
+  // delivered back to back would both pass that guard, mint two payloads, and
+  // the loser would tear down the session the winner installed.
+  ws.data.runnerRegisterInFlight = true;
 
   const attempt = { runId: message.payload.runId, attemptId: message.payload.attemptId };
   const state = await getWorkflowRunnerRegistrationState(attempt);
@@ -245,7 +278,7 @@ async function registerRunner(
     if (old !== undefined && old.ws !== ws) {
       sessions.delete(state.attempt.attemptId);
       old.ws.close(4002, "superseded by runner reconnect");
-      void releaseRunnerSessionToken(old);
+      startRunnerSessionRelease(old);
     }
     const session: RunnerSession = {
       ws,
@@ -274,6 +307,7 @@ async function registerRunner(
       }
       sessionInstalled = false;
       ws.data.runnerRegistered = false;
+      ws.data.runnerRegisterInFlight = false;
       return;
     }
     payloadTransferred = job !== undefined;
@@ -618,4 +652,5 @@ export function getWorkflowRunnerConnection(
 export function resetWorkflowRunnerControllerForTests(): void {
   sessions.clear();
   attemptChains.clear();
+  pendingSessionReleases.clear();
 }

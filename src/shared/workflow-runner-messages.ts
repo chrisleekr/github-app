@@ -56,8 +56,22 @@ const targetSchema = z.object({
   number: z.number().int().positive(),
 });
 
+// The runner casts `context` to `SerializableBotContext` and reads these five
+// fields before anything else. `z.record` alone accepts `{}`, which would put
+// `undefined` into `runContext.target` behind a typed cast. `catchall` keeps the
+// remaining BotContext fields passing through untouched.
+const workflowRunnerContextSchema = z
+  .object({
+    owner: z.string().min(1),
+    repo: z.string().min(1),
+    entityNumber: z.number().int().positive(),
+    isPR: z.boolean(),
+    deliveryId: z.string().min(1),
+  })
+  .catchall(z.unknown());
+
 export const WorkflowRunnerPayloadSchema = z.object({
-  context: z.record(z.string(), z.unknown()),
+  context: workflowRunnerContextSchema,
   installationToken: z.string().min(1),
   installationTokenExpiresAt: z.iso.datetime(),
   attemptDeadlineAt: z.iso.datetime(),

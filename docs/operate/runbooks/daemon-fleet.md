@@ -198,7 +198,7 @@ On every event the orchestrator evaluates:
 
 ## Workflow-runner rollout
 
-Migration 017 can recover reconstructable queued rows, but it cannot safely adopt arbitrary pre-lease work already executing in a shared daemon. Use a zero-in-flight cutover:
+Migration 017 can recover reconstructible queued rows, but it cannot safely adopt arbitrary pre-lease work already executing in a shared daemon. Use a zero-in-flight cutover:
 
 1. Stop new GitHub webhook traffic while leaving the existing controller and daemon fleet running so current work can drain.
 2. Wait until both queries return zero:

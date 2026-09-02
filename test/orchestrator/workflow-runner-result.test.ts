@@ -278,6 +278,30 @@ describe("workflow runner result projection", () => {
     expect(markWorkflowRunnerResultProcessed).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses to project a result that is not durably stored", async () => {
+    const result = pending();
+    resultStates.delete(result.attemptId);
+
+    await expectToReject(
+      processWorkflowRunnerResult(result, {} as never),
+      "Workflow result is not durably stored",
+    );
+    expect(ensureWorkflowCascadeForOffer).not.toHaveBeenCalled();
+    expect(markWorkflowRunnerResultProcessed).not.toHaveBeenCalled();
+  });
+
+  it("refuses to project a result whose run row has moved to another attempt", async () => {
+    const result = pending();
+    attemptsByRun.set(result.runId, crypto.randomUUID());
+
+    await expectToReject(
+      processWorkflowRunnerResult(result, {} as never),
+      "Workflow result row is no longer current",
+    );
+    expect(ensureWorkflowCascadeForOffer).not.toHaveBeenCalled();
+    expect(markWorkflowRunnerResultProcessed).not.toHaveBeenCalled();
+  });
+
   it("receipts the durable result when best-effort knowledge persistence fails", async () => {
     const result = pending();
     persistRepoKnowledge.mockRejectedValueOnce(new Error("database unavailable"));

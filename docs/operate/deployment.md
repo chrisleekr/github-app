@@ -73,9 +73,9 @@ docker build -f Dockerfile.orchestrator \
 
 ### Verifying image attestations
 
-> Note: As SBOM file size is over 16MB, temporary disable SBOM attestations.
+> **Attestations are currently disabled.** The `provenance: mode=max` / `sbom: true` inputs, the `attestations: write` permission, and the `gh attestation verify` gate in `.github/workflows/docker-build.yml` are all commented out because the SBOM exceeded GitHub's 16MB attestation limit. The GitLab builds pass `--provenance false`. **No published tag carries an attestation today**, so the `gh attestation verify` commands below will fail until the inputs are restored. The section is retained because the workflow code is retained in place for re-enablement.
 
-Every published tag, both `-orchestrator` and `-daemon` variants and the bare `<version>` / `latest` aliases, ships with two Sigstore-signed attestations bound to the manifest-list digest:
+Once re-enabled, every published tag, both `-orchestrator` and `-daemon` variants and the bare `<version>` / `latest` aliases, ships with two Sigstore-signed attestations bound to the manifest-list digest:
 
 | Predicate type                   | What it proves                                                                                                                                                                                                              | Source                                                |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |

@@ -74,8 +74,29 @@ void mock.module("../../src/orchestrator/workflow-runner-capability", () => ({
 void mock.module("../../src/orchestrator/workflow-expiry-notifier", () => ({
   reconcilePendingWorkflowFailureNotifications,
 }));
+// Mirrors the real validator in `workflow-runner-dispatch.ts`: the reconciler
+// now shares it, so both paths reject an empty string the same way.
+const requiredRunnerConfig = mock(() => {
+  if (
+    config.githubPersonalAccessToken !== undefined ||
+    config.daemonImage === undefined ||
+    config.daemonImage === "" ||
+    config.orchestratorPublicUrl === undefined ||
+    config.orchestratorPublicUrl === "" ||
+    config.workflowRunnerCapabilitySecret === undefined ||
+    config.workflowRunnerCapabilitySecret === ""
+  ) {
+    throw new Error("workflow runner configuration is incomplete");
+  }
+  return {
+    image: config.daemonImage,
+    orchestratorUrl: config.orchestratorPublicUrl,
+    capabilitySecret: config.workflowRunnerCapabilitySecret,
+  };
+});
 void mock.module("../../src/orchestrator/workflow-runner-dispatch", () => ({
   failWorkflowRunnerResourceAttempt,
+  requiredRunnerConfig,
 }));
 void mock.module("../../src/orchestrator/workflow-runner-resources", () => ({
   ensureCurrentWorkflowRunnerResources,
@@ -159,6 +180,15 @@ describe("workflow runner reconciliation", () => {
 
   it("skips active resource creation when runner configuration is unsafe", async () => {
     config.githubPersonalAccessToken = "global-pat";
+    await reconcileWorkflowRunners();
+    expect(ensureCurrentWorkflowRunnerResources).not.toHaveBeenCalled();
+    expect(cleanupWorkflowRunnerAttempt).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips active resource creation when a required setting is an empty string", async () => {
+    // An empty `DAEMON_IMAGE` must not reach Kubernetes as `image: ""`. The
+    // dispatch path terminalizes it permanently; the reconciler skips.
+    config.daemonImage = "";
     await reconcileWorkflowRunners();
     expect(ensureCurrentWorkflowRunnerResources).not.toHaveBeenCalled();
     expect(cleanupWorkflowRunnerAttempt).toHaveBeenCalledTimes(2);

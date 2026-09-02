@@ -11,6 +11,7 @@ export interface WsConnectionData {
   runnerRunId?: string;
   runnerAttemptId?: string;
   runnerRegistered?: boolean;
+  runnerRegisterInFlight?: boolean;
 }
 
 /** Send a protocol error on a daemon WebSocket. */

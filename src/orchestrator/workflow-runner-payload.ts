@@ -292,7 +292,7 @@ export async function prepareWorkflowRunnerPayload(
     }
 
     return {
-      context: context as unknown as Record<string, unknown>,
+      context: context as unknown as WorkflowRunnerPayload["context"],
       installationToken: token,
       installationTokenExpiresAt: expiresAt,
       attemptDeadlineAt: attempt.attemptDeadlineAt.toISOString(),

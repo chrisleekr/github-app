@@ -19,7 +19,7 @@ import {
 
 export const WORKFLOW_RUNNER_STARTUP_LEASE_MS = Math.max(300_000, 4 * config.heartbeatTimeoutMs);
 
-function requiredRunnerConfig(): {
+export function requiredRunnerConfig(): {
   readonly image: string;
   readonly orchestratorUrl: string;
   readonly capabilitySecret: string;
@@ -71,7 +71,13 @@ export async function failWorkflowRunnerResourceAttempt(
   await ensureWorkflowCascadeForOffer(attempt.attemptId, logger).catch((err: unknown) => {
     logger.warn({ err, attemptId: attempt.attemptId }, "Runner-start cascade will be reconciled");
   });
-  await notifyRunnerStartFailures([row]);
+  // Best-effort, like the cascade above and the cleanup below.
+  // `reconcilePendingWorkflowFailureNotifications` retries this durably, and a
+  // throw here would skip the resource cleanup and reject `dispatchWorkflowRunner`
+  // for an attempt that is already durably failed.
+  await notifyRunnerStartFailures([row]).catch((err: unknown) => {
+    logger.warn({ err, attemptId: attempt.attemptId }, "Runner start notice will be reconciled");
+  });
   await cleanupCurrentWorkflowRunnerResources(attempt).catch((err: unknown) => {
     logger.warn({ err, attemptId: attempt.attemptId }, "Runner resource cleanup will be retried");
   });

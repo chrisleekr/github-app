@@ -117,6 +117,12 @@ describe("isolated workflow runner dispatch", () => {
     expect(ensureCurrentWorkflowRunnerResources).not.toHaveBeenCalled();
   });
 
+  it("does not create Kubernetes resources when the durable claim is stale", async () => {
+    claimWorkflowRunnerAttempt.mockResolvedValueOnce({ outcome: "stale" });
+    expect(await dispatchWorkflowRunner(job)).toBe("stale");
+    expect(ensureCurrentWorkflowRunnerResources).not.toHaveBeenCalled();
+  });
+
   it("creates the exact claimed attempt with its derived capability", async () => {
     expect(await dispatchWorkflowRunner(job)).toBe("accepted");
     expect(ensureCurrentWorkflowRunnerResources).toHaveBeenCalledWith({

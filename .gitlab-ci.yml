@@ -129,6 +129,10 @@ admission-policy:
   services:
     - name: docker:29-dind@sha256:12e683a161823b2a839aeea999b9d960e6e1f9a97b1679ad6b441982e2d9cf07
       alias: docker
+  # Runner prerequisite: the executor must mount /certs/client into the build
+  # container, `[runners.docker] volumes = ["/certs/client", "/cache"]`. GitLab
+  # shares /builds automatically but not the DinD TLS client certificates, and
+  # without them the outer `docker run` fails before the harness starts.
   variables:
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: /certs

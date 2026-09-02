@@ -43,7 +43,13 @@ function reviewLearnings(count: number): Record<string, unknown>[] {
 describe("WorkflowRunnerPayloadSchema", () => {
   it("retains handler inputs and strips legacy shared-daemon inputs", () => {
     const payload = WorkflowRunnerPayloadSchema.parse({
-      context: { owner: "acme", repo: "widgets", entityNumber: 16 },
+      context: {
+        owner: "acme",
+        repo: "widgets",
+        entityNumber: 16,
+        isPR: true,
+        deliveryId: "delivery-16",
+      },
       installationToken: "target-repository-token",
       installationTokenExpiresAt: "2026-08-23T04:00:00Z",
       attemptDeadlineAt: "2026-08-23T04:10:00Z",
@@ -78,7 +84,13 @@ describe("WorkflowRunnerPayloadSchema", () => {
     });
 
     expect(payload).toEqual({
-      context: { owner: "acme", repo: "widgets", entityNumber: 16 },
+      context: {
+        owner: "acme",
+        repo: "widgets",
+        entityNumber: 16,
+        isPR: true,
+        deliveryId: "delivery-16",
+      },
       installationToken: "target-repository-token",
       installationTokenExpiresAt: "2026-08-23T04:00:00Z",
       attemptDeadlineAt: "2026-08-23T04:10:00Z",
@@ -116,7 +128,13 @@ describe("WorkflowRunnerPayloadSchema", () => {
   it("caps repo memory at 50 entries", () => {
     expect(() =>
       WorkflowRunnerPayloadSchema.parse({
-        context: {},
+        context: {
+          owner: "acme",
+          repo: "widgets",
+          entityNumber: 16,
+          isPR: true,
+          deliveryId: "delivery-16",
+        },
         installationToken: "token",
         installationTokenExpiresAt: "2026-08-23T04:00:00Z",
         attemptDeadlineAt: "2026-08-23T04:10:00Z",
@@ -129,7 +147,13 @@ describe("WorkflowRunnerPayloadSchema", () => {
   it("bounds review learnings and strips unapproved historical state", () => {
     const runId = crypto.randomUUID();
     const base = {
-      context: {},
+      context: {
+        owner: "acme",
+        repo: "widgets",
+        entityNumber: 16,
+        isPR: true,
+        deliveryId: "delivery-16",
+      },
       installationToken: "token",
       installationTokenExpiresAt: "2026-08-23T04:00:00Z",
       attemptDeadlineAt: "2026-08-23T04:10:00Z",

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
-import type { WorkflowRunnerClientMessage } from "../../src/shared/workflow-runner-messages";
+import {
+  WORKFLOW_RUNNER_PROTOCOL_VERSION,
+  type WorkflowRunnerClientMessage,
+} from "../../src/shared/workflow-runner-messages";
 import { waitFor } from "../utils/assertions";
 
 class TestStaleWorkflowAttemptError extends Error {}
@@ -208,7 +211,7 @@ function registerMessage(needsJob = true): WorkflowRunnerClientMessage {
     payload: {
       runId,
       attemptId,
-      protocolVersion: "1.1.0",
+      protocolVersion: WORKFLOW_RUNNER_PROTOCOL_VERSION,
       appVersion: "test",
       needsJob,
     },

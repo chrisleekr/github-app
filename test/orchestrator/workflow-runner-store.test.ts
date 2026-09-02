@@ -382,6 +382,68 @@ describe.skipIf(sql === null)("workflow runner admission", () => {
     );
   });
 
+  it("stores a handed-off result only when every hand-off precondition holds", async () => {
+    const { storeWorkflowRunnerResult } =
+      await import("../../src/orchestrator/workflow-runner-store");
+    const attempt = await claimedWorkflow(37);
+    const childRunId = crypto.randomUUID();
+    // The state `commitAttemptHandOffChild` leaves behind: the parent is still
+    // `running`, its attempt is complete, its lease is released, and its state
+    // names the child it handed off to.
+    await requireSql()`
+      UPDATE workflow_runs
+         SET attempt_completed_at = now(),
+             lease_expires_at = NULL,
+             state = jsonb_build_object('handedOffTo', ${childRunId}::text)
+       WHERE id = ${attempt.runId}
+    `;
+    const payload: WorkflowRunnerResultPayload = {
+      runId: attempt.runId,
+      attemptId: attempt.attemptId,
+      result: { status: "handed-off", childRunId, humanMessage: "Handed off to the child run." },
+      durationMs: 654,
+    };
+
+    expect(await storeWorkflowRunnerResult(payload, requireSql())).toBe("stored");
+    const rows: { workflow_status: string; execution_status: string }[] = await requireSql()`
+      SELECT wr.status AS workflow_status, e.status AS execution_status
+        FROM workflow_runs AS wr
+        JOIN executions AS e ON e.delivery_id = wr.execution_delivery_id
+       WHERE wr.id = ${attempt.runId}
+    `;
+    // A hand-off terminalizes nothing: the child run carries the work forward.
+    expect(rows[0]?.workflow_status).toBe("running");
+    expect(rows[0]?.execution_status).toBe("completed");
+  });
+
+  it("rejects a handed-off result naming a child the parent never handed off to", async () => {
+    const { storeWorkflowRunnerResult } =
+      await import("../../src/orchestrator/workflow-runner-store");
+    const attempt = await claimedWorkflow(38);
+    await requireSql()`
+      UPDATE workflow_runs
+         SET attempt_completed_at = now(),
+             lease_expires_at = NULL,
+             state = jsonb_build_object('handedOffTo', ${crypto.randomUUID()}::text)
+       WHERE id = ${attempt.runId}
+    `;
+    const payload: WorkflowRunnerResultPayload = {
+      runId: attempt.runId,
+      attemptId: attempt.attemptId,
+      result: {
+        status: "handed-off",
+        childRunId: crypto.randomUUID(),
+        humanMessage: "Handed off to the child run.",
+      },
+      durationMs: 654,
+    };
+
+    await expectToReject(
+      storeWorkflowRunnerResult(payload, requireSql()),
+      "workflow attempt is no longer current",
+    );
+  });
+
   it("stores an incomplete result as incomplete while failing its execution receipt", async () => {
     const { storeWorkflowRunnerResult } =
       await import("../../src/orchestrator/workflow-runner-store");

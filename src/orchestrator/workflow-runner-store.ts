@@ -1,6 +1,7 @@
 import type { SQL } from "bun";
 
 import { requireDb } from "../db";
+import { logger } from "../logger";
 import {
   type WorkflowRunnerCommand,
   type WorkflowRunnerResultPayload,
@@ -198,7 +199,7 @@ export async function claimWorkflowRunnerAttempt(
          WHERE wr.status = 'running'
            AND wr.owner_kind = 'daemon'
            AND wr.attempt_id IS NOT NULL
-           AND wr.owner_id = 'workflow-runner:' || wr.attempt_id::text
+           AND wr.owner_id = ${RUNNER_ID_PREFIX} || wr.attempt_id::text
            AND wr.lease_expires_at > now()
            AND wr.attempt_deadline_at > now()
            AND wr.attempt_completed_at IS NULL
@@ -595,12 +596,33 @@ export async function findPendingWorkflowRunnerResults(
      ORDER BY e.completed_at
      LIMIT ${limit}
   `;
-  return rows.map((row) => ({
-    runId: row.run_id,
-    attemptId: row.attempt_id,
-    executionDeliveryId: row.delivery_id,
-    payload: WorkflowRunnerResultPayloadSchema.parse(row.workflow_result_payload),
-  }));
+  // Per-row `safeParse`: a single unparseable stored payload must not reject the
+  // whole loader. `reconcilePendingWorkflowRunnerResults` awaits this outside its
+  // per-result try, so one bad row would otherwise stall every other pending
+  // result behind it on every pass.
+  const results: PendingWorkflowRunnerResult[] = [];
+  for (const row of rows) {
+    const parsed = WorkflowRunnerResultPayloadSchema.safeParse(row.workflow_result_payload);
+    if (!parsed.success) {
+      logger.error(
+        {
+          event: "workflow_runner_result_payload_invalid",
+          runId: row.run_id,
+          attemptId: row.attempt_id,
+          err: parsed.error,
+        },
+        "Stored workflow runner result payload is schema-invalid; skipping",
+      );
+      continue;
+    }
+    results.push({
+      runId: row.run_id,
+      attemptId: row.attempt_id,
+      executionDeliveryId: row.delivery_id,
+      payload: parsed.data,
+    });
+  }
+  return results;
 }
 
 export async function markWorkflowRunnerResultProcessed(

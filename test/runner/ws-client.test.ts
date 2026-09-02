@@ -88,7 +88,13 @@ function readyMessage(clientFenceMs = 25, heartbeatIntervalMs = 10, includeJob =
       ...(includeJob
         ? {
             job: {
-              context: {},
+              context: {
+                owner: "acme",
+                repo: "widgets",
+                entityNumber: 16,
+                isPR: true,
+                deliveryId: "delivery-16",
+              },
               installationToken: "installation-token",
               installationTokenExpiresAt: "2026-08-23T04:00:00Z",
               attemptDeadlineAt: "2026-08-23T04:10:00Z",

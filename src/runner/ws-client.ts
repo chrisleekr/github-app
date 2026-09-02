@@ -55,6 +55,13 @@ interface PendingResult {
   retryTimer: ReturnType<typeof setTimeout> | null;
 }
 
+/**
+ * Registration round-trip budget. Generous relative to one WebSocket exchange,
+ * but far below the Pod's activeDeadlineSeconds, which is otherwise the only
+ * bound on a socket that opens and then goes silent.
+ */
+const REGISTRATION_TIMEOUT_MS = 60_000;
+
 export interface WorkflowRunnerClientOptions {
   readonly url: string;
   readonly token: string;
@@ -70,6 +77,7 @@ export class WorkflowRunnerClient {
   private reconnectMs = 1_000;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private fenceTimer: ReturnType<typeof setTimeout> | null = null;
+  private registrationTimer: ReturnType<typeof setTimeout> | null = null;
   private retryMs = 1_000;
   private clientFenceMs = 30_000;
   private jobSettled = false;
@@ -112,6 +120,10 @@ export class WorkflowRunnerClient {
       return;
     }
     this.ws = socket;
+    // A socket that opens but never gets `workflow-runner:registered` back arms
+    // no fence, so `waitForJob()` would stay pending until the Pod's
+    // activeDeadlineSeconds fires. Bound that to one registration round trip.
+    this.armRegistrationWatchdog();
     socket.onopen = (): void => {
       if (this.ws !== socket) return;
       this.registered = false;
@@ -139,6 +151,7 @@ export class WorkflowRunnerClient {
       if (this.ws !== socket) return;
       this.ws = null;
       this.registered = false;
+      this.clearRegistrationWatchdog();
       this.stopHeartbeatSender();
       if (event.code === 1008) {
         this.abort(new Error(`Workflow runner connection rejected: ${event.reason}`));
@@ -285,9 +298,24 @@ export class WorkflowRunnerClient {
     }
   }
 
+  private armRegistrationWatchdog(): void {
+    this.clearRegistrationWatchdog();
+    this.registrationTimer = setTimeout(() => {
+      if (this.closed || this.registered) return;
+      this.abort(new Error("Workflow runner registration watchdog expired"));
+    }, REGISTRATION_TIMEOUT_MS);
+  }
+
+  private clearRegistrationWatchdog(): void {
+    if (this.registrationTimer === null) return;
+    clearTimeout(this.registrationTimer);
+    this.registrationTimer = null;
+  }
+
   private handleRegistered(
     message: Extract<WorkflowRunnerServerMessage, { type: "workflow-runner:registered" }>,
   ): void {
+    this.clearRegistrationWatchdog();
     if (message.payload.state === "completed") {
       for (const [commandId, pending] of this.pendingCommands) {
         if (pending.message.payload.command.type !== "hand-off-child") continue;
@@ -405,6 +433,7 @@ export class WorkflowRunnerClient {
   private stopActivity(): void {
     this.stopHeartbeatSender();
     this.clearFence();
+    this.clearRegistrationWatchdog();
     if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
   }

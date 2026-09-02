@@ -118,6 +118,36 @@ async function listDaemonCandidates(sql: SQL): Promise<string[]> {
   return rows.map((row) => row.id);
 }
 
+const VALKEY_RECHECK_TIMEOUT_MS = 2_000;
+
+/**
+ * `false` only when Valkey positively answered that the key is gone. A timeout
+ * or an error returns `true` so the caller leaves the daemon alone this pass.
+ */
+async function daemonKeyExists(daemonId: string): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const query = (async (): Promise<boolean> => {
+      const valkey = requireValkeyClient();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Valkey EXISTS returns number
+      const exists: number = await valkey.send("EXISTS", [`daemon:${daemonId}`]);
+      return exists === 1;
+    })();
+    const deadline = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => {
+        logger.warn(
+          { event: "daemon.liveness_recheck_timeout", daemonId },
+          "Valkey liveness recheck timed out; treating the daemon as alive",
+        );
+        resolve(true);
+      }, VALKEY_RECHECK_TIMEOUT_MS);
+    });
+    return await Promise.race([query, deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /** Lock, recheck, and fence one candidate so a reconnect cannot be reaped from a stale snapshot. */
 async function reapDeadDaemonCandidates(
   sql: SQL,
@@ -133,10 +163,12 @@ async function reapDeadDaemonCandidates(
       // eslint-disable-next-line no-await-in-loop -- each owner is fenced in its own short transaction
       const reaped = await sql.begin(async (tx) => {
         await tx`SELECT id FROM daemons WHERE id = ${daemonId} FOR UPDATE`;
-        const valkey = requireValkeyClient();
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Valkey EXISTS returns number
-        const exists: number = await valkey.send("EXISTS", [`daemon:${daemonId}`]);
-        if (exists === 1) return null;
+        // Bounded: this runs inside the `FOR UPDATE` transaction, and Bun's
+        // Valkey client has no per-command deadline. A stalled Valkey would
+        // otherwise hold the `daemons` row lock until the force exit. Treat a
+        // timeout as "still alive" so a stall defers the reap instead of
+        // fencing a daemon on no evidence.
+        if (await daemonKeyExists(daemonId)) return null;
 
         const connection = getConnections().get(daemonId);
         connection?.close(

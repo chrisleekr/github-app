@@ -170,6 +170,23 @@ export async function sanitizeWorkflowRunnerResult(
   ) {
     return parsed.data;
   }
+  // The rejection itself must be observable. `logDeterministicRedaction` stays
+  // silent when the regex matched nothing, and `encodedSecretScanIsSafe` is
+  // short-circuited by `!exactCredential`, so an exact-credential hit or a
+  // schema failure would otherwise reach the user with zero telemetry.
+  logger.warn(
+    {
+      event: "workflow_runner_output_rejected",
+      callsite: "workflow-runner.result",
+      scanner: exactCredential ? "exact" : "regex",
+      exactCredential,
+      propertyNameMatchCount: redacted.propertyNameMatchCount,
+      schemaValid: parsed.success,
+      runId: payload.runId,
+      attemptId: payload.attemptId,
+    },
+    "Workflow runner result was rejected by the credential safety boundary",
+  );
   return {
     runId: payload.runId,
     attemptId: payload.attemptId,

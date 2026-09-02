@@ -60,6 +60,24 @@ async function requireDenied(pod: V1Pod, caseName: string): Promise<void> {
   }
 }
 
+/**
+ * Poll until the policy denies `pod`. `configureBoundaryOrigin` patches the
+ * ConfigMap and returns immediately, so a plain `requireDenied` right after a
+ * patch can be satisfied by the previous parameters rather than the new ones.
+ */
+async function requireDeniedEventually(pod: V1Pod, caseName: string): Promise<void> {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const result = await kubectl(
+      ["create", "--dry-run=server", "--output=name", "--filename=-"],
+      JSON.stringify(pod),
+    );
+    if (result.exitCode !== 0 && `${result.stdout}\n${result.stderr}`.includes(POLICY)) return;
+    // eslint-disable-next-line no-await-in-loop -- ConfigMap admission parameters propagate asynchronously
+    await Bun.sleep(1_000);
+  }
+  throw new Error(`${caseName} was never denied by ${POLICY}`);
+}
+
 async function requireAdmitted(pod: V1Pod, caseName: string): Promise<void> {
   for (let attempt = 0; attempt < 30; attempt++) {
     const result = await kubectl(
@@ -427,6 +445,14 @@ async function main(): Promise<void> {
   await requireAdmitted(podWithOrigin(desired, clusterLocalOrigin), "cluster-local ws:// origin");
   const publicPlaintextOrigin = "ws://orchestrator.example.com:3002";
   await configureBoundaryOrigin(publicPlaintextOrigin);
+  // Prove the patch landed before asserting the denial. The Pod admitted one
+  // line above must now be rejected, which can only happen once the params
+  // carry the non-cluster-local ws:// origin and fail the scheme rule. Without
+  // this the next assertion passes on the stale params via origin equality.
+  await requireDeniedEventually(
+    podWithOrigin(desired, clusterLocalOrigin),
+    "cluster-local Pod under a non-cluster-local ws:// boundary origin",
+  );
   await requireDenied(
     podWithOrigin(desired, publicPlaintextOrigin),
     "plaintext origin outside the cluster",
