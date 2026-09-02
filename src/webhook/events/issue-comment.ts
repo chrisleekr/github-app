@@ -10,6 +10,7 @@ import { addReaction } from "../../utils/reactions";
 import { dispatchByIntent } from "../../workflows/dispatcher";
 import { dispatchCommentSurface } from "../../workflows/ship/command-dispatch";
 import { isOwnerAllowed } from "../authorize";
+import { postDispatchFailure } from "../dispatch-failure";
 import { claimDelivery } from "../idempotency";
 
 /**
@@ -76,6 +77,11 @@ export function handleIssueComment(
   const commentBody = payload.comment.body;
   const isPR = payload.issue.pull_request !== undefined;
   const eventSurface = isPR ? "pr-comment" : "issue-comment";
+  // Facts the repo-config trigger filters evaluate. `issue.draft` is
+  // populated when the issue is really a PR, so `ignore_draft_prs` covers
+  // comments too, not just label events. No base ref on this payload, so
+  // the `base_branches` rule is the one that skips here.
+  const trigger = { title: payload.issue.title, draft: isPR ? payload.issue.draft : undefined };
 
   // Trigger-surface dispatch (T028e + T090). PR comments and Issue
   // comments share the same `issue_comment` event; the
@@ -101,6 +107,7 @@ export function handleIssueComment(
         trigger_comment_id: payload.comment.id,
         octokit,
         log: dispatchLog,
+        trigger,
       });
     } catch (err) {
       dispatchLog.error({ err }, "ship dispatchCommentSurface threw for issue_comment");
@@ -138,9 +145,11 @@ export function handleIssueComment(
         deliveryId,
         triggerCommentId: payload.comment.id,
         triggerEventType: "issue_comment",
+        trigger,
       });
     } catch (err) {
       log.error({ err }, "dispatchByIntent threw for issue_comment");
+      await postDispatchFailure({ octokit, log, deliveryId, owner, repo, number: targetNumber });
     }
 
     // Piggyback proposal-poll on the trigger path too: the early-

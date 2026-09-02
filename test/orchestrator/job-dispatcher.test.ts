@@ -16,6 +16,8 @@ import {
   DispatcherOfferLogSchema,
 } from "../../src/orchestrator/log-fields";
 import type { DaemonCapabilities, DaemonInfo } from "../../src/shared/daemon-types";
+import { serverMessageSchema } from "../../src/shared/ws-messages";
+import { expectToReject } from "../utils/assertions";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -50,9 +52,9 @@ void mock.module("../../src/orchestrator/daemon-registry", () => ({
 }));
 
 // history
-const mockMarkExecutionOffered = mock(() => Promise.resolve());
+const mockMarkExecutionOffered = mock(() => Promise.resolve("offered" as const));
 const mockMarkExecutionFailed = mock(() => Promise.resolve());
-const mockRequeueExecution = mock(() => Promise.resolve());
+const mockRequeueExecution = mock(() => Promise.resolve(true));
 
 void mock.module("../../src/orchestrator/history", () => ({
   markExecutionOffered: mockMarkExecutionOffered,
@@ -73,8 +75,9 @@ void mock.module("../../src/orchestrator/job-queue", () => ({
   enqueueJob: mock(() => Promise.resolve()),
   tryDequeueJob: mock(() => Promise.resolve(null)),
   dequeueJob: mock(() => Promise.resolve(null)),
-  isScopedJob: () => false,
-  SCOPED_JOB_KINDS: ["scoped-rebase", "scoped-fix-thread", "scoped-open-pr"],
+  isScopedJob: (job: QueuedJob) =>
+    ["scoped-rebase", "scoped-fix-thread", "scoped-open-pr", "scheduled-action"].includes(job.kind),
+  SCOPED_JOB_KINDS: ["scoped-rebase", "scoped-fix-thread", "scoped-open-pr", "scheduled-action"],
   // C2: job-dispatcher's `reconstructJobFromOffer` re-validates
   // `offer.scoped` via the discriminated-union schema; the legacy-path
   // tests in this file never set `offer.scoped`, so a permanently-failing
@@ -224,6 +227,8 @@ beforeEach(() => {
   mockIsDaemonDraining.mockImplementation(() => false);
   mockGetDaemonInfo.mockImplementation((id: string) => daemonInfoStore.get(id));
   mockRequeueJob.mockImplementation(() => Promise.resolve(true));
+  mockMarkExecutionOffered.mockImplementation(() => Promise.resolve("offered"));
+  mockRequeueExecution.mockImplementation(() => Promise.resolve(true));
 });
 
 describe("inferRequiredTools", () => {
@@ -420,6 +425,21 @@ describe("selectDaemon", () => {
 });
 
 describe("dispatchJob", () => {
+  it("rejects workflow jobs before shared-daemon selection", async () => {
+    const workflowJob: QueuedJob = {
+      ...makeQueuedJob(),
+      kind: "workflow-run",
+      workflowRun: { runId: crypto.randomUUID(), workflowName: "implement" },
+    };
+
+    await expectToReject(
+      dispatchJob(workflowJob),
+      "workflow-run jobs require an isolated workflow runner",
+    );
+    expect(mockGetActiveDaemons).not.toHaveBeenCalled();
+    expect(mockMarkExecutionOffered).not.toHaveBeenCalled();
+  });
+
   it("returns false when no daemon available", async () => {
     const result = await dispatchJob(makeQueuedJob());
     expect(result).toBe(false);
@@ -468,6 +488,67 @@ describe("dispatchJob", () => {
     expect(offerLog).toBeDefined();
     expect(DispatcherOfferLogSchema.safeParse(offerLog).success).toBe(true);
     expect(typeof offerLog?.["queue_wait_ms"]).toBe("number");
+  });
+
+  it("emits a schema-valid scoped-job:offer from a scoped queue job", async () => {
+    const fakeWs = { sendText: mock(() => 1) };
+    mockGetActiveDaemons.mockResolvedValue(["d1"]);
+    daemonInfoStore.set("d1", makeDaemonInfo("d1"));
+    mockConnections.set("d1", fakeWs);
+    const job = {
+      ...makeQueuedJob({ deliveryId: "scoped-dispatch-test" }),
+      kind: "scoped-rebase",
+      installationId: 123,
+      triggerCommentId: 456,
+      prNumber: 42,
+    } satisfies QueuedJob;
+
+    expect(await dispatchJob(job)).toBe(true);
+
+    const frame = JSON.parse(fakeWs.sendText.mock.calls[0]?.[0] as string) as {
+      id: string;
+      type: string;
+      payload: { deliveryId: string };
+    };
+    expect(frame.type).toBe("scoped-job:offer");
+    expect(frame.payload.deliveryId).toBe("scoped-dispatch-test");
+    expect(serverMessageSchema.safeParse(frame).success).toBe(true);
+
+    removePendingOffer(frame.id);
+  });
+
+  it("requeues when the selected socket closes during durable offer assignment", async () => {
+    const fakeWs = { sendText: mock(() => 1) };
+    mockGetActiveDaemons.mockResolvedValue(["d1"]);
+    daemonInfoStore.set("d1", makeDaemonInfo("d1"));
+    mockConnections.set("d1", fakeWs);
+    let resolveOffer: ((value: "offered") => void) | undefined;
+    mockMarkExecutionOffered.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOffer = resolve;
+        }),
+    );
+
+    const dispatch = dispatchJob(makeQueuedJob({ deliveryId: "close-race" }));
+    // eslint-disable-next-line no-await-in-loop -- wait for the controlled offer boundary
+    while (resolveOffer === undefined) await Promise.resolve();
+    mockConnections.delete("d1");
+    resolveOffer("offered");
+
+    expect(await dispatch).toBe(false);
+    expect(mockRequeueExecution).toHaveBeenCalledWith("close-race");
+    expect(fakeWs.sendText).not.toHaveBeenCalled();
+  });
+
+  it("requeues when Bun drops the offer frame", async () => {
+    const fakeWs = { sendText: mock(() => 0) };
+    mockGetActiveDaemons.mockResolvedValue(["d1"]);
+    daemonInfoStore.set("d1", makeDaemonInfo("d1"));
+    mockConnections.set("d1", fakeWs);
+
+    expect(await dispatchJob(makeQueuedJob({ deliveryId: "dropped-frame" }))).toBe(false);
+    expect(mockRequeueExecution).toHaveBeenCalledWith("dropped-frame");
   });
 
   it("creates pending offer with correct metadata", async () => {
@@ -602,6 +683,69 @@ describe("handleJobAccept", () => {
     const parsed = JSON.parse(sentText) as { payload: Record<string, unknown> };
     expect(parsed.payload.envVars).toBeUndefined();
     expect(parsed.payload.memory).toBeUndefined();
+  });
+
+  it("forwards the resolved per-repo policy onto the wire (Gate 2)", () => {
+    const fakeWs = { sendText: mock(() => {}) };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockConnections.set("d-policy", fakeWs as any);
+
+    handleJobAccept({
+      offerId: "offer-policy",
+      daemonId: "d-policy",
+      deliveryId: "del-policy",
+      installationToken: "ghs_token",
+      contextJson: {},
+      maxTurns: 42,
+      allowedTools: ["Read"],
+      envVars: {},
+      memory: [],
+      policy: {
+        model: "claude-repo-pinned-model",
+        timeoutMs: 900_000,
+        extraAllowedTools: ["WebFetch"],
+      },
+    });
+
+    const sentText = (fakeWs.sendText as ReturnType<typeof mock>).mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(sentText) as { payload: Record<string, unknown> };
+    expect(parsed.payload.policy).toEqual({
+      model: "claude-repo-pinned-model",
+      timeoutMs: 900_000,
+      extraAllowedTools: ["WebFetch"],
+    });
+    // The per-repo turn cap rides the existing top-level field, not `policy`.
+    expect(parsed.payload.maxTurns).toBe(42);
+  });
+
+  it("emits the pre-Gate-2 key set verbatim when no policy is supplied (C8)", () => {
+    const fakeWs = { sendText: mock(() => {}) };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockConnections.set("d-nopolicy", fakeWs as any);
+
+    handleJobAccept({
+      offerId: "offer-nopolicy",
+      daemonId: "d-nopolicy",
+      deliveryId: "del-nopolicy",
+      installationToken: "ghs_token",
+      contextJson: { owner: "o", repo: "r" },
+      maxTurns: 10,
+      allowedTools: ["Read"],
+      envVars: { CUSTOM: "val" },
+      memory: [],
+    });
+
+    const sentText = (fakeWs.sendText as ReturnType<typeof mock>).mock.calls[0]?.[0] as string;
+    const parsed = JSON.parse(sentText) as { payload: Record<string, unknown> };
+    // Exact key set: a `policy: undefined` spread leaking an extra key would
+    // change the serialized envelope every daemon already parses.
+    expect(Object.keys(parsed.payload).sort()).toEqual([
+      "allowedTools",
+      "context",
+      "envVars",
+      "installationToken",
+      "maxTurns",
+    ]);
   });
 
   it("returns early when daemon disconnected", () => {

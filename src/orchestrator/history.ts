@@ -4,6 +4,7 @@ import { config } from "../config";
 import { getDb } from "../db";
 import { logger } from "../logger";
 import type { SerializableBotContext } from "../shared/daemon-types";
+import type { DispatchTarget } from "../shared/dispatch-types";
 import type { ModelUsageEntry } from "../types";
 import { decrementDaemonActiveJobs } from "./daemon-registry";
 
@@ -24,6 +25,8 @@ export interface CreateExecutionParams {
   eventName: string;
   triggerUsername: string;
   dispatchMode: string;
+  /** Exact persisted execution protocol. Defaults to the shared-daemon rail. */
+  dispatchTarget?: DispatchTarget;
   /**
    * Dispatch-decision reason. Callers pass the resolved DispatchReason
    * (e.g. "persistent-daemon", "ephemeral-daemon-triage", "ephemeral-spawn-failed")
@@ -51,8 +54,8 @@ export interface CreateExecutionParams {
  * Create an execution record when a webhook arrives.
  * Returns the generated UUID.
  */
-export async function createExecution(params: CreateExecutionParams): Promise<string> {
-  const db = getDb();
+export async function createExecution(params: CreateExecutionParams, sql?: SQL): Promise<string> {
+  const db = sql ?? getDb();
   if (db === null) throw new Error("Database not configured");
 
   const hasDispatchReason = params.dispatchReason !== undefined;
@@ -67,10 +70,7 @@ export async function createExecution(params: CreateExecutionParams): Promise<st
     throw new Error("createExecution: dispatchReason is required when triage fields are provided");
   }
 
-  // Post migration 004 both `dispatch_mode` and `dispatch_target` carry a
-  // CHECK (= 'daemon'). Hardcoding the literal here makes the invariant
-  // unbreakable at the data-layer boundary: a stray caller passing any
-  // other `dispatchMode` value cannot fail the INSERT at runtime.
+  const dispatchTarget = params.dispatchTarget ?? "daemon";
   const triggerCommentId = params.triggerCommentId ?? null;
   const triggerEventType = params.triggerEventType ?? null;
 
@@ -85,7 +85,7 @@ export async function createExecution(params: CreateExecutionParams): Promise<st
       ) VALUES (
         ${params.deliveryId}, ${params.repoOwner}, ${params.repoName},
         ${params.entityNumber}, ${params.entityType}, ${params.eventName},
-        ${params.triggerUsername}, 'daemon', 'daemon',
+        ${params.triggerUsername}, ${dispatchTarget}, ${dispatchTarget},
         ${params.dispatchReason ?? "persistent-daemon"},
         ${params.triageConfidence ?? null}, ${params.triageCostUsd ?? null},
         'queued', ${params.contextJson ?? null}, ${triggerCommentId}, ${triggerEventType}
@@ -101,7 +101,7 @@ export async function createExecution(params: CreateExecutionParams): Promise<st
       ) VALUES (
         ${params.deliveryId}, ${params.repoOwner}, ${params.repoName},
         ${params.entityNumber}, ${params.entityType}, ${params.eventName},
-        ${params.triggerUsername}, 'daemon', 'daemon', ${params.dispatchReason},
+        ${params.triggerUsername}, ${dispatchTarget}, ${dispatchTarget}, ${params.dispatchReason},
         'queued', ${params.contextJson ?? null}, ${triggerCommentId}, ${triggerEventType}
       )
       RETURNING id
@@ -115,7 +115,7 @@ export async function createExecution(params: CreateExecutionParams): Promise<st
       ) VALUES (
         ${params.deliveryId}, ${params.repoOwner}, ${params.repoName},
         ${params.entityNumber}, ${params.entityType}, ${params.eventName},
-        ${params.triggerUsername}, 'daemon', 'daemon', 'queued',
+        ${params.triggerUsername}, ${dispatchTarget}, ${dispatchTarget}, 'queued',
         ${params.contextJson ?? null}, ${triggerCommentId}, ${triggerEventType}
       )
       RETURNING id
@@ -129,15 +129,34 @@ export async function createExecution(params: CreateExecutionParams): Promise<st
 /**
  * Update execution status to 'offered' with the assigned daemon ID.
  */
-export async function markExecutionOffered(deliveryId: string, daemonId: string): Promise<void> {
-  const db = getDb();
-  if (db === null) return;
+export type ExecutionOfferOutcome = "offered" | "daemon-inactive" | "stale";
 
-  await db`
-    UPDATE executions
-    SET status = 'offered', daemon_id = ${daemonId}
-    WHERE delivery_id = ${deliveryId} AND status = 'queued'
-  `;
+/** Assign a queued receipt only while the exact daemon row is still active. */
+export async function markExecutionOffered(
+  deliveryId: string,
+  daemonId: string,
+  sql: SQL | null = getDb(),
+): Promise<ExecutionOfferOutcome> {
+  if (sql === null) return "offered";
+
+  return sql.begin(async (tx) => {
+    const active: { id: string }[] = await tx`
+      SELECT id
+        FROM daemons
+       WHERE id = ${daemonId}
+         AND status = 'active'
+       FOR UPDATE
+    `;
+    if (active[0] === undefined) return "daemon-inactive";
+    const offered: { delivery_id: string }[] = await tx`
+      UPDATE executions
+         SET status = 'offered', daemon_id = ${daemonId}
+       WHERE delivery_id = ${deliveryId}
+         AND status = 'queued'
+      RETURNING delivery_id
+    `;
+    return offered[0] === undefined ? "stale" : "offered";
+  });
 }
 
 /**
@@ -206,15 +225,175 @@ export async function markExecutionFailed(deliveryId: string, errorMessage: stri
 /**
  * Re-queue an execution (offered -> queued) after rejection or timeout.
  */
-export async function requeueExecution(deliveryId: string): Promise<void> {
+export async function requeueExecution(deliveryId: string): Promise<boolean> {
   const db = getDb();
-  if (db === null) return;
+  if (db === null) return true;
 
-  await db`
+  const rows: { delivery_id: string }[] = await db`
     UPDATE executions
-    SET status = 'queued', daemon_id = NULL
-    WHERE delivery_id = ${deliveryId} AND status = 'offered'
+       SET status = 'queued', daemon_id = NULL
+     WHERE delivery_id = ${deliveryId}
+       AND status = 'offered'
+    RETURNING delivery_id
   `;
+  return rows[0] !== undefined;
+}
+
+export interface DisconnectedDaemonCleanup {
+  readonly executionDeliveryIds: readonly string[];
+  readonly workflowRunIds: readonly string[];
+}
+
+export interface FailedDaemonWorkflow {
+  readonly id: string;
+  readonly workflowName: string;
+  readonly ownerId: string;
+}
+
+export interface FailedDaemonOwnership extends DisconnectedDaemonCleanup {
+  readonly daemonMarkedInactive: boolean;
+  readonly workflows: readonly FailedDaemonWorkflow[];
+}
+
+interface DaemonFailure {
+  readonly workflowReason: string;
+  readonly executionReason: string;
+  readonly clearOwner: boolean;
+}
+
+/** Terminalize one shared daemon's durable ownership inside the caller's transaction. */
+export async function failDaemonOwnershipInTransaction(
+  daemonId: string,
+  failure: DaemonFailure,
+  tx: SQL,
+): Promise<FailedDaemonOwnership> {
+  const daemonRows: { id: string }[] = await tx`
+    UPDATE daemons
+       SET status = 'inactive', last_seen_at = now()
+     WHERE id = ${daemonId}
+       AND status = 'active'
+    RETURNING id
+  `;
+  const terminalWorkflows: {
+    id: string;
+    workflow_name: string;
+    execution_delivery_id: string | null;
+    propagated_parent: boolean;
+  }[] = await tx`
+    WITH failed_workflows AS (
+      UPDATE workflow_runs
+         SET status = 'failed',
+             owner_kind = CASE WHEN ${failure.clearOwner}::boolean THEN NULL ELSE owner_kind END,
+             owner_id = CASE WHEN ${failure.clearOwner}::boolean THEN NULL ELSE owner_id END,
+             attempt_completed_at = COALESCE(attempt_completed_at, now()),
+             state = state || jsonb_build_object(
+                 'phase', 'orphaned',
+                 'failedReason', ${failure.workflowReason}::text
+             )
+       WHERE owner_kind = 'daemon'
+         AND owner_id = ${daemonId}
+         AND attempt_id IS NULL
+         AND status IN ('queued', 'running')
+      RETURNING id, workflow_name, execution_delivery_id, parent_run_id, parent_step_index
+    ),
+    failed_parent_inputs AS (
+      SELECT parent_run_id,
+             min(COALESCE(parent_step_index, -1)) AS failed_step_index
+        FROM failed_workflows
+       WHERE parent_run_id IS NOT NULL
+       GROUP BY parent_run_id
+    ),
+    failed_parents AS (
+      UPDATE workflow_runs AS parent
+         SET status = 'failed',
+             attempt_completed_at = COALESCE(parent.attempt_completed_at, now()),
+             state = parent.state || jsonb_build_object(
+                 'phase', 'orphaned',
+                 'failedAtStepIndex', failed_parent_inputs.failed_step_index,
+                 'failedReason', ${failure.workflowReason}::text
+             )
+        FROM failed_parent_inputs
+       WHERE parent.id = failed_parent_inputs.parent_run_id
+         AND parent.status = 'running'
+         AND NOT EXISTS (
+             SELECT 1 FROM failed_workflows AS direct WHERE direct.id = parent.id
+         )
+      RETURNING parent.id, parent.workflow_name, parent.execution_delivery_id
+    )
+    SELECT id, workflow_name, execution_delivery_id, false AS propagated_parent
+      FROM failed_workflows
+    UNION ALL
+    SELECT id, workflow_name, execution_delivery_id, true AS propagated_parent
+      FROM failed_parents
+  `;
+  const workflows = terminalWorkflows.filter((row) => !row.propagated_parent);
+  const workflowDeliveries = workflows.flatMap((row) =>
+    row.execution_delivery_id === null ? [] : [row.execution_delivery_id],
+  );
+  const executions: { delivery_id: string }[] =
+    workflowDeliveries.length === 0
+      ? await tx`
+          UPDATE executions
+             SET status = 'failed',
+                 completed_at = now(),
+                 error_message = ${failure.executionReason}
+           WHERE daemon_id = ${daemonId}
+             AND offer_id IS NULL
+             AND status IN ('queued', 'offered', 'running')
+          RETURNING delivery_id
+        `
+      : await tx`
+          UPDATE executions
+             SET status = 'failed',
+                 completed_at = now(),
+                 error_message = ${failure.executionReason}
+           WHERE (daemon_id = ${daemonId} OR delivery_id IN ${tx(workflowDeliveries)})
+             AND offer_id IS NULL
+             AND status IN ('queued', 'offered', 'running')
+          RETURNING delivery_id
+        `;
+  const deliveryIds = executions.map((row) => row.delivery_id);
+  if (deliveryIds.length > 0) {
+    await tx`
+      UPDATE scheduled_action_state
+         SET in_flight_job_id = NULL,
+             in_flight_started_at = NULL
+       WHERE in_flight_job_id IN ${tx(deliveryIds)}
+    `;
+  }
+  return {
+    daemonMarkedInactive: daemonRows[0] !== undefined,
+    executionDeliveryIds: deliveryIds,
+    workflowRunIds: terminalWorkflows.map((row) => row.id),
+    workflows: workflows.map((row) => ({
+      id: row.id,
+      workflowName: row.workflow_name,
+      ownerId: daemonId,
+    })),
+  };
+}
+
+/** Fence one shared-daemon incarnation and terminalize all ownership atomically. */
+export async function failDisconnectedDaemon(
+  daemonId: string,
+  sql: SQL | null = getDb(),
+): Promise<DisconnectedDaemonCleanup> {
+  if (sql === null) return { executionDeliveryIds: [], workflowRunIds: [] };
+  const failed = await sql.begin((tx) =>
+    failDaemonOwnershipInTransaction(
+      daemonId,
+      {
+        workflowReason: "daemon disconnected during execution",
+        executionReason: "daemon disconnected during execution",
+        clearOwner: true,
+      },
+      tx,
+    ),
+  );
+  return {
+    executionDeliveryIds: failed.executionDeliveryIds,
+    workflowRunIds: failed.workflowRunIds,
+  };
 }
 
 /**
@@ -272,8 +451,11 @@ export async function recoverStaleExecutions(db: SQL): Promise<void> {
     await db`
     SELECT id, delivery_id, daemon_id, status
     FROM executions
-    WHERE (status = 'running' AND started_at < now() - make_interval(secs => ${thresholdMs / 1000}))
-       OR (status = 'offered' AND created_at < now() - make_interval(secs => ${thresholdMs / 1000}))
+    WHERE offer_id IS NULL
+      AND (
+        (status = 'running' AND started_at < now() - make_interval(secs => ${thresholdMs / 1000}))
+        OR (status = 'offered' AND created_at < now() - make_interval(secs => ${thresholdMs / 1000}))
+      )
   `;
 
   if (staleRows.length === 0) return;

@@ -2,11 +2,13 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { config } from "../../config";
+import { applyAgentPolicy } from "../../core/agent-policy";
 import { checkoutRepo } from "../../core/checkout";
 import { executeAgent } from "../../core/executor";
 import type { BotContext } from "../../types";
 import { fetchAndBuildDigest, renderDigestSection } from "../discussion-digest";
 import type { WorkflowHandler } from "../registry";
+import { StaleWorkflowAttemptError } from "../runs-store";
 
 /**
  * `plan` handler (T021): multi-turn Claude Agent SDK session over the cloned
@@ -27,6 +29,7 @@ import type { WorkflowHandler } from "../registry";
 export const handler: WorkflowHandler = async (ctx) => {
   const { octokit, target, logger: log } = ctx;
   let cleanup: (() => Promise<void>) | undefined;
+  let disposePolicy: (() => void) | undefined;
 
   try {
     const { data: issue } = await octokit.rest.issues.get({
@@ -80,19 +83,32 @@ export const handler: WorkflowHandler = async (ctx) => {
     const promptParts =
       config.promptCacheLayout === "cacheable" ? buildPlanPromptParts(promptInput) : undefined;
 
+    // Bypasses `runPipeline` (see header), so it applies the Gate-2 knobs itself.
+    const applied = applyAgentPolicy({
+      baseAllowedTools: ["Read", "Grep", "Glob", "Write", "Bash"],
+      ...(ctx.policy !== undefined ? { policy: ctx.policy } : {}),
+      ...(ctx.maxTurns !== undefined ? { maxTurns: ctx.maxTurns } : {}),
+      ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+    });
+    disposePolicy = applied.dispose;
+
     const result = await executeAgent({
       ctx: botCtx,
       prompt,
       mcpServers: {},
       workDir: checkout.workDir,
-      allowedTools: ["Read", "Grep", "Glob", "Write", "Bash"],
+      ...applied.options,
       ...(promptParts !== undefined ? { promptParts } : {}),
     });
+    applied.options.signal?.throwIfAborted();
 
     if (!result.success) {
+      // `reason` is internal only; the raw error must not reach the public
+      // `humanMessage`. Keeping it preserves the per-repo `timeout:` attribution.
       return {
         status: "failed",
-        reason: "plan agent execution failed",
+        reason: result.errorMessage ?? "plan agent execution failed",
+        humanMessage: "plan agent execution failed, see server logs for details.",
       };
     }
 
@@ -115,7 +131,6 @@ export const handler: WorkflowHandler = async (ctx) => {
       meta.push(`duration: ${String(Math.round(result.durationMs / 1000))}s`);
     const metaLine = meta.length > 0 ? `\n\n_${meta.join(" · ")}_` : "";
     const humanMessage = `📋 **Plan ready**, task decomposition below.\n\n${planMarkdown.trim()}${metaLine}`;
-    await ctx.setState(state, humanMessage);
 
     log.info(
       { planLength: planMarkdown.length, costUsd: result.costUsd },
@@ -123,10 +138,13 @@ export const handler: WorkflowHandler = async (ctx) => {
     );
     return { status: "succeeded", state, humanMessage };
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     log.warn({ err }, "plan handler caught error");
     return { status: "failed", reason: `plan failed: ${message}` };
   } finally {
+    // Before the awaited cleanup: a live timer holds Bun's event loop open.
+    disposePolicy?.();
     if (cleanup !== undefined) {
       await cleanup().catch((err: unknown) => {
         log.warn({ err }, "plan handler cleanup failed");
@@ -268,6 +286,7 @@ async function postStartingComment(
   try {
     await ctx.setState({ phase: "starting" }, body);
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     ctx.logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       "plan starting-comment write failed, continuing without up-front comment",

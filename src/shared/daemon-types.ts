@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import type { BotContext } from "../types";
-import type { WorkflowRunRef } from "./workflow-types";
 
 // Zod schemas (validated at boundary, types inferred below)
 
@@ -131,13 +130,10 @@ export interface PendingOffer {
   triggerUsername: string;
   labels: string[];
   triggerBodyPreview: string;
-  /** Present when the offered job is a workflow run. Forwarded into the
-   * `job:payload` so the daemon can route to the workflow executor. */
-  workflowRun?: WorkflowRunRef;
   /** Present when the offered job is one of the four scoped variants. Carries
    * the original `ScopedQueuedJob` payload verbatim so reject/timeout can
    * reconstruct the queue entry without lossy field copying, and so the
-   * `scoped-job-completion` handler can format the user-facing reply against
+   * `scoped-job:completion` handler can format the user-facing reply against
    * the same context. Typed loosely (`unknown`) here to avoid a circular
    * import between `shared/daemon-types` and `orchestrator/job-queue`; callers
    * narrow via a type-guard import from `job-queue`. */

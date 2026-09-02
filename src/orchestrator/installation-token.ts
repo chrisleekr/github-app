@@ -1,8 +1,7 @@
 /**
  * Observed installation-token mint helper (issue #236).
  *
- * Six call sites mint App installation tokens (handleAccept, handleScopedAccept,
- * postOrphanNotification, shipTickleResume, proposalPoller, schedulerRunAction).
+ * App installation-token call sites share one observed mint path.
  * None emitted a structured event, so operators had no `cache_hit` signal, no
  * per-call latency, and no per-installation correlation. This helper wraps
  * `app.getInstallationOctokit(installationId)` + `resolveGithubToken(octokit)`
@@ -24,7 +23,8 @@
  * success; the failure line adds the standard pino `err` field, serialized
  * through the secret-scrubbing `errSerializer` in `src/utils/log-redaction.ts`.
  */
-import type { App, Octokit } from "octokit";
+import { type App, Octokit } from "octokit";
+import { z } from "zod";
 
 import { resolveGithubToken } from "../core/github-token";
 import type { Logger } from "../logger";
@@ -38,12 +38,58 @@ interface MintArgs {
   readonly installationId: number;
   readonly via: TokenMintVia;
   readonly log: Logger;
+  /** Restrict the token to one repository. Omit for the existing fleet path. */
+  readonly repositoryName?: string;
 }
 
 interface MintResult {
   readonly octokit: Octokit;
   readonly token: string;
 }
+
+interface ScopedMintResult extends MintResult {
+  readonly expiresAt: string;
+}
+
+const TOKEN_REVOCATION_TIMEOUT_MS = 10_000;
+
+/** Revoke the installation token authenticating this client without masking caller failures. */
+export async function revokeInstallationToken(
+  octokit: Octokit,
+  log: Logger,
+  fields: Readonly<Record<string, unknown>> = {},
+): Promise<boolean> {
+  try {
+    await octokit.request("DELETE /installation/token", {
+      request: { signal: AbortSignal.timeout(TOKEN_REVOCATION_TIMEOUT_MS) },
+    });
+    return true;
+  } catch (err) {
+    log.error({ ...fields, err }, "Installation token revocation failed");
+    return false;
+  }
+}
+
+/** Construct and revoke a token client while keeping cleanup best-effort. */
+export async function revokeInstallationTokenValue(
+  token: string,
+  log: Logger,
+  fields: Readonly<Record<string, unknown>> = {},
+): Promise<boolean> {
+  try {
+    return await revokeInstallationToken(new Octokit({ auth: token }), log, fields);
+  } catch (err) {
+    log.error({ ...fields, err }, "Installation token revocation failed");
+    return false;
+  }
+}
+
+export function mintInstallationToken(
+  args: MintArgs & { repositoryName: string },
+): Promise<ScopedMintResult>;
+export function mintInstallationToken(
+  args: MintArgs & { repositoryName?: undefined },
+): Promise<MintResult>;
 
 /**
  * Mint (or cache-serve) an installation token, returning both the installation
@@ -57,7 +103,8 @@ export async function mintInstallationToken({
   installationId,
   via,
   log,
-}: MintArgs): Promise<MintResult> {
+  repositoryName,
+}: MintArgs): Promise<MintResult | ScopedMintResult> {
   // A cache miss routes the access-tokens POST through `app.octokit`. The
   // before-hook receives the merged-but-unparsed endpoint options, so `url` is
   // the route template and `installation_id` is a top-level merged param. Match
@@ -79,20 +126,22 @@ export async function mintInstallationToken({
   const start = Date.now();
   app.octokit.hook.before("request", probe);
   try {
-    const octokit = (await app.getInstallationOctokit(installationId)) as unknown as Octokit;
-    const token = await resolveGithubToken(octokit);
-    const duration_ms = Date.now() - start;
-    log.info(
-      {
-        event: GITHUB_APP_TOKEN_LOG_EVENTS.mintSucceeded,
+    if (repositoryName === undefined) {
+      const octokit = (await app.getInstallationOctokit(installationId)) as unknown as Octokit;
+      const token = await resolveGithubToken(octokit);
+      logMintSuccess(log, installationId, via, networkMint, start);
+      return { octokit, token };
+    } else {
+      const response = await app.octokit.rest.apps.createInstallationAccessToken({
         installation_id: installationId,
-        via,
-        cache_hit: !networkMint,
-        duration_ms,
-      },
-      "Installation token minted",
-    );
-    return { octokit, token };
+        repositories: [repositoryName],
+      });
+      const token = response.data.token;
+      const expiresAt = z.iso.datetime().parse(response.data.expires_at);
+      const octokit = new Octokit({ auth: token });
+      logMintSuccess(log, installationId, via, networkMint, start);
+      return { octokit, token, expiresAt };
+    }
   } catch (err) {
     const duration_ms = Date.now() - start;
     log.warn(
@@ -109,4 +158,23 @@ export async function mintInstallationToken({
   } finally {
     app.octokit.hook.remove("request", probe);
   }
+}
+
+function logMintSuccess(
+  log: Logger,
+  installationId: number,
+  via: TokenMintVia,
+  networkMint: boolean,
+  start: number,
+): void {
+  log.info(
+    {
+      event: GITHUB_APP_TOKEN_LOG_EVENTS.mintSucceeded,
+      installation_id: installationId,
+      via,
+      cache_hit: !networkMint,
+      duration_ms: Date.now() - start,
+    },
+    "Installation token minted",
+  );
 }

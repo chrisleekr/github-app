@@ -15,7 +15,10 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { Octokit } from "octokit";
 import type pino from "pino";
 
+import type { BotContext } from "../../../src/types";
 import type { WorkflowRunContext } from "../../../src/workflows/registry";
+import { StaleWorkflowAttemptError } from "../../../src/workflows/runs-store";
+import { expectToReject } from "../../utils/assertions";
 
 let pipelineResult: {
   success: boolean;
@@ -23,22 +26,16 @@ let pipelineResult: {
   numTurns?: number;
   durationMs?: number;
   capturedFiles?: Record<string, string>;
+  daemonActions?: {
+    learnings: { category: "conventions"; content: string }[];
+    deletions: string[];
+  };
 };
 
-void mock.module("../../../src/core/pipeline", () => ({
-  runPipeline: mock(async () => Promise.resolve(pipelineResult)),
-}));
+const mockRunPipeline = mock(async () => Promise.resolve(pipelineResult));
 
-// Stub the runs-store DB read, the handler reads back the seeded
-// tracking_comment_id after the first setState call. Tests don't run
-// against a real DB, so return a row with a deterministic id.
-void mock.module("../../../src/workflows/runs-store", () => ({
-  findById: mock(async () =>
-    Promise.resolve({
-      id: "run-1",
-      tracking_comment_id: 12345,
-    }),
-  ),
+void mock.module("../../../src/core/pipeline", () => ({
+  runPipeline: mockRunPipeline,
 }));
 
 const { handler: reviewHandler } = await import("../../../src/workflows/handlers/review");
@@ -112,7 +109,7 @@ function buildCtx(
     },
   } as unknown as Octokit;
 
-  const setStateMock = mock(async () => Promise.resolve());
+  const setStateMock = mock(async () => Promise.resolve({ trackingCommentId: 12345 }));
 
   return {
     runId: "run-1",
@@ -188,16 +185,16 @@ describe("review handler", () => {
       expect(branch["commits_behind_base"]).toBe(0);
       expect(branch["is_fork"]).toBe(false);
     }
-    // Two setState calls: (1) seed before pipeline, (2) finalize after.
-    expect(ctx.setStateMock).toHaveBeenCalledTimes(2);
+    expect(ctx.setStateMock).toHaveBeenCalledTimes(1);
     const seedArgs = ctx.setStateMock.mock.calls[0] as [unknown, string];
     expect(seedArgs[1]).toContain("Code review starting");
     expect(seedArgs[1]).toContain("5 files");
-    const finalArgs = ctx.setStateMock.mock.calls[1] as [unknown, string];
-    expect(finalArgs[1]).toContain("Code review complete");
-    expect(finalArgs[1]).toContain("5 files");
-    expect(finalArgs[1]).toContain("+100/-20");
-    expect(finalArgs[1]).toContain("Reviewed 3 files");
+    if (result.status === "succeeded") {
+      expect(result.humanMessage).toContain("Code review complete");
+      expect(result.humanMessage).toContain("5 files");
+      expect(result.humanMessage).toContain("+100/-20");
+      expect(result.humanMessage).toContain("Reviewed 3 files");
+    }
   });
 
   it("records commits_behind_base when the branch is stale", async () => {
@@ -233,19 +230,39 @@ describe("review handler", () => {
     const ctx = buildCtx();
     const result = await reviewHandler(ctx);
     expect(result.status).toBe("succeeded");
-    // calls[0] is the seed; the placeholder appears in the finalize call.
-    const finalArgs = ctx.setStateMock.mock.calls[1] as [unknown, string];
-    expect(finalArgs[1]).toContain("no REVIEW.md report");
+    if (result.status === "succeeded") {
+      expect(result.humanMessage).toContain("no REVIEW.md report");
+    }
+    expect(ctx.setStateMock).toHaveBeenCalledTimes(1);
   });
 
   it("fails when the pipeline reports failure", async () => {
-    pipelineResult = { success: false };
+    pipelineResult = {
+      success: false,
+      daemonActions: {
+        learnings: [{ category: "conventions", content: "Keep review findings focused." }],
+        deletions: [],
+      },
+    };
     const ctx = buildCtx();
+    const repoMemory = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        category: "conventions" as const,
+        content: "Review full files.",
+        pinned: true,
+      },
+    ];
+    (ctx as { repoMemory?: typeof repoMemory }).repoMemory = repoMemory;
     const result = await reviewHandler(ctx);
     expect(result.status).toBe("failed");
     if (result.status === "failed") {
       expect(result.reason).toContain("pipeline");
     }
+    expect((mockRunPipeline.mock.calls.at(-1)?.[0] as BotContext).repoMemory).toEqual(repoMemory);
+    expect("daemonActions" in result ? result.daemonActions : undefined).toEqual(
+      pipelineResult.daemonActions,
+    );
   });
 });
 
@@ -280,5 +297,92 @@ Found 4 issues.
       nit: 0,
       total: 0,
     });
+  });
+});
+
+// ─── Per-repo agent policy, `.github-app.yaml` Gate 2 ───────────────────────
+
+describe("review handler: per-repo policy forwarding", () => {
+  beforeEach(() => {
+    mockRunPipeline.mockClear();
+    pipelineResult = { success: true, capturedFiles: { "REVIEW.md": "## Summary\n\nOK" } };
+  });
+
+  it("forwards the run-context policy into the pipeline overrides", async () => {
+    const policy = {
+      model: "claude-repo-pinned-model",
+      timeoutMs: 900_000,
+      extraAllowedTools: ["WebFetch"],
+      pathFilters: ["**/__snapshots__/**"],
+      instructions: "reject migrations without a rollback",
+    };
+    const ctx = buildCtx();
+    (ctx as unknown as Record<string, unknown>)["policy"] = policy;
+
+    await reviewHandler(ctx);
+
+    expect(mockRunPipeline).toHaveBeenCalledTimes(1);
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as
+      | { policy?: Record<string, unknown> }
+      | undefined;
+    expect(overrides?.policy).toEqual(policy);
+  });
+
+  it("forwards the run-context maxTurns into the pipeline overrides", async () => {
+    // The turn cap rides the top-level payload field, not `policy`, so it
+    // needs its own hop. Without it `workflows.<name>.max_turns` is inert and
+    // executeAgent silently falls back to AGENT_MAX_TURNS.
+    const ctx = buildCtx();
+    (ctx as unknown as Record<string, unknown>)["maxTurns"] = 12;
+
+    await reviewHandler(ctx);
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as { maxTurns?: number } | undefined;
+    expect(overrides?.maxTurns).toBe(12);
+  });
+
+  it("forwards the daemon attempt signal into the pipeline overrides", async () => {
+    const ctx = buildCtx();
+    const signal = new AbortController().signal;
+    (ctx as unknown as Record<string, unknown>)["signal"] = signal;
+
+    await reviewHandler(ctx);
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as { signal?: AbortSignal } | undefined;
+    expect(overrides?.signal).toBe(signal);
+  });
+
+  it("passes no maxTurns key when the run context carries none", async () => {
+    await reviewHandler(buildCtx());
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as Record<string, unknown> | undefined;
+    expect(Object.hasOwn(overrides ?? {}, "maxTurns")).toBe(false);
+  });
+
+  it("passes no policy key when the run context carries none (C8)", async () => {
+    await reviewHandler(buildCtx());
+
+    const overrides = mockRunPipeline.mock.calls[0]?.[1] as Record<string, unknown> | undefined;
+    expect(overrides).toBeDefined();
+    // `exactOptionalPropertyTypes`: absent, not `undefined`-valued.
+    expect(Object.hasOwn(overrides ?? {}, "policy")).toBe(false);
+    // Existing overrides must survive the addition.
+    expect(overrides?.["captureFiles"]).toEqual(["REVIEW.md"]);
+    expect(overrides?.["enableReviewLearnings"]).toBe(true);
+  });
+});
+
+describe("review handler: lost attempt lease", () => {
+  it("re-throws StaleWorkflowAttemptError instead of reporting a terminal failure", async () => {
+    const ctx = buildCtx();
+    ctx.setState = mock(() =>
+      Promise.reject(
+        new StaleWorkflowAttemptError({ runId: ctx.runId, attemptId: crypto.randomUUID() }),
+      ),
+    );
+    mockRunPipeline.mockClear();
+
+    await expectToReject(reviewHandler(ctx), "workflow attempt is no longer current");
+    expect(mockRunPipeline).not.toHaveBeenCalled();
   });
 });

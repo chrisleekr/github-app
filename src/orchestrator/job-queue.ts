@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { config } from "../config";
 import { logger } from "../logger";
+import { WorkflowNameSchema } from "../shared/workflow-types";
 import { requireValkeyClient } from "./valkey";
 
 /**
@@ -12,12 +13,7 @@ import { requireValkeyClient } from "./valkey";
 
 const workflowRunRefSchema = z.object({
   runId: z.string().min(1),
-  // Mirror of registry.ts WorkflowNameSchema. Hardcoded rather than imported
-  // to avoid the registry → handlers → job-queue cycle (handlers/ship.ts
-  // and ship/iteration.ts call enqueueJob, so importing the schema back
-  // here would init-deadlock). When adding a new workflow, extend both
-  // lists; TypeScript will surface the gap at every enqueueJob call site.
-  workflowName: z.enum(["triage", "plan", "implement", "review", "resolve", "ship", "remember"]),
+  workflowName: WorkflowNameSchema,
   parentRunId: z.string().min(1).optional(),
   parentStepIndex: z.number().int().nonnegative().optional(),
 });
@@ -158,6 +154,17 @@ export function isScopedJob(job: QueuedJob): job is ScopedQueuedJob {
 const QUEUE_KEY = "queue:jobs";
 const PROCESSING_KEY_PREFIX = "queue:processing:";
 
+const ENSURE_WORKFLOW_JOB_LUA = `
+  if redis.call('LPOS', KEYS[1], ARGV[1]) then
+    return 0
+  end
+  if redis.call('LPOS', KEYS[2], ARGV[1]) then
+    return 0
+  end
+  redis.call('LPUSH', KEYS[1], ARGV[1])
+  return 1
+`;
+
 /** Build the per-instance processing-list key. Exposed for the cross-instance reaper. */
 export function processingListKey(instanceId: string): string {
   return `${PROCESSING_KEY_PREFIX}${instanceId}`;
@@ -202,6 +209,33 @@ export async function enqueueJob(job: QueuedJob): Promise<void> {
     { kind: validated.kind, deliveryId: validated.deliveryId, retryCount: validated.retryCount },
     "Job enqueued",
   );
+}
+
+/** Ensure one byte-stable workflow wake-up exists in the supported controller's lists. */
+export async function ensureWorkflowJobQueued(
+  job: WorkflowRunQueuedJob,
+  instanceId: string,
+): Promise<boolean> {
+  const validated = workflowRunJobSchema.parse(job);
+  const raw = JSON.stringify(validated);
+  const valkey = requireValkeyClient();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Valkey EVAL returns an integer
+  const inserted: number = await valkey.send("EVAL", [
+    ENSURE_WORKFLOW_JOB_LUA,
+    "2",
+    QUEUE_KEY,
+    processingListKey(instanceId),
+    raw,
+  ]);
+  logger.info(
+    {
+      deliveryId: validated.deliveryId,
+      runId: validated.workflowRun.runId,
+      inserted: inserted === 1,
+    },
+    "Workflow dispatch wake-up reconciled",
+  );
+  return inserted === 1;
 }
 
 /**
@@ -355,6 +389,50 @@ export async function requeueLeasedJob(
     JSON.stringify(QueuedJobSchema.parse(updated)),
   ]);
   return updated.retryCount;
+}
+
+const DEFER_RECEIPT_TTL_SECONDS = 86_400;
+const DEFER_LEASED_JOB_LUA = `
+  if redis.call('EXISTS', KEYS[3]) == 1 then
+    return 2
+  end
+  local removed = redis.call('LREM', KEYS[1], 1, ARGV[1])
+  if removed == 0 then
+    return 0
+  end
+  redis.call('LPUSH', KEYS[2], ARGV[2])
+  redis.call('SET', KEYS[3], '1', 'EX', ARGV[3])
+  return 1
+`;
+
+export interface LeasedJobDeferralResult {
+  readonly status: "moved" | "already-moved" | "missing";
+}
+
+/** Return a capacity-limited workflow lease without consuming a retry. */
+export async function deferLeasedWorkflowJob(
+  instanceId: string,
+  raw: string,
+  job: WorkflowRunQueuedJob,
+  deferralId: string,
+): Promise<LeasedJobDeferralResult> {
+  const valkey = requireValkeyClient();
+  const stableRaw = JSON.stringify(workflowRunJobSchema.parse(job));
+  if (stableRaw !== raw) {
+    throw new Error("Workflow queue item changed after its durable publication");
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Valkey EVAL returns an integer receipt
+  const receipt: number = await valkey.send("EVAL", [
+    DEFER_LEASED_JOB_LUA,
+    "3",
+    processingListKey(instanceId),
+    QUEUE_KEY,
+    `queue:workflow-deferral-receipt:${instanceId}:${deferralId}`,
+    raw,
+    raw,
+    String(DEFER_RECEIPT_TTL_SECONDS),
+  ]);
+  return { status: receipt === 1 ? "moved" : receipt === 2 ? "already-moved" : "missing" };
 }
 
 /**

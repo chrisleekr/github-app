@@ -47,9 +47,9 @@ function requireSql(): SQL {
 
 // ─── Mocks ───────────────────────────────────────────────────────────────
 
-const mockEnqueueJob = mock(() => Promise.resolve());
+const mockEnsureWorkflowJobQueued = mock(() => Promise.resolve(true));
 void mock.module("../../../src/orchestrator/job-queue", () => ({
-  enqueueJob: mockEnqueueJob,
+  ensureWorkflowJobQueued: mockEnsureWorkflowJobQueued,
   isScopedJob: () => false,
   SCOPED_JOB_KINDS: ["scoped-rebase", "scoped-fix-thread", "scoped-open-pr"],
 }));
@@ -118,6 +118,7 @@ describe.skipIf(sql === null)("issue-comment → dispatchByIntent integration (T
   beforeAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -140,6 +141,7 @@ describe.skipIf(sql === null)("issue-comment → dispatchByIntent integration (T
   afterAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -206,11 +208,11 @@ describe.skipIf(sql === null)("issue-comment → dispatchByIntent integration (T
     expect(Object.keys(intentRow.state)).toEqual(Object.keys(labelRow.state));
 
     // Both dispatches enqueued exactly one job each.
-    expect(mockEnqueueJob).toHaveBeenCalledTimes(2);
-    const labelCall = mockEnqueueJob.mock.calls[0]?.[0] as
+    expect(mockEnsureWorkflowJobQueued).toHaveBeenCalledTimes(2);
+    const labelCall = mockEnsureWorkflowJobQueued.mock.calls[0]?.[0] as
       | { workflowRun: { workflowName: string }; repoOwner: string; entityNumber: number }
       | undefined;
-    const intentCall = mockEnqueueJob.mock.calls[1]?.[0] as
+    const intentCall = mockEnsureWorkflowJobQueued.mock.calls[1]?.[0] as
       | { workflowRun: { workflowName: string }; repoOwner: string; entityNumber: number }
       | undefined;
     expect(labelCall?.workflowRun.workflowName).toBe("ship");
@@ -223,7 +225,7 @@ describe.skipIf(sql === null)("issue-comment → dispatchByIntent integration (T
   it("low-confidence intent comment does NOT create a workflow_runs row", async () => {
     const { dispatchByIntent } = await import("../../../src/workflows/dispatcher");
 
-    mockEnqueueJob.mockClear();
+    mockEnsureWorkflowJobQueued.mockClear();
     mockClassify.mockClear();
 
     const outcome = await dispatchByIntent({
@@ -237,7 +239,7 @@ describe.skipIf(sql === null)("issue-comment → dispatchByIntent integration (T
       triggerEventType: "issue_comment",
     });
     expect(outcome.status).toBe("ignored");
-    expect(mockEnqueueJob).not.toHaveBeenCalled();
+    expect(mockEnsureWorkflowJobQueued).not.toHaveBeenCalled();
 
     const rows =
       (await requireSql()`SELECT * FROM workflow_runs WHERE target_number = ${403}`) as unknown as {

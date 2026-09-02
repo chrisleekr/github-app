@@ -1,13 +1,24 @@
 import type { PullRequestEvent } from "@octokit/webhooks-types";
 import type { Octokit } from "octokit";
 
+import { config } from "../../config";
 import { upsertTarget } from "../../db/queries/conversation-store";
 import { createChildLogger, logger } from "../../logger";
-import { dispatchByLabel } from "../../workflows/dispatcher";
+import { loadRepoPolicy, policyForWorkflow } from "../../repo-config/effective";
+import { runPrConfigCheck } from "../../repo-config/pr-check";
+import { dispatchByLabel, dispatchWorkflowByName } from "../../workflows/dispatcher";
 import { dispatchCanonicalCommand } from "../../workflows/ship/command-dispatch";
 import { fireReactor } from "../../workflows/ship/reactor-bridge";
 import { routeTrigger } from "../../workflows/ship/trigger-router";
 import { isOwnerAllowed } from "../authorize";
+import {
+  computeDiffFingerprint,
+  hasActiveShipIntent,
+  isSelfPush,
+  matchesLastReviewed,
+  recordReviewedFingerprint,
+} from "../auto-review-guard";
+import { postDispatchFailure } from "../dispatch-failure";
 import { claimDelivery } from "../idempotency";
 
 // Permits the documented label shapes:
@@ -28,12 +39,18 @@ const BOT_LABEL_PATTERN = /^bot:[a-z][a-z-]*(?:\/deadline=\d+(?:\.\d+)?[hms])?$/
  *      PR deletion is not a real GitHub action (PRs close, never delete),
  *      so there is no hard-delete branch. See issues #129 and #130.
  *
- *   2. Action-specific dispatch:
- *      - `opened`: placeholder (trigger detection lands when ready)
+ *   2. Config validation (`opened` / `synchronize` / `reopened`). When the
+ *      PR touches `.github-app.yaml`, validate the HEAD-ref copy and post a
+ *      sticky verdict comment. Read-only feedback: the copy the bot applies
+ *      is still the default branch's. See `repo-config/pr-check.ts`.
+ *
+ *   3. Action-specific dispatch:
+ *      - `opened`: config validation only (trigger detection lands when ready)
  *      - `edited` / `reopened` / `converted_to_draft` / `ready_for_review`:
  *        cache-only, no dispatch
  *      - `labeled`: legacy workflow dispatch + ship reactor label dispatch
- *      - `synchronize`: ship reactor early-wake / foreign-push detection
+ *      - `synchronize`: ship reactor early-wake / foreign-push detection,
+ *        plus auto-review dispatch when the pusher is allowlisted
  *      - `closed`: ship reactor terminal transition (merged_externally /
  *        pr_closed)
  *
@@ -53,6 +70,17 @@ export function handlePullRequest(
   void writePrTargetCacheThrough(payload).catch((err: unknown) => {
     logger.warn({ err, deliveryId }, "pull_request: cache write-through failed");
   });
+
+  // Config validation is orthogonal to the dispatch branches below, each of
+  // which returns early for its own action. Invoked here rather than
+  // duplicated into three of them.
+  if (
+    payload.action === "opened" ||
+    payload.action === "synchronize" ||
+    payload.action === "reopened"
+  ) {
+    handlePullRequestConfigCheck(octokit, payload, deliveryId);
+  }
 
   if (payload.action === "labeled") {
     handlePullRequestLabeled(octokit, payload, deliveryId);
@@ -89,6 +117,73 @@ export function handlePullRequest(
     },
     "pull_request.opened received (no action configured)",
   );
+}
+
+/**
+ * Validate this PR's own copy of `.github-app.yaml` and post a sticky
+ * verdict comment (issue #3). Shaped like `handlePullRequestLabeled`:
+ * authorize, then defer the work behind an idempotency claim.
+ *
+ * The claim key is suffixed rather than the bare `deliveryId`, because
+ * `claimDelivery` is one-shot per key and `handlePullRequestLabeled` already
+ * claims the bare id. A shared key would let whichever branch of a delivery
+ * ran first silently starve the other.
+ *
+ * This is a GitHub-write path, so it honours the repo-wide `enabled: false`
+ * master switch from the default branch's config (see the comment on the
+ * `loadRepoPolicy` call for why only that switch, not the full Gate-1 rule
+ * set). The lookup lives here rather than in `pr-check.ts`, which must stay
+ * structurally unable to reach the applied-policy path (C4).
+ */
+export function handlePullRequestConfigCheck(
+  octokit: Octokit,
+  payload: PullRequestEvent,
+  deliveryId: string,
+): void {
+  const senderLogin = payload.sender.login;
+  const owner = payload.repository.owner.login;
+  const repo = payload.repository.name;
+  const prNumber = payload.pull_request.number;
+  const headSha = payload.pull_request.head.sha;
+
+  const log = createChildLogger({
+    deliveryId,
+    event: `pull_request.${payload.action}`,
+    senderLogin,
+    owner,
+    repo,
+    entityNumber: prNumber,
+    ...(payload.installation !== undefined ? { installationId: payload.installation.id } : {}),
+  });
+
+  const auth = isOwnerAllowed(senderLogin, log);
+  if (!auth.allowed) {
+    log.info({ reason: auth.reason }, "pull_request config check: sender not in ALLOWED_OWNERS");
+    return;
+  }
+
+  void (async (): Promise<void> => {
+    if (!(await claimDelivery(`${deliveryId}:config-check`, log))) return;
+    try {
+      // Only the document-level `enabled` master switch, deliberately NOT the
+      // full `checkRepoGate` trigger set. The `triggers.*` filters exist to
+      // stop the bot ACTING on a pull request; suppressing authoring feedback
+      // because the config PR is a draft, or because its title matches
+      // `ignore_title_keywords`, is the opposite of what an author wants. Same
+      // scope the scheduler applies to its unattended runs.
+      const policy = await loadRepoPolicy({ octokit, owner, repo, log });
+      if (!policy.enabled) {
+        log.info(
+          { event: "repo_config.pr_check.disabled", owner, repo, prNumber },
+          "repo-config PR check: repo disabled by config, staying silent",
+        );
+        return;
+      }
+      await runPrConfigCheck({ octokit, owner, repo, prNumber, headSha, deliveryId, log });
+    } catch (err) {
+      log.error({ err }, "pull_request config check failed");
+    }
+  })();
 }
 
 /**
@@ -134,7 +229,156 @@ function handlePullRequestSynchronize(
       head_sha: headSha,
       head_author_login: authorLogin,
     });
+
+    // `.catch`, not a bare await: this IIFE is fire-and-forget, and
+    // `installFatalHandlers` (src/logger.ts) answers `unhandledRejection` with
+    // `process.exit(1)`. One bad webhook must not take the server down.
+    await maybeAutoReview(octokit, payload, deliveryId).catch((err: unknown) => {
+      logger.error({ err, deliveryId, event: "auto_review.failed" }, "auto-review threw");
+    });
   })();
+}
+
+/**
+ * Auto-dispatch `review` when an `AUTO_REVIEW_USERS` login pushes to an open PR
+ * (work item #1). Two keys must agree: that env allowlist and the repo's own
+ * `workflows.review.auto`. Either one unset means this returns early.
+ *
+ * Reads `payload.sender.login`, deliberately NOT the `authorLogin` resolved
+ * above. That value comes from the commit's author *email*, which anyone can set
+ * with `git config user.email`; the reactor wants it because it asks a semantic
+ * question (did a human take over this branch?). This gate asks an authorization
+ * question (may we spend tokens on this push?), and only the authenticated
+ * pusher answers that. Do not "simplify" this to reuse `authorLogin`.
+ *
+ * Gate 1 still runs inside `dispatchWorkflowByName`, so `enabled: false`,
+ * `workflows.review.enabled: false`, and every `triggers.*` filter keep their
+ * veto.
+ */
+async function maybeAutoReview(
+  octokit: Octokit,
+  payload: PullRequestEvent & { action: "synchronize" },
+  deliveryId: string,
+): Promise<void> {
+  const allowlist = config.autoReviewUsers;
+  if (allowlist === undefined) return;
+
+  const senderLogin = payload.sender.login;
+  const owner = payload.repository.owner.login;
+  const repo = payload.repository.name;
+  const prNumber = payload.pull_request.number;
+
+  const log = createChildLogger({
+    deliveryId,
+    event: "pull_request.synchronize",
+    senderLogin,
+    owner,
+    repo,
+    entityNumber: prNumber,
+    ...(payload.installation !== undefined ? { installationId: payload.installation.id } : {}),
+  });
+
+  // Two lists, two questions. ALLOWED_OWNERS gates the *repository* (its
+  // documented meaning, and what `router.ts` passes), AUTO_REVIEW_USERS gates
+  // the *person* who pushed. Testing the pusher against ALLOWED_OWNERS instead
+  // would refuse a collaborator the operator deliberately allowlisted here.
+  if (!isOwnerAllowed(owner, log).allowed) return;
+
+  const normalized = senderLogin.toLowerCase();
+  if (!allowlist.some((u) => u.toLowerCase() === normalized)) return;
+
+  // `checkoutRepo` clones the BASE repo and asks for the PR's head *branch name*
+  // (`src/core/checkout.ts`), so a fork ref either fails to clone or, worse,
+  // silently resolves to a same-named branch in the base repo and reviews the
+  // wrong tree. Nobody asked for this run, so skip rather than guess. Matches
+  // the fork test in `src/workflows/handlers/branch-refresh.ts`.
+  if (payload.pull_request.head.repo?.full_name !== payload.repository.full_name) {
+    log.info({ event: "auto_review.skipped_fork_pr" }, "auto-review: head is on a fork");
+    return;
+  }
+
+  try {
+    // Claim first, per the idempotency contract in CLAUDE.md: a redelivery must
+    // short-circuit before any GitHub pagination, and two concurrent deliveries
+    // must not both pay for `computeDiffFingerprint`'s paginated listFiles.
+    // Suffixed key: `claimDelivery` is one-shot per key and the config-check
+    // branch already claims one on this same delivery. See the note above
+    // `handlePullRequestConfigCheck`.
+    if (!(await claimDelivery(`${deliveryId}:auto-review`, log))) return;
+
+    // Remaining gates are ordered cheapest-first. The self-push check costs
+    // nothing under App auth, the policy read is an ETag-cached conditional
+    // request, and only then do we pay for a paginated listFiles.
+    if (await isSelfPush(payload.sender, log)) {
+      log.info({ event: "auto_review.skipped_self_push" }, "auto-review: our own push");
+      return;
+    }
+
+    // A PR that `ship` is driving already gets reviewed by ship's own
+    // review -> resolve iteration, so a second review would duplicate the spend
+    // and race ship's `insertQueued` on `idx_workflow_runs_inflight`. Best
+    // effort: with no DATABASE_URL there are no intents to collide with.
+    if (await hasActiveShipIntent(owner, repo, prNumber, log)) {
+      log.info({ event: "auto_review.skipped_ship_active" }, "auto-review: ship owns this PR");
+      return;
+    }
+
+    // Per-repo opt-in. `loadRepoPolicy` fails open to DEFAULT_REPO_POLICY, where
+    // `auto` is false, so an unreachable or invalid config means no auto-review.
+    const policy = await loadRepoPolicy({ octokit, owner, repo, log });
+    if (!policyForWorkflow(policy, "review").auto) {
+      log.debug(
+        { event: "auto_review.skipped_repo_opt_out" },
+        "auto-review: not enabled for this repo",
+      );
+      return;
+    }
+
+    // A push that leaves the PR's own diff byte-identical (a rebase) bought no
+    // new code to review, so it buys no review.
+    const fingerprint = await computeDiffFingerprint(octokit, owner, repo, prNumber, log);
+    if (
+      fingerprint !== null &&
+      (await matchesLastReviewed(owner, repo, prNumber, fingerprint, log))
+    ) {
+      log.info({ event: "auto_review.skipped_unchanged_diff" }, "auto-review: diff unchanged");
+      return;
+    }
+
+    // `auto: true` => never comments, never touches labels. An in-flight review
+    // for this PR makes `insertQueued` return a silent `refused`, which is the
+    // ignore-do-not-queue behaviour this feature wants.
+    const outcome = await dispatchWorkflowByName({
+      octokit,
+      logger: log,
+      workflowName: "review",
+      target: { type: "pr", owner, repo, number: prNumber },
+      senderLogin,
+      deliveryId,
+      triggerBodyPreview: "",
+      addRocketReaction: false,
+      auto: true,
+      // Reuse the policy loaded above so Gate 1 does not re-fetch it.
+      repoPolicy: policy,
+      trigger: {
+        title: payload.pull_request.title,
+        draft: payload.pull_request.draft,
+        baseBranch: payload.pull_request.base.ref,
+      },
+    });
+
+    // Recorded only on a real dispatch, so a Gate-1 refusal cannot poison the
+    // fingerprint and suppress the next genuine review.
+    if (outcome.status === "dispatched" && fingerprint !== null) {
+      await recordReviewedFingerprint(owner, repo, prNumber, fingerprint, log);
+    }
+    log.info(
+      { event: "auto_review.outcome", status: outcome.status },
+      "auto-review: dispatch settled",
+    );
+  } catch (err) {
+    log.error({ err, event: "auto_review.failed" }, "auto-review: dispatch threw");
+  }
 }
 
 function handlePullRequestLabeled(
@@ -178,6 +422,13 @@ function handlePullRequestLabeled(
   const repo = payload.repository.name;
   const prNumber = payload.pull_request.number;
   const installationId = payload.installation?.id;
+  // Facts the repo-config trigger filters evaluate. Taken from the payload
+  // rather than re-fetched, so the gate costs no extra API call.
+  const trigger = {
+    title: payload.pull_request.title,
+    draft: payload.pull_request.draft,
+    baseBranch: payload.pull_request.base.ref,
+  };
 
   void (async (): Promise<void> => {
     // Idempotency gate (issue #202): skip a redelivery before any dispatch.
@@ -194,7 +445,7 @@ function handlePullRequestLabeled(
           },
         });
         if (command !== null) {
-          dispatchCanonicalCommand(command, { octokit, log });
+          dispatchCanonicalCommand(command, { octokit, log, trigger });
           return;
         }
       } catch (err) {
@@ -210,9 +461,11 @@ function handlePullRequestLabeled(
         target: { type: "pr", owner, repo, number: prNumber },
         senderLogin,
         deliveryId,
+        trigger,
       });
     } catch (err) {
       log.error({ err }, "dispatchByLabel threw for pull_request.labeled");
+      await postDispatchFailure({ octokit, log, deliveryId, owner, repo, number: prNumber });
     }
   })();
 }

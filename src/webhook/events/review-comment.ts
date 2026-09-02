@@ -11,6 +11,7 @@ import { dispatchByIntent } from "../../workflows/dispatcher";
 import { dispatchCommentSurface } from "../../workflows/ship/command-dispatch";
 import { fireReactor } from "../../workflows/ship/reactor-bridge";
 import { isOwnerAllowed } from "../authorize";
+import { postDispatchFailure } from "../dispatch-failure";
 import { claimDelivery } from "../idempotency";
 
 /**
@@ -111,6 +112,13 @@ export function handleReviewComment(
   const topLevelCommentId =
     typeof inReplyToIdRaw === "number" ? inReplyToIdRaw : payload.comment.id;
   const threadId = String(topLevelCommentId);
+  // Facts the repo-config trigger filters evaluate. Taken from the payload
+  // rather than re-fetched, so the gate costs no extra API call.
+  const trigger = {
+    title: payload.pull_request.title,
+    draft: payload.pull_request.draft,
+    baseBranch: payload.pull_request.base.ref,
+  };
 
   void (async (): Promise<void> => {
     // Idempotency gate (issue #202): skip a redelivery before any LLM dispatch.
@@ -127,6 +135,7 @@ export function handleReviewComment(
         trigger_comment_id: payload.comment.id,
         octokit,
         log: dispatchLog,
+        trigger,
       });
     } catch (err) {
       dispatchLog.error({ err }, "ship dispatchCommentSurface threw for review_comment");
@@ -163,9 +172,11 @@ export function handleReviewComment(
         triggerCommentId: payload.comment.id,
         triggerEventType: "pull_request_review_comment",
         ...(typeof inReplyToIdRaw === "number" ? { triggerInReplyToId: inReplyToIdRaw } : {}),
+        trigger,
       });
     } catch (err) {
       log.error({ err }, "dispatchByIntent threw for review_comment");
+      await postDispatchFailure({ octokit, log, deliveryId, owner, repo, number: prNumber });
     }
 
     // Piggyback proposal-poll on the trigger path too: the early-

@@ -4,10 +4,10 @@
  * Exercises the full WS message contract for one scoped kind end-to-end:
  *
  *   1. Build a real `scoped-rebase` `ScopedQueuedJob` shape.
- *   2. Construct the `scoped-job-offer` envelope the orchestrator sends to
+ *   2. Construct the `scoped-job:offer` envelope the orchestrator sends to
  *      a daemon (per `contracts/ws-messages.md`); round-trip through the
  *      `serverMessageSchema` discriminated union.
- *   3. Build the daemon's `scoped-job-completion` reply for a `merged`
+ *   3. Build the daemon's `scoped-job:completion` reply for a `merged`
  *      outcome; round-trip through `daemonMessageSchema`.
  *   4. Drive that parsed completion message through the orchestrator's
  *      WS-side `handleDaemonMessage` router; assert the side-effects:
@@ -89,6 +89,9 @@ void mock.module("../../src/orchestrator/daemon-registry", () => ({
 }));
 
 void mock.module("../../src/orchestrator/history", () => ({
+  failDisconnectedDaemon: mock(() =>
+    Promise.resolve({ executionDeliveryIds: [], workflowRunIds: [] }),
+  ),
   markExecutionOffered: mock(() => Promise.resolve()),
   markExecutionFailed: markExecutionFailedSpy,
   markExecutionRunning: mock(() => Promise.resolve()),
@@ -150,7 +153,7 @@ describe("T028: scoped-rebase WS contract round-trip", () => {
 
     // 1. Producer-side: build the offer envelope as the orchestrator does.
     const offerEnvelope = {
-      type: "scoped-job-offer" as const,
+      type: "scoped-job:offer" as const,
       ...createMessageEnvelope(FAKE_OFFER_ID),
       payload: {
         jobKind: "scoped-rebase" as const,
@@ -168,11 +171,11 @@ describe("T028: scoped-rebase WS contract round-trip", () => {
     const offerParsed = serverMessageSchema.safeParse(offerEnvelope);
     expect(offerParsed.success).toBe(true);
     if (!offerParsed.success) return;
-    expect(offerParsed.data.type).toBe("scoped-job-offer");
+    expect(offerParsed.data.type).toBe("scoped-job:offer");
 
     // 3. Daemon-side: build the matching completion message for a `merged` rebase.
     const completionEnvelope = {
-      type: "scoped-job-completion" as const,
+      type: "scoped-job:completion" as const,
       ...createMessageEnvelope(),
       payload: {
         offerId: fakePendingOffer.offerId,
@@ -193,7 +196,7 @@ describe("T028: scoped-rebase WS contract round-trip", () => {
     const completionParsed = daemonMessageSchema.safeParse(completionEnvelope);
     expect(completionParsed.success).toBe(true);
     if (!completionParsed.success) return;
-    expect(completionParsed.data.type).toBe("scoped-job-completion");
+    expect(completionParsed.data.type).toBe("scoped-job:completion");
 
     // 5. Drive the parsed completion through the orchestrator's WS router.
     const { ws } = makeMockServerSocket(FAKE_DAEMON_ID);

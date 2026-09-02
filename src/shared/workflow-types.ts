@@ -30,6 +30,13 @@ export const RepoMemoryCategorySchema = z.enum([
   "env",
   "gotchas",
 ]);
+export const RepoMemoryEntrySchema = z.object({
+  id: z.uuid(),
+  category: RepoMemoryCategorySchema,
+  content: z.string().min(1).max(1000),
+  pinned: z.boolean(),
+});
+export type RepoMemoryEntry = z.infer<typeof RepoMemoryEntrySchema>;
 
 const reviewLearningActionSaveSchema = z.object({
   directive: z.string().min(1).max(2000),
@@ -55,6 +62,73 @@ export const DaemonActionsSchema = z.object({
   reviewLearningDeletes: z.array(z.uuid().max(64)).max(50).optional(),
 });
 export type DaemonActions = z.infer<typeof DaemonActionsSchema>;
+
+const appliedReviewLearningIdsField = z.array(z.string().max(64)).max(50).optional();
+const daemonActionsField = DaemonActionsSchema.optional();
+export const WORKFLOW_RUNNER_HUMAN_MESSAGE_MAX_CHARS = 50_000;
+const boundedHumanMessage = z
+  .string()
+  .min(1)
+  .max(WORKFLOW_RUNNER_HUMAN_MESSAGE_MAX_CHARS)
+  .optional();
+const boundedFailureReason = z.string().min(1).max(WORKFLOW_RUNNER_HUMAN_MESSAGE_MAX_CHARS);
+
+/** Result returned by one workflow handler before controller-side settlement. */
+export const HandlerResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("succeeded"),
+    state: z.unknown(),
+    humanMessage: boundedHumanMessage,
+    appliedReviewLearningIds: appliedReviewLearningIdsField,
+    daemonActions: daemonActionsField,
+  }),
+  z.object({
+    status: z.literal("failed"),
+    reason: boundedFailureReason,
+    state: z.unknown().optional(),
+    humanMessage: boundedHumanMessage,
+    daemonActions: daemonActionsField,
+  }),
+  z.object({
+    status: z.literal("incomplete"),
+    reason: boundedFailureReason,
+    state: z.unknown().optional(),
+    humanMessage: boundedHumanMessage,
+    appliedReviewLearningIds: appliedReviewLearningIdsField,
+    daemonActions: daemonActionsField,
+  }),
+  z.object({
+    status: z.literal("handed-off"),
+    state: z.unknown().optional(),
+    humanMessage: boundedHumanMessage,
+    childRunId: z.string().min(1),
+    daemonActions: z.never().optional(),
+  }),
+]);
+export type HandlerResult = z.infer<typeof HandlerResultSchema>;
+
+export const PriorPlanStateSchema = z.object({
+  plan: z.string().min(1).max(100_000),
+});
+export type PriorPlanState = z.infer<typeof PriorPlanStateSchema>;
+
+const WorkflowRunSnapshotStateSchema = z.object({
+  recommendedNext: z.enum(["plan", "stop"]).optional(),
+  pr_number: z.number().int().positive().optional(),
+});
+
+/** Bounded workflow history projected into a single-attempt runner payload. */
+export const WorkflowRunSnapshotSchema = z.object({
+  id: z.uuid(),
+  status: z.enum(["queued", "running", "succeeded", "failed", "incomplete"]),
+  state: WorkflowRunSnapshotStateSchema,
+  createdAt: z.iso.datetime(),
+});
+export type WorkflowRunSnapshot = z.infer<typeof WorkflowRunSnapshotSchema>;
+
+export function workflowRunnerId(attemptId: string): string {
+  return `workflow-runner:${attemptId}`;
+}
 
 export type {
   Registry,

@@ -7,6 +7,7 @@ import { dispatchByLabel } from "../../workflows/dispatcher";
 import { dispatchCanonicalCommand } from "../../workflows/ship/command-dispatch";
 import { routeTrigger } from "../../workflows/ship/trigger-router";
 import { isOwnerAllowed } from "../authorize";
+import { postDispatchFailure } from "../dispatch-failure";
 import { claimDelivery } from "../idempotency";
 
 // Permits hyphenated verbs (e.g. `bot:open-pr`, `bot:fix-thread`); the verb
@@ -94,6 +95,9 @@ export function handleIssues(octokit: Octokit, payload: IssuesEvent, deliveryId:
   const repo = payload.repository.name;
   const issueNumber = payload.issue.number;
   const installationId = payload.installation?.id;
+  // Facts the repo-config trigger filters evaluate. A pure issue is never a
+  // draft PR and has no base branch, so those two rules never apply here.
+  const trigger = { title: payload.issue.title };
 
   void (async (): Promise<void> => {
     // Idempotency gate (issue #202): skip a redelivery before any dispatch.
@@ -110,7 +114,7 @@ export function handleIssues(octokit: Octokit, payload: IssuesEvent, deliveryId:
           },
         });
         if (command !== null) {
-          dispatchCanonicalCommand(command, { octokit, log });
+          dispatchCanonicalCommand(command, { octokit, log, trigger });
           return;
         }
       } catch (err) {
@@ -126,9 +130,11 @@ export function handleIssues(octokit: Octokit, payload: IssuesEvent, deliveryId:
         target: { type: "issue", owner, repo, number: issueNumber },
         senderLogin,
         deliveryId,
+        trigger,
       });
     } catch (err) {
       log.error({ err }, "dispatchByLabel threw for issues.labeled");
+      await postDispatchFailure({ octokit, log, deliveryId, owner, repo, number: issueNumber });
     }
   })();
 }

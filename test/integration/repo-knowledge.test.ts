@@ -50,6 +50,7 @@ describe.skipIf(sql === null)("repo-knowledge ANY() array binding regression", (
     const db = requireSql();
     await db.unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -127,7 +128,15 @@ describe.skipIf(sql === null)("repo-knowledge ANY() array binding regression", (
     const ids = seeded.slice(0, 2).map((r) => r.id);
     const { deleteRepoMemories } = await import("../../src/orchestrator/repo-knowledge");
 
-    const deletedCount = await deleteRepoMemories(ids, db);
+    const otherRepo: { id: string }[] = await db`
+      INSERT INTO repo_memory (repo_owner, repo_name, category, content, pinned)
+      VALUES (${TEST_OWNER}, 'other-repo', 'gotchas', 'must-survive', false)
+      RETURNING id
+    `;
+    const crossRepoId = otherRepo[0]?.id;
+    if (crossRepoId === undefined) throw new Error("Expected cross-repo fixture");
+
+    const deletedCount = await deleteRepoMemories(TEST_OWNER, TEST_REPO, [...ids, crossRepoId], db);
     expect(deletedCount).toBe(2);
 
     const remaining: { content: string }[] = await db`
@@ -139,13 +148,18 @@ describe.skipIf(sql === null)("repo-knowledge ANY() array binding regression", (
     expect(contents).toContain("keep-me");
     expect(contents).not.toContain("to-delete-1");
     expect(contents).not.toContain("to-delete-2");
+    const otherRows: { content: string }[] = await db`
+      SELECT content FROM repo_memory
+       WHERE repo_owner = ${TEST_OWNER} AND repo_name = 'other-repo'
+    `;
+    expect(otherRows).toEqual([{ content: "must-survive" }]);
   });
 
   it("deleteRepoMemories with empty array is a no-op (does not query DB)", async () => {
     const db = requireSql();
     const { deleteRepoMemories } = await import("../../src/orchestrator/repo-knowledge");
 
-    const result = await deleteRepoMemories([], db);
+    const result = await deleteRepoMemories(TEST_OWNER, TEST_REPO, [], db);
     expect(result).toBe(0);
   });
 });
@@ -256,5 +270,78 @@ describe.skipIf(sql2 === null)("saveRepoLearnings sanitization at durability bou
     expect(rows.length).toBe(1);
     expect(rows[0]!.content).not.toContain(tok);
     expect(rows[0]!.content).toContain("[REDACTED_GITHUB_TOKEN]");
+  });
+
+  it("hashes text bytes without interpreting bytea escape syntax", async () => {
+    const db = requireSql2();
+    const { saveRepoLearnings } = await import("../../src/orchestrator/repo-knowledge");
+    const repo = `${TEST_REPO}-text-hash`;
+
+    expect(
+      await saveRepoLearnings(
+        TEST_OWNER,
+        repo,
+        [
+          { category: "gotchas", content: "A" },
+          { category: "gotchas", content: String.raw`\x41` },
+          { category: "gotchas", content: String.raw`C:\Users\bin` },
+        ],
+        db,
+      ),
+    ).toBe(3);
+
+    const rows: { content: string }[] = await db`
+      SELECT content
+        FROM repo_memory
+       WHERE repo_owner = ${TEST_OWNER}
+         AND repo_name = ${repo}
+         AND category = 'gotchas'
+       ORDER BY content
+    `;
+    expect(rows.map((row) => row.content).sort()).toEqual(
+      ["A", String.raw`\x41`, String.raw`C:\Users\bin`].sort(),
+    );
+  });
+
+  it("stores one row across duplicate and replayed saves", async () => {
+    const db = requireSql2();
+    const { saveRepoLearnings } = await import("../../src/orchestrator/repo-knowledge");
+    const learning = { category: "architecture", content: "One durable controller owns state." };
+
+    expect(await saveRepoLearnings(TEST_OWNER, TEST_REPO, [learning], db)).toBe(1);
+    expect(await saveRepoLearnings(TEST_OWNER, TEST_REPO, [learning], db)).toBe(0);
+    expect(await saveRepoLearnings(TEST_OWNER, TEST_REPO, [learning], db)).toBe(0);
+
+    const rows: { count: number; updated_at: Date }[] = await db`
+      SELECT count(*)::int AS count, max(updated_at) AS updated_at
+        FROM repo_memory
+       WHERE repo_owner = ${TEST_OWNER}
+         AND repo_name = ${TEST_REPO}
+         AND category = ${learning.category}
+         AND content = ${learning.content}
+    `;
+    expect(rows[0]?.count).toBe(1);
+    expect(rows[0]?.updated_at).toBeInstanceOf(Date);
+  });
+
+  it("stores one row when identical result projections race", async () => {
+    const db = requireSql2();
+    const { saveRepoLearnings } = await import("../../src/orchestrator/repo-knowledge");
+    const learning = { category: "gotchas", content: "Concurrent replay stays idempotent." };
+
+    const saved = await Promise.all(
+      Array.from({ length: 10 }, () => saveRepoLearnings(TEST_OWNER, TEST_REPO, [learning], db)),
+    );
+
+    expect(saved.reduce((total, count) => total + count, 0)).toBe(1);
+    const rows: { count: number }[] = await db`
+      SELECT count(*)::int AS count
+        FROM repo_memory
+       WHERE repo_owner = ${TEST_OWNER}
+         AND repo_name = ${TEST_REPO}
+         AND category = ${learning.category}
+         AND content = ${learning.content}
+    `;
+    expect(rows[0]?.count).toBe(1);
   });
 });

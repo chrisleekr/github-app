@@ -50,6 +50,10 @@ let mockDbResult: unknown[] = [];
 const mockDbFn = mock((_strings: TemplateStringsArray, ..._values: unknown[]) =>
   Promise.resolve(mockDbResult),
 );
+const mockDbBegin = mock(
+  (callback: (tx: typeof mockDbFn) => Promise<unknown>): Promise<unknown> => callback(mockDbFn),
+);
+Object.assign(mockDbFn, { begin: mockDbBegin });
 let dbEnabled = true;
 
 void mock.module("../../src/db", () => ({
@@ -123,6 +127,7 @@ function makeCreateParams(overrides: Partial<CreateExecutionParams> = {}): Creat
 
 beforeEach(() => {
   mockDbFn.mockClear();
+  mockDbBegin.mockClear();
   mockDbResult = [];
   dbEnabled = true;
   mockLoggerInfo.mockClear();
@@ -262,11 +267,11 @@ describe("createExecution", () => {
 
 describe("markExecutionOffered", () => {
   it("updates status to offered with daemon ID when db is available", async () => {
-    await markExecutionOffered("d-001", "daemon-5");
+    mockDbResult = [{ id: "daemon-5", delivery_id: "d-001" }];
+    expect(await markExecutionOffered("d-001", "daemon-5")).toBe("offered");
 
     expect(mockDbFn).toHaveBeenCalled();
-    const call = firstCall(mockDbFn);
-    const values = call.slice(1);
+    const values = mockDbFn.mock.calls.flatMap((call) => call.slice(1));
     expect(values).toContain("daemon-5");
     expect(values).toContain("d-001");
   });
@@ -274,7 +279,7 @@ describe("markExecutionOffered", () => {
   it("does nothing when db is not available", async () => {
     dbEnabled = false;
 
-    await markExecutionOffered("d-001", "daemon-5");
+    expect(await markExecutionOffered("d-001", "daemon-5")).toBe("offered");
 
     expect(mockDbFn).not.toHaveBeenCalled();
   });
@@ -356,7 +361,8 @@ describe("markExecutionFailed", () => {
 
 describe("requeueExecution", () => {
   it("updates status back to queued and clears daemon_id", async () => {
-    await requeueExecution("d-006");
+    mockDbResult = [{ delivery_id: "d-006" }];
+    expect(await requeueExecution("d-006")).toBe(true);
 
     expect(mockDbFn).toHaveBeenCalled();
     const call = firstCall(mockDbFn);
@@ -367,7 +373,7 @@ describe("requeueExecution", () => {
   it("does nothing when db is not available", async () => {
     dbEnabled = false;
 
-    await requeueExecution("d-006");
+    expect(await requeueExecution("d-006")).toBe(true);
 
     expect(mockDbFn).not.toHaveBeenCalled();
   });
@@ -595,5 +601,14 @@ describe("recoverStaleExecutions", () => {
     const interpolatedValues = call.slice(1);
     // thresholdMs / 1000 = 300
     expect(interpolatedValues).toContain(300);
+  });
+
+  it("excludes lease-fenced workflow runner receipts from startup recovery", async () => {
+    directDbResults = [[]];
+    await recoverStaleExecutions(mockDirectDb as unknown as SQL);
+
+    const call = firstCall(mockDirectDb);
+    const strings = call[0] as unknown as TemplateStringsArray;
+    expect(strings.join("?")).toContain("offer_id IS NULL");
   });
 });

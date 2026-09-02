@@ -276,7 +276,7 @@ export async function runShipFromCommand(input: RunShipFromCommandInput): Promis
     return;
   }
 
-  // Non-ready verdict: bridge to the daemon `workflow_runs` pipeline
+  // Non-ready verdict: bridge to the isolated `workflow_runs` runner pipeline
   // via runIteration (US1). The orchestrator's completion cascade
   // (`onStepComplete`) ZADDs `ship:tickle` on the run's terminal write
   // so the next iteration re-enters via the tickle scheduler (US2).

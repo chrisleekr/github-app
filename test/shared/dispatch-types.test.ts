@@ -10,12 +10,13 @@ import {
 } from "../../src/shared/dispatch-types";
 
 describe("DispatchTarget", () => {
-  it("exposes the daemon singleton after the dispatch collapse", () => {
-    expect(DISPATCH_TARGETS).toEqual(["daemon"]);
+  it("exposes the shared-daemon and isolated-runner protocols", () => {
+    expect(DISPATCH_TARGETS).toEqual(["daemon", "workflow-runner"]);
   });
 
   it("Zod schema accepts 'daemon'", () => {
     expect(DispatchTargetSchema.safeParse("daemon").success).toBe(true);
+    expect(DispatchTargetSchema.safeParse("workflow-runner").success).toBe(true);
   });
 
   it("Zod schema rejects removed legacy targets", () => {
@@ -30,8 +31,9 @@ describe("DispatchTarget", () => {
     }
   });
 
-  it("isDispatchTarget accepts 'daemon' and rejects everything else", () => {
+  it("isDispatchTarget accepts both current protocols and rejects everything else", () => {
     expect(isDispatchTarget("daemon")).toBe(true);
+    expect(isDispatchTarget("workflow-runner")).toBe(true);
     for (const bogus of ["inline", "shared-runner", "isolated-job", "", 42, null, {}, []]) {
       expect(isDispatchTarget(bogus)).toBe(false);
     }
@@ -39,12 +41,13 @@ describe("DispatchTarget", () => {
 });
 
 describe("DispatchReason", () => {
-  it("exposes exactly the four canonical reasons in documented order", () => {
+  it("exposes every canonical reason in documented order", () => {
     expect(DISPATCH_REASONS).toEqual([
       "persistent-daemon",
       "ephemeral-daemon-triage",
       "ephemeral-daemon-overflow",
       "ephemeral-spawn-failed",
+      "workflow-runner",
     ]);
   });
 

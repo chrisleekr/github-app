@@ -5,18 +5,17 @@ import type pino from "pino";
 import { config } from "../config";
 import { requireDb } from "../db";
 import { getIntentById } from "../db/queries/ship";
-import { getInstanceId } from "../orchestrator/instance-id";
-import { enqueueJob } from "../orchestrator/job-queue";
 import { requireValkeyClient } from "../orchestrator/valkey";
 import { isSessionTerminalState } from "../shared/ship-types";
 import { addReaction, type ReactionContent } from "../utils/reactions";
+import { publishWorkflowRunById } from "./dispatch-outbox";
 import { recordWorkflowExecution } from "./execution-row";
 import { logWorkflowRunEnqueueFailed } from "./log-fields";
 import { getByName, type WorkflowName } from "./registry";
-import { findById, markFailed, type WorkflowRunRow } from "./runs-store";
+import { findById, type WorkflowRunRow } from "./runs-store";
 import { TICKLE_KEY } from "./ship/webhook-reactor";
 import { extractShipIntentId } from "./ship/workflow-context";
-import { setState } from "./tracking-mirror";
+import { LAST_HUMAN_MESSAGE_KEY, setState } from "./tracking-mirror";
 
 /**
  * Composite-workflow hand-off engine. Runs as the LAST step of every
@@ -42,8 +41,10 @@ export interface CompletionResult {
 }
 
 export interface OnStepCompleteDeps {
-  readonly octokit: Octokit;
+  readonly octokit: Octokit | null;
   readonly logger: pino.Logger;
+  readonly emitGitHub?: boolean;
+  readonly sql?: SQL;
 }
 
 export async function onStepComplete(
@@ -51,14 +52,14 @@ export async function onStepComplete(
   childRunId: string,
   result: CompletionResult,
 ): Promise<void> {
-  const db = requireDb();
+  const db = deps.sql ?? requireDb();
   const { logger } = deps;
 
   // Ship-iteration early-wake hook: when the just-completed child carries a
   // `shipIntentId` in its state JSONB, ZADD `ship:tickle` so the scheduler
   // re-enters the intent on the next tick. Runs BEFORE the parent-cascade
   // logic because ship-iteration runs may have no `parent_run_id`.
-  await maybeEarlyWakeShipIntent(childRunId, logger);
+  await maybeEarlyWakeShipIntent(childRunId, logger, db);
 
   // Capture anything the transaction wants to emit AFTER commit so the DB
   // is the source of truth for enqueued jobs and GitHub API calls. The
@@ -81,9 +82,21 @@ export async function onStepComplete(
       logger.warn({ childRunId, parentId: child.parent_run_id }, "onStepComplete: parent missing");
       return;
     }
+    if (parent.status !== "running") {
+      logger.info(
+        { childRunId, parentId: parent.id, parentStatus: parent.status },
+        "onStepComplete replayed a child of a terminal parent",
+      );
+      const terminal = terminalProjectionFromParent(parent);
+      if (terminal !== null) {
+        postCommit = { enqueue: null, parentRunId: parent.id, parentTerminal: terminal };
+      }
+      return;
+    }
 
     const steps = getByName(parent.workflow_name).steps;
     const childStepIndex = child.parent_step_index ?? -1;
+    if (extractStepRuns(parent.state).includes(childRunId)) return;
 
     if (result.status === "failed") {
       // The executor edge maps `HandlerResult.status === "incomplete"` to a
@@ -97,19 +110,21 @@ export async function onStepComplete(
       const rawReason = isIncomplete
         ? (result.reason ?? "").slice("incomplete:".length).trim()
         : (result.reason ?? "child failed");
+      const humanMessage = isIncomplete
+        ? `ship halted at step ${String(childStepIndex)} (${parent.workflow_name} → ${child.workflow_name}), ${child.workflow_name} returned incomplete; see PR tracking comment for outstanding items.`
+        : `ship halted at step ${String(childStepIndex)} (${parent.workflow_name} → ${child.workflow_name}), see server logs for details.`;
       const failPatch = {
         failedAtStepIndex: childStepIndex,
         failedReason: rawReason || "child failed",
+        [LAST_HUMAN_MESSAGE_KEY]: humanMessage,
       };
       await tx`
         UPDATE workflow_runs
            SET status = 'failed',
                state = state || ${failPatch}::jsonb
          WHERE id = ${parent.id}
+           AND status = 'running'
       `;
-      const humanMessage = isIncomplete
-        ? `ship halted at step ${String(childStepIndex)} (${parent.workflow_name} → ${child.workflow_name}), ${child.workflow_name} returned incomplete; see PR tracking comment for outstanding items.`
-        : `ship halted at step ${String(childStepIndex)} (${parent.workflow_name} → ${child.workflow_name}), see server logs for details.`;
       postCommit = {
         enqueue: null,
         parentRunId: parent.id,
@@ -118,8 +133,8 @@ export async function onStepComplete(
           // Do NOT inline `result.reason` for the generic-failed branch,
           // handlers persist raw error strings in `reason` for DB+log
           // forensics and that surface is public on GitHub. The
-          // `incomplete:` prefix is a private executor-internal marker
-          // (set by `workflow-executor.ts`); the message above does not
+          // `incomplete:` prefix is a private cascade marker set by
+          // `completion-reconciler.ts`; the message above does not
           // include the reason payload itself, only flags the class.
           humanMessage,
         },
@@ -173,17 +188,6 @@ export async function onStepComplete(
     const shouldLoopBackToReview = isShipParent && isResolveChild && reviewIterations < cap;
 
     if (reviewClean || (nextIndex >= steps.length && !shouldLoopBackToReview)) {
-      const successPatch = {
-        currentStepIndex: nextIndex,
-        stepRuns,
-        ...reviewLoopState,
-      };
-      await tx`
-        UPDATE workflow_runs
-           SET status = 'succeeded',
-               state = state || ${successPatch}::jsonb
-         WHERE id = ${parent.id}
-      `;
       let humanMessage = `ship complete, all ${String(steps.length)} steps succeeded.`;
       if (reviewClean) {
         humanMessage = `ship complete, review found no issues after ${String(reviewIterations)} iterations.`;
@@ -192,6 +196,19 @@ export async function onStepComplete(
           lastReviewFindings === 1 ? "" : "s"
         }; resolve-${String(reviewIterations)} attempted fixes. Manual re-review recommended.`;
       }
+      const successPatch = {
+        currentStepIndex: nextIndex,
+        stepRuns,
+        ...reviewLoopState,
+        [LAST_HUMAN_MESSAGE_KEY]: humanMessage,
+      };
+      await tx`
+        UPDATE workflow_runs
+           SET status = 'succeeded',
+               state = state || ${successPatch}::jsonb
+         WHERE id = ${parent.id}
+           AND status = 'running'
+      `;
       postCommit = {
         enqueue: null,
         parentRunId: parent.id,
@@ -215,39 +232,43 @@ export async function onStepComplete(
     // loop-back iterations).
     const targetResult = deriveChildTarget(parent, child, nextStepName);
     if ("error" in targetResult) {
+      const humanMessage = `ship halted at step ${String(nextStepIndex)} (${parent.workflow_name} → ${nextStepName}): ${targetResult.error}`;
       const failPatch = {
         failedAtStepIndex: nextStepIndex,
         failedReason: targetResult.error,
         ...reviewLoopState,
+        [LAST_HUMAN_MESSAGE_KEY]: humanMessage,
       };
       await tx`
         UPDATE workflow_runs
            SET status = 'failed',
                state = state || ${failPatch}::jsonb
          WHERE id = ${parent.id}
+           AND status = 'running'
       `;
       postCommit = {
         enqueue: null,
         parentRunId: parent.id,
         parentTerminal: {
           status: "failed",
-          humanMessage: `ship halted at step ${String(nextStepIndex)} (${parent.workflow_name} → ${nextStepName}): ${targetResult.error}`,
+          humanMessage,
         },
       };
       return;
     }
     const childTarget = targetResult;
 
+    const nextChildId = crypto.randomUUID();
     const inserted: WorkflowRunRow[] = await tx`
       INSERT INTO workflow_runs (
-        workflow_name, target_type, target_owner, target_repo, target_number,
+        id, workflow_name, target_type, target_owner, target_repo, target_number,
         parent_run_id, parent_step_index, status, state, delivery_id,
-        owner_kind, owner_id
+        execution_delivery_id, owner_kind, owner_id
       ) VALUES (
-        ${nextStepName}, ${childTarget.type}, ${childTarget.owner},
+        ${nextChildId}, ${nextStepName}, ${childTarget.type}, ${childTarget.owner},
         ${childTarget.repo}, ${childTarget.number},
         ${parent.id}, ${nextStepIndex}, 'queued', '{}'::jsonb, ${parent.delivery_id},
-        'orchestrator', ${getInstanceId()}
+        ${nextChildId}, NULL, NULL
       )
       RETURNING *
     `;
@@ -255,6 +276,15 @@ export async function onStepComplete(
     if (nextChild === undefined) {
       throw new Error("orchestrator: failed to insert next child row");
     }
+    await recordWorkflowExecution({
+      deliveryId: nextChild.id,
+      target: childTarget,
+      senderLogin: config.botAppLogin,
+      workflowName: nextStepName,
+      runId: nextChild.id,
+      logger,
+      sql: tx,
+    });
 
     const progressPatch: Record<string, unknown> = {
       currentStepIndex: nextStepIndex,
@@ -269,7 +299,8 @@ export async function onStepComplete(
     await tx`
       UPDATE workflow_runs
          SET state = state || ${progressPatch}::jsonb
-       WHERE id = ${parent.id}
+     WHERE id = ${parent.id}
+       AND status = 'running'
     `;
 
     postCommit = {
@@ -288,52 +319,13 @@ export async function onStepComplete(
 
   if (postCommit.enqueue !== null) {
     const job = postCommit.enqueue;
-    // Cascade steps use `runId` as deliveryId to avoid collision with the
-    // parent's `executions.delivery_id` (UNIQUE NOT NULL). Parent's original
-    // webhook deliveryId is retained on the workflow_runs row for traceability
-    // but is NOT reused as the per-step executions key.
-    const childDeliveryId = job.runId;
     try {
-      await recordWorkflowExecution({
-        deliveryId: childDeliveryId,
-        target: job.target,
-        senderLogin: config.botAppLogin,
-        workflowName: job.workflowName,
-        runId: job.runId,
-        logger,
-      });
-      await enqueueJob({
-        kind: "workflow-run",
-        deliveryId: childDeliveryId,
-        repoOwner: job.target.owner,
-        repoName: job.target.repo,
-        entityNumber: job.target.number,
-        isPR: job.target.type === "pr",
-        eventName: job.target.type === "pr" ? "pull_request" : "issues",
-        triggerUsername: config.botAppLogin,
-        labels: [],
-        triggerBodyPreview: "",
-        enqueuedAt: Date.now(),
-        retryCount: 0,
-        workflowRun: {
-          runId: job.runId,
-          workflowName: job.workflowName,
-          parentRunId: job.parentRunId,
-          parentStepIndex: job.parentStepIndex,
-        },
-      });
+      await publishWorkflowRunById(job.runId, db);
       logger.info(
         { nextRunId: job.runId, nextWorkflow: job.workflowName, parentId: job.parentRunId },
         "orchestrator enqueued next step",
       );
     } catch (err) {
-      // Compensation: the transaction committed a `queued` child row and
-      // mutated the parent's `state`, but Valkey was unreachable (or the
-      // publish rejected the payload). Without this branch the child would
-      // sit `queued` forever, and the partial unique index would block any
-      // retry for the same (workflow, target). Mark both rows `failed`
-      // BEFORE returning so the index releases and the operator gets a
-      // breadcrumb on the tracking comment.
       const reason = `enqueue failed: ${err instanceof Error ? err.message : String(err)}`;
       logWorkflowRunEnqueueFailed(logger, {
         runId: job.runId,
@@ -344,50 +336,31 @@ export async function onStepComplete(
       });
       logger.error(
         { err, nextRunId: job.runId, parentId: job.parentRunId },
-        "orchestrator post-commit enqueue failed, compensating by marking child and parent failed",
+        "orchestrator post-commit enqueue failed, reconciliation will retry",
       );
-      await markFailed(job.runId, reason).catch((markErr: unknown) => {
-        logger.error(
-          { err: markErr, nextRunId: job.runId },
-          "compensation: failed to mark child row as failed",
-        );
-      });
-      await markFailed(job.parentRunId, reason, {
-        failedAtStepIndex: job.parentStepIndex,
-      }).catch((markErr: unknown) => {
-        logger.error(
-          { err: markErr, parentId: job.parentRunId },
-          "compensation: failed to mark parent row as failed",
-        );
-      });
-      // Surface via the parent's tracking comment so the operator sees
-      // the failure without needing to tail logs.
-      postCommit = {
-        ...postCommit,
-        parentTerminal: {
-          status: "failed",
-          humanMessage: `ship halted at step ${String(job.parentStepIndex)} (${job.workflowName}): enqueue failed, see daemon logs for retry.`,
-        },
-      };
     }
   }
 
-  if (postCommit.parentTerminal !== null && postCommit.parentRunId !== null) {
+  if (
+    postCommit.parentTerminal !== null &&
+    postCommit.parentRunId !== null &&
+    deps.emitGitHub !== false &&
+    deps.octokit !== null
+  ) {
     const parentRunId = postCommit.parentRunId;
     const terminal = postCommit.parentTerminal;
-    await setState(deps, {
+    const trackingDeps = { octokit: deps.octokit, logger };
+    await setState(trackingDeps, {
       runId: parentRunId,
       patch: {},
       humanMessage: terminal.humanMessage,
-    }).catch((err: unknown) => {
-      logger.warn({ err, parentId: parentRunId }, "parent tracking emit failed");
     });
 
     // Composite parents (e.g., ship) terminate here, not in the daemon
     // executor, so this is the right point to react on the user's trigger
     // comment with the chain's final outcome.
     await reactOnParentTrigger(
-      deps,
+      trackingDeps,
       parentRunId,
       terminal.status === "succeeded" ? "hooray" : "confused",
     );
@@ -407,9 +380,8 @@ export async function onStepComplete(
  * @param log         Pino logger used by the cascade caller.
  */
 /**
- * Read `state.failedReason` written by `markFailed` from a workflow_runs
- * state blob. Returns `undefined` when the row was not marked failed by
- * `markFailed` (e.g. legacy rows or non-failure states).
+ * Read `state.failedReason` from a terminal workflow_runs state blob.
+ * Returns `undefined` for legacy rows or non-failure states.
  */
 export function extractFailedReason(state: unknown): string | undefined {
   if (state === null || typeof state !== "object") return undefined;
@@ -493,8 +465,11 @@ export function detectTransientQuotaError(
   return { retryAtMs: nowMs + QUOTA_FALLBACK_RETRY_DELAY_MS, resetPhrase: "fallback_1h" };
 }
 
-async function maybeEarlyWakeShipIntent(childRunId: string, log: pino.Logger): Promise<void> {
-  const db = requireDb();
+async function maybeEarlyWakeShipIntent(
+  childRunId: string,
+  log: pino.Logger,
+  db: SQL,
+): Promise<void> {
   const rows: { state: Record<string, unknown>; status: string }[] = await db`
     SELECT state, status FROM workflow_runs WHERE id = ${childRunId}
   `;
@@ -610,7 +585,7 @@ async function maybeEarlyWakeShipIntent(childRunId: string, log: pino.Logger): P
 }
 
 async function reactOnParentTrigger(
-  deps: OnStepCompleteDeps,
+  deps: { octokit: Octokit; logger: pino.Logger },
   parentRunId: string,
   content: ReactionContent,
 ): Promise<void> {
@@ -646,6 +621,18 @@ interface PostCommitActions {
   } | null;
   parentRunId: string | null;
   parentTerminal: { status: "succeeded" | "failed"; humanMessage: string } | null;
+}
+
+function terminalProjectionFromParent(parent: WorkflowRunRow): PostCommitActions["parentTerminal"] {
+  if (parent.status !== "succeeded" && parent.status !== "failed") return null;
+  const stored = parent.state[LAST_HUMAN_MESSAGE_KEY];
+  const humanMessage =
+    typeof stored === "string" && stored.trim() !== ""
+      ? stored
+      : parent.status === "succeeded"
+        ? `${parent.workflow_name} succeeded.`
+        : `${parent.workflow_name} failed, see server logs for details.`;
+  return { status: parent.status, humanMessage };
 }
 
 function extractStepRuns(state: Record<string, unknown>): string[] {

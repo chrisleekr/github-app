@@ -20,6 +20,7 @@ import {
   handleJobCancel,
   registerExitCleanup,
 } from "./job-executor";
+import { assertDaemonEnvironmentPrivate } from "./process-boundary";
 import { discoverCapabilities, getCurrentResources } from "./tool-discovery";
 import { DaemonWsClient } from "./ws-client";
 
@@ -185,7 +186,7 @@ function handleMessage(msg: ServerMessage): void {
       break;
     }
 
-    case "scoped-job-offer": {
+    case "scoped-job:offer": {
       if (draining) {
         wsClient.send({
           type: "job:reject",
@@ -345,6 +346,7 @@ function startEphemeralIdleLoop(): void {
 // Main
 
 async function main(): Promise<void> {
+  assertDaemonEnvironmentPrivate();
   logger.info({ daemonId }, "Daemon starting");
 
   // Route crashes through the redacting pino chokepoint instead of the
@@ -412,6 +414,13 @@ async function main(): Promise<void> {
     // Connect/disconnect transitions are logged as structured
     // daemon.connection.* events by DaemonWsClient (issue #218).
     onMessage: handleMessage,
+    // A protocol-incompatible close disables reconnect for the process
+    // lifetime. Exit non-zero so the supervisor restarts this daemon against
+    // the upgraded orchestrator rather than parking it idle but healthy.
+    onFatal: (reason) => {
+      logger.error({ reason }, "Daemon cannot reach a compatible orchestrator; exiting");
+      process.exit(1);
+    },
   });
 
   wsClient.connect();

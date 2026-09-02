@@ -1,8 +1,8 @@
 import { runPipeline } from "../../core/pipeline";
-import type { BotContext } from "../../types";
+import type { BotContext, ExecutionResult } from "../../types";
 import { fetchAndBuildDigest, renderDigestSection } from "../discussion-digest";
 import type { WorkflowHandler } from "../registry";
-import { findById } from "../runs-store";
+import { StaleWorkflowAttemptError } from "../runs-store";
 import { type BranchStaleness, formatRefreshDirective, getBranchStaleness } from "./branch-refresh";
 import { renderReviewLearningsFooter } from "./review-learnings-footer";
 
@@ -35,6 +35,7 @@ import { renderReviewLearningsFooter } from "./review-learnings-footer";
 
 export const handler: WorkflowHandler = async (ctx) => {
   const { octokit, target, logger: log, deliveryId, runId } = ctx;
+  let daemonActions: ExecutionResult["daemonActions"];
 
   try {
     if (target.type !== "pr") {
@@ -77,7 +78,7 @@ export const handler: WorkflowHandler = async (ctx) => {
     // post mid-run progress against. The orchestrator's setState creates
     // the comment on first call and reserves its id in the workflow row;
     // we read that id back and hand it to the pipeline.
-    await ctx.setState(
+    const seededState = await ctx.setState(
       {
         pr_number: target.number,
         head_sha: pr.head.sha,
@@ -87,8 +88,7 @@ export const handler: WorkflowHandler = async (ctx) => {
       },
       `🔍 **Code review starting**, ${String(pr.changed_files)} files, +${String(pr.additions)}/-${String(pr.deletions)}. Cloning repo and reading changed files…`,
     );
-    const seededRow = await findById(runId);
-    const trackingCommentId = seededRow?.tracking_comment_id ?? undefined;
+    const trackingCommentId = seededState.trackingCommentId;
     if (trackingCommentId === undefined || trackingCommentId === null) {
       log.warn({ runId }, "review handler: tracking comment id not found after seed setState");
     }
@@ -123,24 +123,29 @@ export const handler: WorkflowHandler = async (ctx) => {
       // Forward orchestrator pre-loaded learnings so runPipeline's prompt-
       // builder and MCP server see them. Without this, the workflow-dispatch
       // path silently drops the feature even though the direct-pipeline path
-      // works. Wire upstream: src/daemon/workflow-executor.ts.
+      // works. The controller preloads it in workflow-runner-payload.ts.
       ...(ctx.reviewLearnings !== undefined ? { reviewLearnings: ctx.reviewLearnings } : {}),
+      ...(ctx.repoMemory !== undefined ? { repoMemory: ctx.repoMemory } : {}),
       octokit,
       log,
     };
 
     const result = await runPipeline(botCtx, {
       captureFiles: ["REVIEW.md"],
+      ...(ctx.policy !== undefined ? { policy: ctx.policy } : {}),
+      ...(ctx.maxTurns !== undefined ? { maxTurns: ctx.maxTurns } : {}),
       ...(trackingCommentId !== undefined && trackingCommentId !== null
         ? { trackingCommentId }
         : {}),
       ...(digestSection.length > 0 ? { discussionDigest: digestSection } : {}),
+      ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
       // Review handler is one of only two workflows authorised to consume
       // review_learnings as repo policy (resolve is the other). The orch-
       // estrator pre-loads them onto ctx for every job; this flag is what
       // lets the pipeline forward them into the prompt + MCP server.
       enableReviewLearnings: true,
     });
+    daemonActions = result.daemonActions;
     if (!result.success) {
       // `reason` is internal (DB state.failedReason → orchestrator quota
       // detection + operator logs); `humanMessage` is the public tracking
@@ -150,6 +155,7 @@ export const handler: WorkflowHandler = async (ctx) => {
         status: "failed",
         reason: result.errorMessage ?? "review pipeline execution failed",
         humanMessage: "review pipeline execution failed, see server logs for details.",
+        ...(daemonActions !== undefined ? { daemonActions } : {}),
       };
     }
 
@@ -186,7 +192,6 @@ export const handler: WorkflowHandler = async (ctx) => {
     const learningsFooter = renderReviewLearningsFooter(result.appliedReviewLearnings);
     const humanMessage = `${headline}${reportSection}${metaLine}${learningsFooter}`;
 
-    await ctx.setState(state, humanMessage);
     log.info(
       {
         changedFiles: pr.changed_files,
@@ -200,22 +205,25 @@ export const handler: WorkflowHandler = async (ctx) => {
     // orchestrator can bump `use_count` + `last_used_at`. Without this,
     // the workflow-dispatch path silently drops the bump even though the
     // direct-pipeline path forwards it via `appliedReviewLearningIds` in
-    // job-executor.ts. workflow-executor.ts reads this field off the
-    // HandlerResult and writes it into `job:result`.
+    // job-executor.ts. The isolated runner returns this HandlerResult to the
+    // controller for durable result reconciliation.
     const appliedReviewLearningIds = (result.appliedReviewLearnings ?? []).map((l) => l.id);
     return {
       status: "succeeded",
       state,
       humanMessage,
       ...(appliedReviewLearningIds.length > 0 ? { appliedReviewLearningIds } : {}),
+      ...(daemonActions !== undefined ? { daemonActions } : {}),
     };
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     log.warn({ err }, "review handler caught error");
     return {
       status: "failed",
       reason: `review failed: ${message}`,
       humanMessage: "review pipeline execution failed, see server logs for details.",
+      ...(daemonActions !== undefined ? { daemonActions } : {}),
     };
   }
 };

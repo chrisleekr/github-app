@@ -1,13 +1,11 @@
-import { requireDb } from "../../db";
-import { enqueueJob } from "../../orchestrator/job-queue";
-import { recordWorkflowExecution } from "../execution-row";
+import type { WorkflowRunSnapshot } from "../../shared/workflow-types";
 import {
   getByName,
   type WorkflowHandler,
   type WorkflowName,
   type WorkflowRunContext,
 } from "../registry";
-import { findLatestForTarget, type WorkflowRunRow } from "../runs-store";
+import { StaleWorkflowAttemptError } from "../runs-store";
 // T028 v2 entry, re-exported for spec-locator parity with the
 // CanonicalCommand path described in the tasks.md T028 description. The
 // legacy WorkflowHandler `handler` below covers the workflow_runs
@@ -42,7 +40,7 @@ export { runShipFromCommand } from "../ship/session-runner";
  * handles the terminal transition.
  */
 export const handler: WorkflowHandler = async (ctx) => {
-  const { target, logger: log, runId: parentRunId, deliveryId, daemonId } = ctx;
+  const { target, logger: log } = ctx;
 
   try {
     if (target.type !== "issue") {
@@ -56,6 +54,7 @@ export const handler: WorkflowHandler = async (ctx) => {
       target,
       octokit: ctx.octokit,
       logger: log,
+      stepRuns: ctx.shipStepRuns ?? {},
     });
 
     const firstStep = steps[startIndex];
@@ -69,71 +68,39 @@ export const handler: WorkflowHandler = async (ctx) => {
       return { status: "failed", reason: "ship: computed startIndex out of range" };
     }
 
-    const child = await insertChildRow({
-      parentRunId,
-      parentStepIndex: startIndex,
-      workflowName: firstStep,
-      target,
-      deliveryId: deliveryId ?? null,
-      daemonId,
-    });
-
-    // First child step uses its own runId as deliveryId so the `executions`
-    // row doesn't collide with the parent's webhook-scoped deliveryId.
-    const childDeliveryId = child.id;
-    await recordWorkflowExecution({
-      deliveryId: childDeliveryId,
-      target,
-      senderLogin: "chrisleekr-bot[bot]",
-      workflowName: firstStep,
-      runId: child.id,
-      logger: log,
-    });
-    await enqueueJob({
-      kind: "workflow-run",
-      deliveryId: childDeliveryId,
-      repoOwner: target.owner,
-      repoName: target.repo,
-      entityNumber: target.number,
-      isPR: false,
-      eventName: "issues",
-      triggerUsername: "chrisleekr-bot[bot]",
-      labels: [],
-      triggerBodyPreview: "",
-      enqueuedAt: Date.now(),
-      retryCount: 0,
-      workflowRun: {
-        runId: child.id,
-        workflowName: firstStep,
-        parentRunId,
-        parentStepIndex: startIndex,
-      },
-    });
-
     const state = {
       currentStepIndex: startIndex,
       stepRuns: priorRunIds,
-      handedOffTo: child.id,
     };
+    if (ctx.handOffChild === undefined) {
+      throw new Error("ship requires an attempt-scoped hand-off operation");
+    }
     const humanMessage =
       startIndex === 0
         ? `ship started, first step \`${firstStep}\` queued.`
         : `ship resumed at step ${String(startIndex)} (\`${firstStep}\`); ${String(priorRunIds.length)} prior step(s) reused.`;
-
-    await ctx.setState(state, humanMessage);
+    const handOff = await ctx.handOffChild({
+      workflowName: firstStep,
+      target,
+      parentStepIndex: startIndex,
+      state,
+      humanMessage,
+    });
+    const committedState = { ...state, handedOffTo: handOff.childRunId };
 
     log.info(
-      { startIndex, firstStep, childRunId: child.id, priorRunIds },
+      { startIndex, firstStep, childRunId: handOff.childRunId, priorRunIds },
       "ship handler handed off to first child",
     );
 
     return {
       status: "handed-off",
-      state,
+      state: committedState,
       humanMessage,
-      childRunId: child.id,
+      childRunId: handOff.childRunId,
     };
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     log.warn({ err }, "ship handler caught error");
     return { status: "failed", reason: `ship failed: ${message}` };
@@ -145,23 +112,22 @@ interface ComputeStartIndexParams {
   readonly target: WorkflowRunContext["target"];
   readonly octokit: WorkflowRunContext["octokit"];
   readonly logger: WorkflowRunContext["logger"];
+  readonly stepRuns: Readonly<Partial<Record<WorkflowName, WorkflowRunSnapshot>>>;
 }
 
 async function computeStartIndex(params: ComputeStartIndexParams): Promise<{
   startIndex: number;
   priorRunIds: string[];
 }> {
-  const { steps, target, octokit, logger } = params;
+  const { steps, target, octokit, logger, stepRuns } = params;
   const priorRunIds: string[] = [];
-  const targetKey = { owner: target.owner, repo: target.repo, number: target.number };
 
   let triageCreatedAt: Date | null = null;
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     if (step === undefined) continue;
-    // eslint-disable-next-line no-await-in-loop -- sequential by design
-    const latest = await findLatestForTarget(step, targetKey);
+    const latest = stepRuns[step] ?? null;
 
     // eslint-disable-next-line no-await-in-loop -- sequential by design
     const fresh = await isFresh({
@@ -179,7 +145,7 @@ async function computeStartIndex(params: ComputeStartIndexParams): Promise<{
 
     if (latest !== null) {
       priorRunIds.push(latest.id);
-      if (step === "triage") triageCreatedAt = latest.created_at;
+      if (step === "triage") triageCreatedAt = new Date(latest.createdAt);
     }
   }
 
@@ -191,7 +157,7 @@ async function computeStartIndex(params: ComputeStartIndexParams): Promise<{
 
 interface IsFreshParams {
   readonly step: WorkflowName;
-  readonly latest: WorkflowRunRow | null;
+  readonly latest: WorkflowRunSnapshot | null;
   readonly triageCreatedAt: Date | null;
   readonly octokit: WorkflowRunContext["octokit"];
   readonly owner: string;
@@ -207,16 +173,16 @@ async function isFresh(params: IsFreshParams): Promise<boolean> {
   if (step === "review" || step === "resolve") return false;
 
   if (step === "triage") {
-    return latest.state["recommendedNext"] === "plan";
+    return latest.state.recommendedNext === "plan";
   }
 
   if (step === "plan") {
     if (triageCreatedAt === null) return false;
-    return new Date(latest.created_at).getTime() > new Date(triageCreatedAt).getTime();
+    return new Date(latest.createdAt).getTime() > triageCreatedAt.getTime();
   }
 
   if (step === "implement") {
-    const prNumber = latest.state["pr_number"];
+    const prNumber = latest.state.pr_number;
     if (typeof prNumber !== "number") return false;
     try {
       const { data: pr } = await octokit.rest.pulls.get({
@@ -235,33 +201,4 @@ async function isFresh(params: IsFreshParams): Promise<boolean> {
   }
 
   return true;
-}
-
-interface InsertChildParams {
-  readonly parentRunId: string;
-  readonly parentStepIndex: number;
-  readonly workflowName: WorkflowName;
-  readonly target: WorkflowRunContext["target"];
-  readonly deliveryId: string | null;
-  readonly daemonId: string;
-}
-
-async function insertChildRow(params: InsertChildParams): Promise<WorkflowRunRow> {
-  const sql = requireDb();
-  const rows: WorkflowRunRow[] = await sql`
-    INSERT INTO workflow_runs (
-      workflow_name, target_type, target_owner, target_repo, target_number,
-      parent_run_id, parent_step_index, status, state, delivery_id,
-      owner_kind, owner_id
-    ) VALUES (
-      ${params.workflowName}, ${params.target.type}, ${params.target.owner},
-      ${params.target.repo}, ${params.target.number},
-      ${params.parentRunId}, ${params.parentStepIndex}, 'queued', '{}'::jsonb,
-      ${params.deliveryId}, 'daemon', ${params.daemonId}
-    )
-    RETURNING *
-  `;
-  const row = rows[0];
-  if (row === undefined) throw new Error("insertChildRow: INSERT returned no row");
-  return row;
 }

@@ -2,15 +2,37 @@
 
 Reads a PR diff in full, cross-references with the rest of the codebase, and posts findings as inline comments.
 
-| Field           | Value                                                                                                                                 |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Label           | `bot:review`                                                                                                                          |
-| Mention         | `@chrisleekr-bot review this PR` · `@chrisleekr-bot do a code review` · `@chrisleekr-bot check for issues`                            |
-| Accepted target | Pull request                                                                                                                          |
-| Requires prior  | _none_                                                                                                                                |
-| Artifact        | `$BOT_ARTIFACT_DIR/REVIEW.md` (sibling temp dir, never committed to the repo)                                                         |
-| Side effects    | Inline review comments via `mcp__github_inline_comment__create_inline_comment`; force-push of a clean rebase if branch is behind base |
-| Source          | `src/workflows/handlers/review.ts`                                                                                                    |
+| Field           | Value                                                                                                                                                    |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Label           | `bot:review`                                                                                                                                             |
+| Mention         | `@chrisleekr-bot review this PR` · `@chrisleekr-bot do a code review` · `@chrisleekr-bot check for issues`                                               |
+| Auto-trigger    | A push to an open PR by an `AUTO_REVIEW_USERS` login, when the repo sets `workflows.review.auto: true`. See [Auto review](../repo-config.md#auto-review) |
+| Accepted target | Pull request                                                                                                                                             |
+| Requires prior  | _none_                                                                                                                                                   |
+| Artifact        | `$BOT_ARTIFACT_DIR/REVIEW.md` (sibling temp dir, never committed to the repo)                                                                            |
+| Side effects    | Inline review comments via `mcp__github_inline_comment__create_inline_comment`                                                                           |
+| Source          | `src/workflows/handlers/review.ts`                                                                                                                       |
+
+## Duplicate findings
+
+Each finding is posted as its own review thread, and re-running the workflow does
+not repost a finding that is still open: a new comment is skipped when this bot
+already has a live comment on the same file, line, and diff side.
+
+Matching is by location, not wording, because the agent rewords the same finding
+between runs. Two consequences worth knowing:
+
+- What happens once the code around a finding moves is deliberately not relied
+  on. The REST reference documents no nulling rule for a review comment's `line`,
+  so the finding is either re-reported on its new line or stays suppressed while
+  that thread lives. Settling it means switching the check to GraphQL
+  `PullRequestReviewThread.isOutdated`.
+- A genuinely _different_ second finding on an already-commented line is
+  suppressed. The prompt already asks for one comment per finding on the most
+  relevant line, so this is rare.
+
+This matters most under [auto review](../repo-config.md#auto-review), where the
+workflow can run on every push.
 
 ## Method
 
@@ -62,8 +84,12 @@ The only push acceptable from `review` is `git push --force-with-lease` after a 
 Every failure path (`runPipeline` failure, the outer handler catch, or any sync/async throw before the pipeline runs) returns `status: "failed"` with two distinct outputs:
 
 - **Public tracking comment**: a safe constant: `"review pipeline execution failed, see server logs for details."` Never carries the raw error string, since octokit error stacks include the request URL with the installation token (`https://x-access-token:GHS_xxx@…`).
-- **Operator surfaces (DB + logs)**: `state.failedReason` on the `workflow_runs` row, `pino` log line on the daemon, and `ExecutionResult.errorMessage` returned to the caller. These carry the full SDK message so an operator can diagnose without tailing daemon stderr.
+- **Operator surfaces (DB + logs)**: `state.failedReason` on the `workflow_runs` row plus runner and controller `pino` lines. The controller applies the credential-output boundary before persisting the runner's SDK reason.
 
 ## Review learnings
 
 `review` is one of two workflows (with `resolve`) that loads persisted review-policy directives from the `review_learnings` table and renders them into the prompt. Loaded directives whose `file_glob` matches at least one changed file are surfaced verbatim in a `<review_learnings_…>` block ahead of the diff, and their IDs flow back through `appliedReviewLearningIds` on the handler result so the orchestrator can bump `use_count` precisely. The tracking comment ends with a `🧠 Learnings used` collapsible footer when at least one directive applied. See `docs/use/review-learnings.md` for the full feature, gating (`REVIEW_LEARNINGS_ENABLED`, per-repo `.github-app.yaml` opt-out), and operator notes.
+
+## Per-repo review policy
+
+A repo's `.github-app.yaml` can shape this workflow through two `workflows.review` keys: `instructions` (owner-trusted review policy injected into the prompt, overriding the agent's default heuristics) and `path_filters` (changed files matching a glob are dropped from the prompt the reviewer sees). Both are resolved during controller-owned runner payload preparation, and `path_filters` is advisory prose only, not an access boundary. See [Per-repo configuration](../repo-config.md) for the schema, ceilings, and trust model.
