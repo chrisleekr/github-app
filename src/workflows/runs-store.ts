@@ -292,7 +292,15 @@ export interface AttemptHandOffChild {
   readonly childRunId?: string;
 }
 
-/** Commit a composite hand-off only while the parent attempt lease is current. */
+/**
+ * Commit a composite hand-off only while the parent attempt lease is current.
+ *
+ * Writes only the `workflow_runs` half of the durable pair. The caller owes the
+ * matching `recordWorkflowExecution` in the SAME transaction: the dispatch
+ * outbox joins `executions` on `execution_delivery_id`, so a child row without
+ * its execution row never dispatches and strands the target behind the
+ * in-flight index.
+ */
 export async function commitAttemptHandOffChild(
   attempt: WorkflowAttempt,
   state: Record<string, unknown>,

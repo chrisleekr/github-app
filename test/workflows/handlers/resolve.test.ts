@@ -15,6 +15,8 @@ import type pino from "pino";
 
 import type { BotContext } from "../../../src/types";
 import type { WorkflowRunContext } from "../../../src/workflows/registry";
+import { StaleWorkflowAttemptError } from "../../../src/workflows/runs-store";
+import { expectToReject } from "../../utils/assertions";
 
 interface PipelineResultStub {
   success: boolean;
@@ -457,5 +459,20 @@ describe("resolve acts on bot-authored review comments", () => {
       buildCtx({ reviewComments: [{ user: { login: "someone", type: "User" } }] }),
     );
     expect(sawOpenThreads()).toBe(true);
+  });
+});
+
+describe("resolve handler: lost attempt lease", () => {
+  it("re-throws StaleWorkflowAttemptError instead of reporting a terminal failure", async () => {
+    const ctx = buildCtx();
+    ctx.setState = mock(() =>
+      Promise.reject(
+        new StaleWorkflowAttemptError({ runId: ctx.runId, attemptId: crypto.randomUUID() }),
+      ),
+    );
+    mockRunPipeline.mockClear();
+
+    await expectToReject(resolveHandler(ctx), "workflow attempt is no longer current");
+    expect(mockRunPipeline).not.toHaveBeenCalled();
   });
 });

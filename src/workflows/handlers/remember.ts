@@ -4,6 +4,7 @@ import { runPipeline } from "../../core/pipeline";
 import type { BotContext, ExecutionResult } from "../../types";
 import { fetchAndBuildDigest, renderDigestSection } from "../discussion-digest";
 import type { WorkflowHandler } from "../registry";
+import { StaleWorkflowAttemptError } from "../runs-store";
 
 /**
  * `remember` handler (issue #160 Option A): explicit `@bot remember [...]`
@@ -165,6 +166,7 @@ export const handler: WorkflowHandler = async (ctx) => {
       ...(daemonActions !== undefined ? { daemonActions } : {}),
     };
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     log.error({ err, runId, target: target.number }, "remember handler threw");
     return {
       status: "failed",

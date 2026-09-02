@@ -13,6 +13,8 @@ import type pino from "pino";
 
 import type { BotContext } from "../../../src/types";
 import type { WorkflowRunContext } from "../../../src/workflows/registry";
+import { StaleWorkflowAttemptError } from "../../../src/workflows/runs-store";
+import { expectToReject } from "../../utils/assertions";
 
 const mockRunPipeline = mock(() => Promise.resolve({ success: true }));
 
@@ -131,5 +133,20 @@ describe("remember handler: per-repo policy forwarding", () => {
     expect(Object.hasOwn(overrides ?? {}, "maxTurns")).toBe(false);
     // Existing overrides must survive the addition.
     expect(overrides?.["enableReviewLearnings"]).toBe(true);
+  });
+});
+
+describe("remember handler: lost attempt lease", () => {
+  it("re-throws StaleWorkflowAttemptError instead of reporting a terminal failure", async () => {
+    const ctx = buildCtx();
+    ctx.setState = mock(() =>
+      Promise.reject(
+        new StaleWorkflowAttemptError({ runId: ctx.runId, attemptId: crypto.randomUUID() }),
+      ),
+    );
+    mockRunPipeline.mockClear();
+
+    await expectToReject(rememberHandler(ctx), "workflow attempt is no longer current");
+    expect(mockRunPipeline).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { runPipeline } from "../../core/pipeline";
 import type { BotContext, ExecutionResult } from "../../types";
 import { fetchAndBuildDigest, renderDigestSection } from "../discussion-digest";
 import type { WorkflowHandler } from "../registry";
+import { StaleWorkflowAttemptError } from "../runs-store";
 import { type BranchStaleness, formatRefreshDirective, getBranchStaleness } from "./branch-refresh";
 import { evaluateChecks } from "./checks";
 import { parseOutstandingSection } from "./resolve-report";
@@ -334,6 +335,7 @@ export const handler: WorkflowHandler = async (ctx) => {
       ...(daemonActions !== undefined ? { daemonActions } : {}),
     };
   } catch (err) {
+    if (err instanceof StaleWorkflowAttemptError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     log.warn({ err }, "resolve handler caught error");
     return {
