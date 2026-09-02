@@ -32,6 +32,16 @@ describe("daemon process boundary", () => {
     ).toBe("daemon process guard is installed but ineffective");
   });
 
+  it("reports a signal-killed probe as such, not as exit code null", () => {
+    expect(
+      daemonEnvironmentBoundaryFailure({
+        platform: "linux",
+        preload: guardPath,
+        probeExitCode: null,
+      }),
+    ).toBe("daemon environment isolation probe was killed by a signal");
+  });
+
   it("accepts only the child probe's permission-denied exit", () => {
     expect(
       daemonEnvironmentBoundaryFailure({

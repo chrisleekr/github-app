@@ -153,8 +153,11 @@ publish-dev-npm:
     - bunx npm version prerelease --preid=dev-${CI_COMMIT_SHORT_SHA} --no-git-tag-version
     - bun publish --ignore-scripts --registry "https://${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/" --tag dev-${CI_COMMIT_SHORT_SHA}
 
-# Images publish from main only, under mutable `latest-*` tags. Feature branches
-# build nothing. Versioned releases are cut separately by release-please.
+# Images publish from main only. Each job pushes a mutable `latest-*` tag plus
+# an immutable `:${PACKAGE_VERSION}` tag, so a pinned consumer keeps receiving
+# builds and a rollback target survives the next main build. Feature branches
+# build nothing. GitHub releases are cut separately by release-please, which
+# publishes the versioned images to Docker Hub, not to this registry.
 .docker_release: &docker_release
   stage: release
   <<: *main_branch
@@ -206,8 +209,10 @@ publish-orchestrator-docker:
       --file Dockerfile.orchestrator
       --allow network.host --provenance false
       --build-arg "PACKAGE_VERSION=$PACKAGE_VERSION" --build-arg "GIT_HASH=$GIT_HASH"
-      --target production --pull --tag
-      $CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:latest-orchestrator --push .
+      --target production --pull
+      --tag $CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:latest-orchestrator
+      --tag $CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:${PACKAGE_VERSION}-orchestrator
+      --push .
 
 # amd64 only: Dockerfile.daemon carries a large toolchain, and an emulated arm64
 # leg on an amd64 runner would exceed the job timeout.
@@ -233,4 +238,7 @@ publish-daemon-docker:
       run dist/daemon/process-boundary-smoke.js
     - docker tag "$DAEMON_TEST_IMAGE"
       "$CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:latest-daemon"
+    - docker tag "$DAEMON_TEST_IMAGE"
+      "$CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:${PACKAGE_VERSION}-daemon"
     - docker push "$CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:latest-daemon"
+    - docker push "$CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:${PACKAGE_VERSION}-daemon"

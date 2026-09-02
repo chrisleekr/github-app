@@ -31,6 +31,17 @@ import { scanForSecretsWithLlm } from "./llm-output-scanner";
 import { isDeletionOnly, redactSecrets, type RedactSecretsResult } from "./sanitize";
 
 /**
+ * Budget for the inline scan, capping `LLM_OUTPUT_SCANNER_TIMEOUT_MS`.
+ *
+ * This call is awaited while posting a user-visible comment and fails OPEN, so
+ * a hung scanner would otherwise stall every bot reply for the full shared
+ * ceiling before falling back to the regex-only body. That ceiling is sized for
+ * the fail-CLOSED runner-output boundary, where a timeout discards a completed
+ * run and latency is worth paying. `Math.min` so an operator can still lower it.
+ */
+const INLINE_SCAN_TIMEOUT_MS = 3_000;
+
+/**
  * Tag for the body's provenance.
  *
  * - `agent`: produced by Claude Agent SDK output (or anything that may have
@@ -108,7 +119,7 @@ export async function safePostToGitHub<R>(input: SafePostInput<R>): Promise<Safe
   if (source === "agent" && config.llmOutputScannerEnabled) {
     try {
       const llmResult = await scanForSecretsWithLlm(body, {
-        timeoutMs: config.llmOutputScannerTimeoutMs,
+        timeoutMs: Math.min(config.llmOutputScannerTimeoutMs, INLINE_SCAN_TIMEOUT_MS),
         log,
       });
       // Regex is the authoritative floor. If the scanner empties a body

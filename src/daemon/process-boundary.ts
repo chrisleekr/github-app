@@ -15,6 +15,11 @@ export function daemonEnvironmentBoundaryFailure(input: {
     return `daemon process guard is not installed at ${PROCESS_GUARD_PATH}`;
   }
   if (input.probeExitCode === 0) return "daemon process guard is installed but ineffective";
+  // null means the probe was killed by a signal, not that it exited with a
+  // status. Rendering it as "exit code null" points diagnosis the wrong way.
+  if (input.probeExitCode === null) {
+    return "daemon environment isolation probe was killed by a signal";
+  }
   return `daemon environment isolation probe failed with exit code ${String(input.probeExitCode)}`;
 }
 

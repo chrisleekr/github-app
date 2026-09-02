@@ -917,7 +917,18 @@ function validateDataLayerConfig(
   },
   ctx: z.RefinementCtx,
 ): void {
-  if (data.workflowRunner) return;
+  if (data.workflowRunner) {
+    if ((data.workflowRunnerCapabilitySecret?.trim().length ?? 0) > 0) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "WORKFLOW_RUNNER_CAPABILITY_SECRET must not be set on a workflow runner: " +
+          "a runner receives a per-attempt capability, never the signing root",
+        path: ["workflowRunnerCapabilitySecret"],
+      });
+    }
+    return;
+  }
   if ((data.daemonAuthToken?.trim().length ?? 0) === 0) {
     ctx.addIssue({
       code: "custom",
@@ -928,13 +939,10 @@ function validateDataLayerConfig(
 
   if ((data.orchestratorUrl?.trim().length ?? 0) > 0) return;
 
-  if ((data.workflowRunnerCapabilitySecret?.trim().length ?? 0) === 0) {
-    ctx.addIssue({
-      code: "custom",
-      message: "WORKFLOW_RUNNER_CAPABILITY_SECRET is required on the controller",
-      path: ["workflowRunnerCapabilitySecret"],
-    });
-  }
+  // Not required yet: no code on this branch signs or verifies a capability, so
+  // demanding the root here would only crashloop a controller that rolls this
+  // image before the secret is provisioned. The slice that ships the signer
+  // makes it mandatory. The cross-check below still applies when it is set.
   const daemonSecrets = [data.daemonAuthToken, data.daemonAuthTokenPrevious];
   const capabilitySecrets = [
     data.workflowRunnerCapabilitySecret,

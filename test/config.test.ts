@@ -134,10 +134,13 @@ describe("configSchema: data layer validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("requires a dedicated workflow runner capability secret in server mode", () => {
+  it("does not yet require a workflow runner capability secret in server mode", () => {
+    // Becomes mandatory in the slice that ships the capability signer. Until
+    // then, demanding it would only crashloop a controller rolled before the
+    // secret is provisioned.
     const { workflowRunnerCapabilitySecret, ...withoutCapabilitySecret } = ANTHROPIC_BASE;
     expect(workflowRunnerCapabilitySecret).toBeDefined();
-    expect(configSchema.safeParse(withoutCapabilitySecret).success).toBe(false);
+    expect(configSchema.safeParse(withoutCapabilitySecret).success).toBe(true);
   });
 
   it("rejects capability roots reused from either daemon authentication slot", () => {
@@ -182,6 +185,21 @@ describe("configSchema: data layer validation", () => {
       workflowRunner: true,
     });
     expect(result.success).toBe(true);
+  });
+
+  it("rejects a workflow runner carrying the capability signing root", () => {
+    // WORKFLOW_RUNNER=true waives every data-layer check, so a controller env
+    // that picked up the flag by accident would otherwise start clean and die
+    // at first DB use. A runner is issued a per-attempt capability and never
+    // the root, so its presence identifies a misapplied flag at boot.
+    const result = configSchema.safeParse({
+      provider: "anthropic",
+      anthropicApiKey: "sk-ant-test",
+      orchestratorUrl: "wss://orchestrator.example.com/ws/workflow-runner/run/attempt",
+      workflowRunner: true,
+      workflowRunnerCapabilitySecret: "workflow-runner-capability-root-secret",
+    });
+    expect(result.success).toBe(false);
   });
 });
 
