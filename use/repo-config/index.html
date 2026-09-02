@@ -13,6 +13,10 @@
         <link rel="canonical" href="https://chrisleekr.github.io/github-app/use/repo-config/">
       
       
+        <link rel="prev" href="../..">
+      
+      
+        <link rel="next" href="../invoking/">
       
       
         
@@ -23,7 +27,7 @@
     
     
       
-        <title>Per-repo configuration - GitHub App</title>
+        <title>Repo configuration - GitHub App</title>
       
     
     
@@ -59,7 +63,7 @@
     
   
 <meta property="og:type" content="website" />
-<meta property="og:title" content="Per-repo configuration - GitHub App" />
+<meta property="og:title" content="Repo configuration - GitHub App" />
 <meta property="og:description" content="A GitHub App webhook server powered by the Claude Agent SDK." />
 <meta property="og:image" content="https://chrisleekr.github.io/github-app/assets/images/social/use/repo-config.png" />
 <meta property="og:image:type" content="image/png" />
@@ -67,7 +71,7 @@
 <meta property="og:image:height" content="630" />
 <meta property="og:url" content="https://chrisleekr.github.io/github-app/use/repo-config/" />
 <meta property="twitter:card" content="summary_large_image" />
-<meta property="twitter:title" content="Per-repo configuration - GitHub App" />
+<meta property="twitter:title" content="Repo configuration - GitHub App" />
 <meta property="twitter:description" content="A GitHub App webhook server powered by the Claude Agent SDK." />
 <meta property="twitter:image" content="https://chrisleekr.github.io/github-app/assets/images/social/use/repo-config.png" />
 </head>
@@ -123,7 +127,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Per-repo configuration
+              Repo configuration
             
           </span>
         </div>
@@ -258,11 +262,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../invoking/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
           
   
   
@@ -409,26 +415,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
             
   
   
@@ -446,7 +457,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -456,6 +467,314 @@
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-one-rule-that-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The one rule that matters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-wired-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is wired today
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What is wired today">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-the-agent-knobs-behave" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the agent knobs behave
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trust-tier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trust tier
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#field-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Field reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Field reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#top-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top level
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-knobs-defaults-and-every-workflowsname-except-ship" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent knobs (defaults and every workflows.&lt;name&gt; except ship)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#triggers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        triggers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto review
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#precedence-and-clamping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence and clamping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authorization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authorization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-the-file-is-invalid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When the file is invalid
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="When the file is invalid">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fail-open-cuts-both-ways" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fail-open cuts both ways
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checking-a-file-before-pushing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checking a file before pushing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Checking a file before pushing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-editor-completion-via-the-json-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Editor completion via the JSON Schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-the-local-validator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The local validator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-the-pull-request-validation-comment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The pull-request validation comment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#after-the-merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After the merge
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
             
               
                 
@@ -498,17 +817,20 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
             
   
   
@@ -526,8 +848,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1757,56 +2079,42 @@ run under their own workflow names (<code>triage</code>, <code>plan</code>, <cod
 <tbody>
 <tr>
 <td><code>enabled</code></td>
-<td><strong>Parsed and validated. Not yet enforced.</strong> Enforcement is Gate 1, wired with the isolated workflow runner.</td>
+<td><strong>Applied.</strong> Blocks every trigger for the repo.</td>
 </tr>
 <tr>
 <td><code>workflows.&lt;name&gt;.enabled</code></td>
-<td><strong>Parsed and validated. Not yet enforced.</strong> Same Gate 1 path.</td>
+<td><strong>Applied.</strong> Blocks that workflow's triggers.</td>
 </tr>
 <tr>
 <td><code>triggers.*</code></td>
-<td><strong>Parsed and validated. Not yet enforced.</strong> Same Gate 1 path.</td>
+<td><strong>Applied.</strong> Four everywhere, <code>base_branches</code> on label and review-comment triggers only (see the caveat under <code>triggers</code>).</td>
 </tr>
 <tr>
 <td><code>review_learnings</code>, <code>scheduled_actions</code>, <code>config</code></td>
-<td><strong>Applied.</strong> Pre-existing blocks, unchanged by this change.</td>
+<td><strong>Applied.</strong> Pre-existing blocks, unchanged.</td>
 </tr>
 <tr>
 <td><code>defaults</code> + <code>workflows.&lt;name&gt;</code> agent knobs</td>
-<td><strong>Resolved and clamped. Not yet on the wire.</strong> The <code>policy</code> key exists on the job payload; its producer lands with the runner.</td>
+<td><strong>Applied.</strong> <code>model</code>, <code>max_turns</code>, <code>timeout</code>, and <code>extra_allowed_tools</code> reach the agent run. <code>workflows.ship</code> takes none.</td>
 </tr>
 <tr>
 <td><code>workflows.review.path_filters</code> / <code>.instructions</code></td>
-<td><strong>Consumer ready. Not yet reachable</strong>, since no producer sets <code>policy</code> yet.</td>
+<td><strong>Applied.</strong> Filtered files are hidden from the prompt; instructions are injected as review policy.</td>
 </tr>
 <tr>
 <td><code>workflows.review.auto</code></td>
-<td><strong>Not yet applied.</strong> Dispatch-time knob; lands with the auto-review guard.</td>
+<td><strong>Applied.</strong> Runs <code>review</code> on a push by an <code>AUTO_REVIEW_USERS</code> login. Defaults to <code>false</code>; both keys are required.</td>
 </tr>
 </tbody>
 </table>
-<div class="admonition warning">
-<p class="admonition-title">Status of this page</p>
-<p>Only <code>review_learnings</code>, <code>scheduled_actions</code> and <code>config</code> take effect today.
-Everything else on this page is parsed, schema-validated, resolved and
-clamped, but has no production call site yet: <code>checkRepoGate</code>,
-<code>loadRepoPolicy</code> and <code>runPrConfigCheck</code> are reachable only from tests. The
-dispatch chokepoints and the <code>pull_request</code> config-check handler that call
-them depend on database columns from a later migration, so they ship in the
-isolated-workflow-runner change rather than here. Authoring a config file
-now is safe and its schema is stable, but do not expect a repo-level
-<code>enabled: false</code> to stop the bot until that lands.</p>
-</div>
 <h3 id="how-the-agent-knobs-behave">How the agent knobs behave<a class="headerlink" href="#how-the-agent-knobs-behave" title="Permanent link">&para;</a></h3>
-<p>Resolution is owned by the controller: it merges the workflow block over
-<code>defaults</code>, clamps the result against the server ceilings, and ships it on the
-job payload as a <code>policy</code> object. <code>AgentPolicySchema</code> in
-<code>src/shared/ws-messages.ts</code> defines that wire shape, and
-<code>src/core/agent-policy.ts</code> is the consumer that applies it to an agent run.</p>
-<p>The producing side is not in place yet, so no <code>policy</code> key is sent today and
-the table below describes intended behaviour rather than current behaviour. A
-repo with no config file produces no <code>policy</code> key at all and runs exactly as it
-did before this file existed.</p>
+<p>Resolved once during controller-owned payload preparation for an isolated
+workflow runner (<code>src/orchestrator/workflow-runner-payload.ts</code>), or when a
+shared daemon accepts a legacy direct job (<code>src/orchestrator/connection-handler.ts</code>).
+The controller merges the workflow block over <code>defaults</code>, clamps it against the
+server ceilings, and ships it on the job payload as a <code>policy</code> object. A repo
+with no config file produces no <code>policy</code> key at all and runs exactly as it did
+before this file existed.</p>
 <table>
 <thead>
 <tr>
@@ -2036,15 +2344,8 @@ only declares <code>version: 1</code> and <code>scheduled_actions:</code> stays 
 </tr>
 </tbody>
 </table>
-<div class="admonition warning">
-<p class="admonition-title">Not enforced yet</p>
-<p>Gate 1 has no production call site on this change, so <code>enabled: false</code> does
-not stop label or mention triggers today. It already silences the scheduler,
-which reads the document directly. The rest of this section describes the
-behaviour once Gate 1 is wired.</p>
-</div>
-<p><code>enabled: false</code> will stop the bot doing any work in the repo: no workflow run,
-no queue job, no scheduled action. It is not a vow of silence. A deliberate <code>bot:*</code>
+<p><code>enabled: false</code> stops the bot doing any work in the repo: no workflow run, no
+queue job, no scheduled action. It is not a vow of silence. A deliberate <code>bot:*</code>
 label or <code>@chrisleekr-bot</code> mention still gets one short reply saying the bot is
 disabled here, so a teammate who tries is told why instead of being ignored.
 Passive triggers stay silent. If you need the bot to make no writes at all,
@@ -2428,13 +2729,6 @@ appended:</p>
 <li><strong>too large to validate</strong>: files over 64 KB are never decoded, and none of the
   file's contents are echoed back.</li>
 </ul>
-<div class="admonition warning">
-<p class="admonition-title">Not wired yet</p>
-<p><code>runPrConfigCheck</code> has no production caller on this change, so no verdict
-comment is posted on a pull request today. The handler that invokes it
-ships with the isolated workflow runner. This section describes the
-behaviour once that lands.</p>
-</div>
 <p>Every verdict restates that only the default-branch copy is applied, so the
 change takes effect on merge. Reading the branch copy here is strictly
 read-only: it never becomes the policy the bot enforces, and it never enters the
@@ -2485,6 +2779,44 @@ wrong file looks like a bot that ignored your config rather than one that broke.
       
         <footer class="md-footer">
   
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../.." class="md-footer__link md-footer__link--prev" aria-label="Previous: Home">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Home
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../invoking/" class="md-footer__link md-footer__link--next" aria-label="Next: Invoking">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Invoking
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
     
   
   <div class="md-footer-meta md-typeset">

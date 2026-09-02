@@ -268,7 +268,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../../invoking/" class="md-tabs__link">
+        <a href="../../repo-config/" class="md-tabs__link">
           
   
   
@@ -475,6 +475,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../repo-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../invoking/" class="md-nav__link">
         
   
@@ -521,10 +549,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
             
   
   
@@ -542,8 +570,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1761,7 +1789,7 @@
 <li><code>valid = false</code> → handler returns <code>failed</code> and any composite cascade halts here.</li>
 <li>Missing markdown, malformed JSON, or an SDK error → <code>failed</code> with a specific reason.</li>
 </ul>
-<p>There is no turn cap on triage: the agent runs until the verdict is honestly defensible.</p>
+<p>There is no <em>default</em> turn cap on triage: the agent runs until the verdict is honestly defensible. Three sources can bind one, and all three are honoured: the repo's <code>workflows.triage.max_turns</code> in <code>.github-app.yaml</code>, the operator's <code>AGENT_MAX_TURNS</code>, and <code>DEFAULT_MAXTURNS</code>. With all three unset, which is the stock deployment, the run is uncapped as before.</p>
 
 
 

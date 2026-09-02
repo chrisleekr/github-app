@@ -268,7 +268,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../../invoking/" class="md-tabs__link">
+        <a href="../../repo-config/" class="md-tabs__link">
           
   
   
@@ -475,6 +475,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../repo-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../invoking/" class="md-nav__link">
         
   
@@ -521,10 +549,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
             
   
   
@@ -542,8 +570,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1767,7 +1795,7 @@
 <p>The handler treats public and operator surfaces separately so the public tracking comment never carries the raw underlying error. Both the <code>runPipeline</code> failure path and the outer handler <code>catch</code> set the same safe <code>humanMessage</code>:</p>
 <ul>
 <li><strong>Public tracking comment</strong>: a safe constant: <code>"implement pipeline execution failed, see server logs for details."</code> Octokit error stacks embed the installation token in the request URL, so the bot must never inline <code>err.message</code> into a comment body.</li>
-<li><strong>Operator surfaces (DB + logs)</strong>: the SDK error is propagated as <code>ExecutionResult.errorMessage</code> and persisted as <code>state.failedReason</code> on the <code>workflow_runs</code> row. <code>pino</code> logs the full <code>err</code> object on the daemon. The orchestrator's quota-detection helper reads <code>state.failedReason</code> to decide whether to auto-defer the next ship iteration; see <a href="../ship/"><code>ship.md</code></a>.</li>
+<li><strong>Operator surfaces (DB + logs)</strong>: the sanitized SDK reason is persisted as <code>state.failedReason</code> on the <code>workflow_runs</code> row, with runner and controller <code>pino</code> lines. The orchestrator's quota-detection helper reads <code>state.failedReason</code> to decide whether to auto-defer the next ship iteration; see <a href="../ship/"><code>ship.md</code></a>.</li>
 </ul>
 
 

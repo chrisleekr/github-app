@@ -266,7 +266,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../use/invoking/" class="md-tabs__link">
+        <a href="../../../use/repo-config/" class="md-tabs__link">
           
   
   
@@ -470,6 +470,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../use/repo-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../use/invoking/" class="md-nav__link">
         
   
@@ -511,10 +539,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
             
   
   
@@ -532,8 +560,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1209,6 +1237,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#isolated-workflow-runner-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Isolated workflow-runner lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#operational-knobs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1270,10 +1309,32 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#workflow-runner-rollout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow-runner rollout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#rotating-daemon_auth_token" class="md-nav__link">
     <span class="md-ellipsis">
       
         Rotating DAEMON_AUTH_TOKEN
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rotating-workflow_runner_capability_secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rotating WORKFLOW_RUNNER_CAPABILITY_SECRET
       
     </span>
   </a>
@@ -1668,6 +1729,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#isolated-workflow-runner-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Isolated workflow-runner lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#operational-knobs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1729,10 +1801,32 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#workflow-runner-rollout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow-runner rollout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#rotating-daemon_auth_token" class="md-nav__link">
     <span class="md-ellipsis">
       
         Rotating DAEMON_AUTH_TOKEN
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rotating-workflow_runner_capability_secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rotating WORKFLOW_RUNNER_CAPABILITY_SECRET
       
     </span>
   </a>
@@ -1798,7 +1892,7 @@
 
 
 <h1 id="runbook-daemon-fleet">Runbook: daemon fleet<a class="headerlink" href="#runbook-daemon-fleet" title="Permanent link">&para;</a></h1>
-<p>A daemon is a standalone worker process that connects to the orchestrator over WebSocket, accepts job offers, and runs each job through <code>src/core/pipeline.ts</code>. The webhook server never runs the pipeline in-process, every execution happens on a daemon.</p>
+<p>A daemon is a shared worker process that connects to the controller over WebSocket and executes legacy or scoped jobs. Structured <code>workflow-run</code> jobs no longer enter this fleet; each one uses a separate one-attempt runner Pod. The webhook server never runs the pipeline in-process.</p>
 <h2 id="persistent-vs-ephemeral">Persistent vs ephemeral<a class="headerlink" href="#persistent-vs-ephemeral" title="Permanent link">&para;</a></h2>
 <p>Always qualify which kind you mean. The union of both at any given moment is the <strong>daemon fleet</strong>.</p>
 <table>
@@ -1832,12 +1926,12 @@
     Connect["WebSocket connect to ORCHESTRATOR_URL&lt;br/&gt;Bearer DAEMON_AUTH_TOKEN"]:::work
     Register["daemon register&lt;br/&gt;capabilities + resources + isEphemeral"]:::work
     Idle["Idle wait"]:::wait
-    Offer["job offer or scoped-job-offer"]:::work
+    Offer["job:offer or scoped-job:offer"]:::work
     Eval{{"Capacity check&lt;br/&gt;memory floor + disk floor + slot free"}}:::fork
     Accept["job accept"]:::work
     Reject["job reject&lt;br/&gt;with reason"]:::halt
     Run["src/core/pipeline.ts&lt;br/&gt;clone -&gt; agent -&gt; push -&gt; cleanup"]:::work
-    Result["job result or scoped-job completion"]:::work
+    Result["job:result or scoped-job:completion"]:::work
     Drain["Drain on SIGTERM&lt;br/&gt;refuse new offers"]:::wait
     Exit["Exit"]:::done
     IdleExit["Ephemeral idle exit&lt;br/&gt;after EPHEMERAL_DAEMON_IDLE_TIMEOUT_MS"]:::done
@@ -1856,6 +1950,45 @@
     classDef halt fill:#852020,stroke:#5a1414,color:#ffffff
     classDef done fill:#2a6f2a,stroke:#1a4d1a,color:#ffffff</code></pre>
 <p>At boot, before connecting to the orchestrator, the daemon sweeps stale workspace triples (clone dir + <code>.cred.sh</code> token helper + <code>-artifacts</code>) older than <code>WORKSPACE_STALE_TTL_MS</code> under <code>CLONE_BASE_DIR</code>, reclaiming SIGKILL/OOM/eviction orphans left behind when a prior run skipped its own cleanup. Each sweep emits a single <code>workspace.sweep</code> log line with <code>swept</code> / <code>retained</code> / <code>durationMs</code>.</p>
+<p>Every boot generates a new daemon ID, including a container restart inside the same Kubernetes Pod. On disconnect, the controller immediately removes the socket from its local heartbeat and dispatch state, then starts serialized asynchronous cleanup. Same-ID registration waits for that cleanup. One PostgreSQL transaction marks the exact incarnation inactive, fails its attempt-less workflow rows and queued/offered/running execution receipts, records pending public-failure projections, and releases matching scheduled-action locks. The controller projects those receipts immediately and retries missed projections from PostgreSQL, then removes the best-effort Valkey registry entry. The liveness reaper is the database fallback when a close callback is lost. Structured workflow rows use the isolated-runner lease path below instead of daemon heartbeat identity.</p>
+<h2 id="isolated-workflow-runner-lifecycle">Isolated workflow-runner lifecycle<a class="headerlink" href="#isolated-workflow-runner-lifecycle" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TD
+    Queue["Lease workflow-run queue item"]:::work
+    Claim{"PostgreSQL claim and capacity"}:::fork
+    Defer["Return exact queue item&lt;br/&gt;without retry increment"]:::wait
+    Reconcile["Create or verify bare Pod,&lt;br/&gt;then its owned Secret"]:::work
+    Register["Runner registers over WSS&lt;br/&gt;with run and attempt capability"]:::work
+    Payload["Controller sends bounded input&lt;br/&gt;and target-repo App token"]:::work
+    Run["Execute one handler and agent"]:::work
+    Renew{"Lease ACK remains current?"}:::fork
+    Fence["Abort and close Agent SDK query"]:::halt
+    Result["Retry terminal result until ACK"]:::wait
+    Store["Store result and terminal rows&lt;br/&gt;before projections"]:::work
+    Project["Reconcile cascade, tracking,&lt;br/&gt;outbox, and knowledge actions"]:::work
+    Cleanup["Request exact Pod and Secret&lt;br/&gt;deletion with UID checks"]:::done
+    Recover["Periodic controller reconciliation"]:::wait
+
+    Queue --&gt; Claim
+    Claim --&gt;|capacity full| Defer --&gt; Queue
+    Claim --&gt;|claimed| Reconcile --&gt; Register --&gt; Payload --&gt; Run --&gt; Renew
+    Renew --&gt;|yes| Run
+    Renew --&gt;|no or deadline| Fence --&gt; Recover
+    Run --&gt; Result --&gt; Store
+    Store --&gt; Project
+    Store --&gt; Cleanup
+    Reconcile -. ambiguous API result .-&gt; Recover --&gt; Reconcile
+    Store -. controller crash before ACK .-&gt; Recover
+    Recover --&gt; Project
+    Recover --&gt; Cleanup
+
+    classDef work fill:#114a82,stroke:#0a2f56,color:#ffffff
+    classDef fork fill:#6a2080,stroke:#451454,color:#ffffff
+    classDef wait fill:#5c3d00,stroke:#3d2900,color:#ffffff
+    classDef halt fill:#852020,stroke:#5a1414,color:#ffffff
+    classDef done fill:#2a6f2a,stroke:#1a4d1a,color:#ffffff</code></pre>
+<p>The attempt Pod references exactly one selected provider credential chain from <code>workflow-runner-secrets</code> and a separate Secret containing only its HMAC capability. The controller signs that deadline-bound capability with <code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code>, which is never mounted on a shared daemon or runner, and owns the Secret with the exact Pod UID. Provider settings are inline and unused or cross-provider credentials are omitted. The target-repository installation token crosses the first WSS registration only after its GitHub-reported expiry is proven no later than the immutable attempt deadline. Reconnects carry no job payload or repository credential. The runner receives no App private key, PAT, database, Valkey, Kubernetes, Context7, global GitHub, or fleet-wide daemon credential. If <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> is configured, structured workflow dispatch fails closed; legacy and scoped jobs are unchanged.</p>
+<p>The runner renews a PostgreSQL lease through heartbeats. Missing lease ACK, token deadline, explicit cancellation, or the 4,200-second Pod deadline stops local execution. The Pod uses <code>restartPolicy: Never</code> because the durable payload receipt prohibits credential reissue after a process crash. Catchable exits and controller-owned token paths attempt best-effort revocation with a ten-second GitHub API timeout, then continue terminal handling even if revocation fails. The exact repository token is not persisted, so a failed revocation, SIGKILL, or node loss leaves a repository-scoped residual until its authoritative expiry. The controller stores the terminal payload and both terminal rows before ACK. Projection and exact resource cleanup then reconcile independently from PostgreSQL, so a failing GitHub projection does not retain runner credentials or compute. GitHub API calls and git pushes remain at-least-once: after an interrupted attempt, inspect the repository before manually re-triggering it.</p>
+<p>One controller replica is the supported topology. The database capacity transaction is safe against duplicate queue items, but there is no distributed controller-session owner or multi-replica admission semaphore.</p>
 <h2 id="operational-knobs">Operational knobs<a class="headerlink" href="#operational-knobs" title="Permanent link">&para;</a></h2>
 <p>The full list lives at <a href="../../configuration/#orchestrator-and-daemon"><code>../configuration.md</code></a>. The handful you'll actually touch:</p>
 <table>
@@ -1878,6 +2011,16 @@
 <td>Shared secret with the orchestrator.</td>
 </tr>
 <tr>
+<td><code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code></td>
+<td><em>none</em></td>
+<td>Controller-only root for expiring per-attempt capabilities. Minimum 32 characters.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS</code></td>
+<td><em>none</em></td>
+<td>Optional controller-only predecessor during capability rotation.</td>
+</tr>
+<tr>
 <td><code>DAEMON_EPHEMERAL</code></td>
 <td><code>false</code></td>
 <td><code>true</code> on ephemeral daemon Pods (injected by the spawner). Enables idle-exit.</td>
@@ -1886,6 +2029,21 @@
 <td><code>EPHEMERAL_DAEMON_IDLE_TIMEOUT_MS</code></td>
 <td><code>120000</code></td>
 <td>Ephemeral daemons exit after this idle window.</td>
+</tr>
+<tr>
+<td><code>EPHEMERAL_DAEMON_NAMESPACE</code></td>
+<td><code>default</code></td>
+<td>Namespace for shared ephemeral daemon Pods.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_NAMESPACE</code></td>
+<td><code>github-app-runners</code></td>
+<td>Dedicated namespace for isolated runner Pods and Secrets. It must differ from the shared-daemon namespace.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_DISPATCH_TIMEOUT_MS</code></td>
+<td><code>4200000</code></td>
+<td>Fails an unclaimed queued workflow and releases its lock after this age.</td>
 </tr>
 <tr>
 <td><code>HEARTBEAT_INTERVAL_MS</code></td>
@@ -1931,24 +2089,39 @@
 </span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">        </span><span class="nt">app</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-daemon</span>
 </span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">      </span><span class="nt">terminationGracePeriodSeconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
-</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">      </span><span class="nt">containers</span><span class="p">:</span>
-</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daemon</span>
-</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">          </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">chrisleekr/github-app:latest-daemon</span>
-</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">          </span><span class="nt">envFrom</span><span class="p">:</span>
-</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">secretRef</span><span class="p">:</span>
-</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">                </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daemon-secrets</span>
-</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">          </span><span class="nt">env</span><span class="p">:</span>
-</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ORCHESTRATOR_URL</span>
-</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">              </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"wss://orchestrator.example.internal:3002"</span>
-</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLONE_BASE_DIR</span>
-</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">              </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"/workspaces"</span>
-</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">          </span><span class="nt">volumeMounts</span><span class="p">:</span>
-</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bot-workspaces</span>
-</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">              </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/workspaces</span>
-</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">      </span><span class="nt">volumes</span><span class="p">:</span>
-</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bot-workspaces</span>
-</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">          </span><span class="nt">emptyDir</span><span class="p">:</span>
-</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">            </span><span class="nt">sizeLimit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5Gi</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">      </span><span class="nt">automountServiceAccountToken</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">      </span><span class="nt">enableServiceLinks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">      </span><span class="nt">hostIPC</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">      </span><span class="nt">hostNetwork</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">      </span><span class="nt">hostPID</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">      </span><span class="nt">securityContext</span><span class="p">:</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">        </span><span class="nt">runAsNonRoot</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">        </span><span class="nt">runAsUser</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">        </span><span class="nt">runAsGroup</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1000</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">        </span><span class="nt">seccompProfile</span><span class="p">:</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">          </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RuntimeDefault</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">      </span><span class="nt">containers</span><span class="p">:</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daemon</span>
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">          </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">chrisleekr/github-app:latest-daemon</span>
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">          </span><span class="nt">securityContext</span><span class="p">:</span>
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">            </span><span class="nt">allowPrivilegeEscalation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">            </span><span class="nt">capabilities</span><span class="p">:</span>
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">              </span><span class="nt">drop</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"ALL"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">          </span><span class="nt">envFrom</span><span class="p">:</span>
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">secretRef</span><span class="p">:</span>
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">                </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daemon-secrets</span>
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">          </span><span class="nt">env</span><span class="p">:</span>
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ORCHESTRATOR_URL</span>
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">              </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"wss://orchestrator.example.internal:3002"</span>
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CLONE_BASE_DIR</span>
+</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">              </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"/workspaces"</span>
+</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">          </span><span class="nt">volumeMounts</span><span class="p">:</span>
+</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bot-workspaces</span>
+</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">              </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/workspaces</span>
+</span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">      </span><span class="nt">volumes</span><span class="p">:</span>
+</span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bot-workspaces</span>
+</span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">          </span><span class="nt">emptyDir</span><span class="p">:</span>
+</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">            </span><span class="nt">sizeLimit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5Gi</span>
 </span></code></pre></div>
 <p>Match <code>terminationGracePeriodSeconds</code> to <code>DAEMON_DRAIN_TIMEOUT_MS</code> so <code>SIGTERM</code> has time to drain in-flight work before <code>SIGKILL</code>.</p>
 <h2 id="concurrency-and-scaling">Concurrency and scaling<a class="headerlink" href="#concurrency-and-scaling" title="Permanent link">&para;</a></h2>
@@ -1966,7 +2139,36 @@
 <li><code>AGENT_TIMEOUT_MS</code> must stay below the GitHub installation-token TTL (3600 s) so the daemon cannot outlive its credentials.</li>
 <li><code>EPHEMERAL_DAEMON_IDLE_TIMEOUT_MS</code> should be longer than typical heartbeat cadence so a short lull between back-to-back jobs does not cause a premature exit.</li>
 <li><code>terminationGracePeriodSeconds</code> on the daemon Pod should match <code>DAEMON_DRAIN_TIMEOUT_MS</code>.</li>
+<li>Workflow runners require GitHub App mode, a digest-pinned <code>DAEMON_IMAGE</code>, an <code>ORCHESTRATOR_PUBLIC_URL</code> that is <code>wss://</code> or a cluster-local <code>ws://</code> Service name, a controller-only <code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code> that differs from both daemon-auth slots, a dedicated <code>WORKFLOW_RUNNER_NAMESPACE</code>, controller RBAC for Pods and Secrets there, one selected credential chain in <code>workflow-runner-secrets</code>, dedicated runner nodes carrying the configured <code>WORKFLOW_RUNNER_NODE_LABEL</code> label and matching taint, and the egress controls in <a href="../../deployment/#workflow-runner-egress-boundary"><code>deployment.md</code></a>.</li>
+<li>Install the fail-closed ValidatingAdmissionPolicy from <a href="https://github.com/chrisleekr/github-app/blob/main/examples/workflow-runner-admission.yaml"><code>examples/workflow-runner-admission.yaml</code></a>, or set <code>workflowRunner.enabled</code> in the Helm chart, which packages the same policy. Require a negative server-side dry-run canary to name that policy before enabling workflows. It prevents a mutated image, lifecycle hook, container override, placement override, or extra container from starting with runner credentials. Controller reconciliation is the second check.</li>
+<li>All three cloud metadata probes must receive no HTTP response before the runner registers. A policy drop normally surfaces as a timeout, so timeout or connection refusal is accepted as corroboration; any HTTP response is a deployment failure.</li>
+<li>Every eligible runner node must enforce a finite positive kubelet <code>podPidsLimit</code> plus system and Kubernetes PID reservations. See <a href="../../deployment/#runner-node-pid-boundary"><code>deployment.md</code></a>.</li>
+<li>Treat ephemeral-storage limits as eviction thresholds, not filesystem quotas. Keep control-plane and application workloads off the dedicated runner node pool so a deleted-open-file attack cannot exhaust their disks.</li>
 </ul>
+<h2 id="workflow-runner-rollout">Workflow-runner rollout<a class="headerlink" href="#workflow-runner-rollout" title="Permanent link">&para;</a></h2>
+<p>Migration 017 can recover reconstructible queued rows, but it cannot safely adopt arbitrary pre-lease work already executing in a shared daemon. Use a zero-in-flight cutover:</p>
+<ol>
+<li>Stop new GitHub webhook traffic while leaving the existing controller and daemon fleet running so current work can drain.</li>
+<li>Wait until both queries return zero:</li>
+</ol>
+<div class="language-sql highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">SELECT</span><span class="w"> </span><span class="k">count</span><span class="p">(</span><span class="o">*</span><span class="p">)</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="k">FROM</span><span class="w"> </span><span class="n">executions</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'offered'</span><span class="p">,</span><span class="w"> </span><span class="s1">'running'</span><span class="p">);</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">SELECT</span><span class="w"> </span><span class="k">count</span><span class="p">(</span><span class="o">*</span><span class="p">)</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="k">FROM</span><span class="w"> </span><span class="n">workflow_runs</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'queued'</span><span class="p">,</span><span class="w"> </span><span class="s1">'running'</span><span class="p">);</span>
+</span></code></pre></div>
+<ol>
+<li>Gracefully stop the old controller and wait for the process to exit. This quiesces the ship tickle scheduler, scheduled actions, proposal poller, queue worker, and webhook listener. A webhook-only drain is insufficient because a due ship continuation can create new workflow work without a webhook.</li>
+<li>Rerun both drain queries after the old controller is fully stopped. This is the cutover gate: no old-code producer may run between this final zero result and migration 017. If either query is non-zero, do not migrate. Restore the old version, drain or inspect that work, and repeat the stop plus final-query gate.</li>
+<li>Confirm App mode is active, <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> is absent, <code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code> is controller-only, <code>DAEMON_IMAGE</code> ends in the tested daemon-image <code>@sha256:&lt;digest&gt;</code>, <code>ORCHESTRATOR_PUBLIC_URL</code> is WSS, and the RBAC, Secret, ValidatingAdmissionPolicy, ResourceQuota, and egress resources from <a href="../../deployment/#kubernetes-worker-requirements"><code>../deployment.md</code></a> exist. Require the negative admission canary to be denied by name; policy type-check completion alone is not the rollout gate.</li>
+<li>Deploy migration 017 and exactly one controller replica. Do not scale horizontally.</li>
+<li>Trigger one structured workflow. Verify one attempt Pod appears before its Secret, the Secret has one owner reference to that exact Pod UID, all three metadata probes receive no HTTP response, the row lease renews without moving <code>attempt_deadline_at</code>, and both terminal rows are stored. The cleanup receipt may be set when UID-preconditioned deletes are accepted; separately verify both objects eventually become absent. Projection may complete before or after cleanup.</li>
+<li>Restore webhook traffic.</li>
+</ol>
+<p>If either drain query is non-zero, do not roll. Determine whether the work is still active or terminalize it through the existing owner path first. Do not edit lease or generation columns by hand.</p>
+<p>Migration 017 still fails closed if this gate is violated: it terminalizes an active shared-daemon workflow or an unreconstructable queued workflow, releases its lock, and records a retryable <code>migration-interrupted</code> public projection. That recovery behavior does not make an in-flight rollout safe, because repository operations may already have completed.</p>
 <h2 id="rotating-daemon_auth_token">Rotating <code>DAEMON_AUTH_TOKEN</code><a class="headerlink" href="#rotating-daemon_auth_token" title="Permanent link">&para;</a></h2>
 <p><code>DAEMON_AUTH_TOKEN</code> is a long-lived shared secret. Treat it like any other production credential: rotate on a defined cadence (OWASP guidance is <strong>at least every 90 days</strong>) and immediately on suspected compromise. The orchestrator's bearer-token comparison is constant-time (<code>crypto.timingSafeEqual</code>) but the secret itself still needs hygiene.</p>
 <p>The <code>DAEMON_AUTH_TOKEN_PREVIOUS</code> slot exists so rotation does not require a synchronised fleet restart: the orchestrator accepts either token while you roll daemons one at a time.</p>
@@ -1985,17 +2187,26 @@
 <p>Step-by-step:</p>
 <ol>
 <li><strong>Generate</strong> a new secret: <code>openssl rand -hex 32</code>. Persist it in your secret store next to the existing value.</li>
-<li><strong>Stage the overlap.</strong> Update the orchestrator Deployment's <code>daemon-secrets</code> to set <code>DAEMON_AUTH_TOKEN=&lt;NEW&gt;</code> <strong>and</strong> <code>DAEMON_AUTH_TOKEN_PREVIOUS=&lt;OLD&gt;</code>. Roll the orchestrator. Existing daemon connections (still presenting the old token) keep authenticating, and any daemons that come up with the new token also pass.</li>
+<li><strong>Stage the overlap.</strong> Update the controller Secret to set <code>DAEMON_AUTH_TOKEN=&lt;NEW&gt;</code> <strong>and</strong> <code>DAEMON_AUTH_TOKEN_PREVIOUS=&lt;OLD&gt;</code>. Roll the controller. Existing daemon connections using the old secret keep authenticating, and new daemons use the new primary.</li>
 <li><strong>Roll daemons.</strong> Update the daemon Deployment's <code>daemon-secrets</code> to set <code>DAEMON_AUTH_TOKEN=&lt;NEW&gt;</code> (no <code>_PREVIOUS</code> needed, daemons only ever send the primary). Roll daemons one by one (<code>kubectl rollout restart deployment/github-app-daemon</code>). Watch <code>auth-failed</code> warn-logs in the orchestrator, they should stay flat.</li>
-<li><strong>Drop the previous slot.</strong> Once every connected daemon presents the new token, redeploy the orchestrator with <code>DAEMON_AUTH_TOKEN_PREVIOUS</code> removed (or empty). The old secret is now dead.</li>
+<li><strong>Drop the previous slot.</strong> Once every connected daemon presents the new token, redeploy the controller with <code>DAEMON_AUTH_TOKEN_PREVIOUS</code> removed.</li>
 <li><strong>Verify.</strong> A <code>curl</code> with the old Bearer should now return <code>401</code>; a curl with the new Bearer should hit the upgrade-failed path (<code>500 WebSocket upgrade failed</code>).</li>
 </ol>
 <p>Operational notes:</p>
 <ul>
 <li>The previous-token slot is <strong>orchestrator-only</strong>. Daemons always send the value of their own <code>DAEMON_AUTH_TOKEN</code>; setting <code>DAEMON_AUTH_TOKEN_PREVIOUS</code> on a daemon Pod has no effect.</li>
-<li>Keep the overlap window short (hours, not days). The longer two tokens authenticate, the longer a leaked old token remains usable.</li>
+<li>Keep the overlap no longer than needed for the daemon rollout. The longer two tokens authenticate, the longer a leaked old token remains usable.</li>
 <li>The rotation does <strong>not</strong> require restarting daemons simultaneously, but you do need to redeploy the orchestrator twice (once to add <code>_PREVIOUS</code>, once to remove it).</li>
 </ul>
+<h2 id="rotating-workflow_runner_capability_secret">Rotating <code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code><a class="headerlink" href="#rotating-workflow_runner_capability_secret" title="Permanent link">&para;</a></h2>
+<p>Rotate the isolated-runner HMAC root independently from <code>DAEMON_AUTH_TOKEN</code>:</p>
+<ol>
+<li>Generate a new root with at least 32 random bytes and store it beside the current value.</li>
+<li>Deploy the controller with <code>WORKFLOW_RUNNER_CAPABILITY_SECRET=&lt;NEW&gt;</code> and <code>WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS=&lt;OLD&gt;</code>. New capabilities use <code>NEW</code>; unexpired capabilities signed with <code>OLD</code> remain valid.</li>
+<li>Keep the previous slot until every runner capability minted before the rotation has reached its signed expiry and no pre-rotation runner Pod remains.</li>
+<li>Redeploy without <code>WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS</code>. Confirm an old capability is rejected and a newly created runner still registers.</li>
+</ol>
+<p>Never copy either capability root into <code>daemon-secrets</code>, <code>workflow-runner-secrets</code>, or a per-attempt Secret. The per-attempt Secret contains only the derived, expiring capability.</p>
 <h2 id="common-day-2-issues">Common Day-2 issues<a class="headerlink" href="#common-day-2-issues" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2018,8 +2229,32 @@
 <td><code>terminationGracePeriodSeconds</code> &lt; <code>DAEMON_DRAIN_TIMEOUT_MS</code>.</td>
 </tr>
 <tr>
-<td><code>executions.status='running'</code> rows piling up</td>
-<td>A daemon died abruptly. The <code>LIVENESS_REAPER_INTERVAL_MS</code> reaper flips them to failed; check daemon pod logs.</td>
+<td>Shared <code>executions.status='running'</code> rows piling up</td>
+<td>A daemon died abruptly. Its per-boot ID and liveness reaper should fail direct, scoped, and workflow-linked receipts for that incarnation; check controller and daemon logs.</td>
+</tr>
+<tr>
+<td>Queue item remains in <code>queue:processing:&lt;id&gt;</code></td>
+<td>The owner heartbeat may still be live, or Valkey recovery is failing. After the 60-second heartbeat expires, a liveness pass should return the exact item to <code>queue:jobs</code>.</td>
+</tr>
+<tr>
+<td>Workflow lease or attempt deadline expired</td>
+<td>Runner lost heartbeat ACK, reached the immutable attempt deadline, reached its token safety margin, or the controller was unavailable past the lease. Inspect GitHub state before retrying.</td>
+</tr>
+<tr>
+<td>Workflow dispatch deadline or retries expired</td>
+<td>Valkey publication or runner capacity stayed unavailable past <code>JOB_MAX_RETRIES</code> or <code>WORKFLOW_DISPATCH_TIMEOUT_MS</code>. The database fails the workflow and execution, releases the target lock, and retries its public failure projection.</td>
+</tr>
+<tr>
+<td><code>workflow_runner_output_scan_unavailable</code></td>
+<td>The runner RPC secret scanner was disabled, failed, or timed out. This path fails closed. Restore the configured scanner before retrying the workflow.</td>
+</tr>
+<tr>
+<td>Workflow runner repeatedly fails to start</td>
+<td>Missing Pod/Secret RBAC, provider Secret, WSS reachability, image guard, quota, or an admission mutation rejected by exact reconciliation.</td>
+</tr>
+<tr>
+<td>Terminal runner row but Pod/Secret remains</td>
+<td>Kubernetes accepted deletion but graceful termination or finalizers are still pending, or cleanup is retrying. Check the exact UID and node before intervening. Never automate zero-grace force deletion.</td>
 </tr>
 </tbody>
 </table>
@@ -2033,7 +2268,7 @@
 </ul>
 <p><code>api_call_ms</code> on <code>k8s.spawn.succeeded</code> / <code>k8s.spawn.failed</code> (api-* kinds) gives the <code>createNamespacedPod</code> round-trip latency; a rising trend with no failures suggests control-plane pressure. A high <code>k8s.spawn.decision_skipped reason=cooldown</code> rate means the cooldown guard (<code>EPHEMERAL_DAEMON_SPAWN_COOLDOWN_MS</code>) is throttling spawns under sustained heavy traffic, consider scaling the persistent pool.</p>
 <h2 id="implementation-references">Implementation references<a class="headerlink" href="#implementation-references" title="Permanent link">&para;</a></h2>
-<p><code>src/daemon/main.ts</code>, <code>src/orchestrator/ws-server.ts</code>, <code>src/orchestrator/ephemeral-daemon-scaler.ts</code>, <code>src/k8s/ephemeral-daemon-spawner.ts</code>, <code>src/core/pipeline.ts</code>, <code>src/shared/ws-messages.ts</code>.</p>
+<p><code>src/daemon/main.ts</code>, <code>src/runner/main.ts</code>, <code>src/orchestrator/ws-server.ts</code>, <code>src/orchestrator/workflow-runner-dispatch.ts</code>, <code>src/orchestrator/workflow-runner-result.ts</code>, <code>src/k8s/ephemeral-daemon-spawner.ts</code>, <code>src/k8s/workflow-runner-spawner.ts</code>, <code>src/core/pipeline.ts</code>, <code>src/shared/ws-messages.ts</code>, <code>src/shared/workflow-runner-messages.ts</code>.</p>
 
 
 

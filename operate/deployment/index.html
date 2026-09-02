@@ -266,7 +266,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../use/invoking/" class="md-tabs__link">
+        <a href="../../use/repo-config/" class="md-tabs__link">
           
   
   
@@ -470,6 +470,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/repo-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/invoking/" class="md-nav__link">
         
   
@@ -511,10 +539,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
             
   
   
@@ -532,8 +560,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1230,6 +1258,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#isolated-workflow-runner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Isolated workflow runner
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#disk" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1246,16 +1285,27 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ephemeral-daemon-kubernetes-requirements" class="md-nav__link">
+  <a href="#kubernetes-worker-requirements" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Ephemeral-daemon Kubernetes requirements
+        Kubernetes worker requirements
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Ephemeral-daemon Kubernetes requirements">
+    <nav class="md-nav" aria-label="Kubernetes worker requirements">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dedicated-runner-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dedicated runner nodes
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#orchestrator-rbac" class="md-nav__link">
@@ -1280,10 +1330,65 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#workflow-runner-secrets-secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        workflow-runner-secrets Secret
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workflow-runner-admission-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow-runner admission boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resourcequota" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ResourceQuota
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runner-node-pid-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runner-node PID boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#ephemeral-pod-security-posture" class="md-nav__link">
     <span class="md-ellipsis">
       
         Ephemeral Pod security posture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workflow-runner-egress-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow-runner egress boundary
       
     </span>
   </a>
@@ -1962,6 +2067,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#isolated-workflow-runner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Isolated workflow runner
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#disk" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1978,16 +2094,27 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ephemeral-daemon-kubernetes-requirements" class="md-nav__link">
+  <a href="#kubernetes-worker-requirements" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Ephemeral-daemon Kubernetes requirements
+        Kubernetes worker requirements
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Ephemeral-daemon Kubernetes requirements">
+    <nav class="md-nav" aria-label="Kubernetes worker requirements">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dedicated-runner-nodes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dedicated runner nodes
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#orchestrator-rbac" class="md-nav__link">
@@ -2012,10 +2139,65 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#workflow-runner-secrets-secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        workflow-runner-secrets Secret
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workflow-runner-admission-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow-runner admission boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resourcequota" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ResourceQuota
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runner-node-pid-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runner-node PID boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#ephemeral-pod-security-posture" class="md-nav__link">
     <span class="md-ellipsis">
       
         Ephemeral Pod security posture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workflow-runner-egress-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow-runner egress boundary
       
     </span>
   </a>
@@ -2085,12 +2267,12 @@
 <tr>
 <td><code>daemon</code></td>
 <td><code>Dockerfile.daemon</code></td>
-<td>Worker image with the toolchain Claude shells out to (<code>kubectl</code>, <code>helm</code>, <code>terraform</code>, <code>aws</code>, <code>gcloud</code>, <code>docker</code>, <code>go</code>, <code>rust</code>, …).</td>
-<td>Orchestrator WebSocket (outbound), GitHub API, Anthropic.</td>
+<td>Toolchain image for shared daemons and one-attempt workflow runners (<code>kubectl</code>, <code>helm</code>, <code>terraform</code>, <code>aws</code>, <code>gcloud</code>, <code>docker</code>, <code>go</code>, <code>rust</code>, …).</td>
+<td>Orchestrator WebSocket (outbound), GitHub API, AI provider.</td>
 </tr>
 </tbody>
 </table>
-<p>The <code>daemon</code> image additionally bundles <code>@mermaid-js/mermaid-cli</code> (<code>mmdc</code>) plus a headless Chromium, used by the scheduled <code>research</code> action's diagram-validation gate. It is daemon-only because the agent runs on the daemon, not the orchestrator.</p>
+<p>The <code>daemon</code> image additionally bundles <code>@mermaid-js/mermaid-cli</code> (<code>mmdc</code>) plus a headless Chromium, used by the scheduled <code>research</code> action's diagram-validation gate. Agents run in a shared daemon or an isolated workflow runner built from this image, never in the orchestrator.</p>
 <p>The two images intentionally diverge after the shared base because their cost and attack surface differ. The shared prefix is enforced byte-identical by <code>scripts/check-dockerfile-base-sync.ts</code> (in CI) between the <code># --- SHARED-BASE-BEGIN ---</code> and <code># --- SHARED-BASE-END ---</code> markers.</p>
 <h3 id="shared-base-stages">Shared base stages<a class="headerlink" href="#shared-base-stages" title="Permanent link">&para;</a></h3>
 <table>
@@ -2110,7 +2292,7 @@
 <tr>
 <td><code>development</code></td>
 <td><code>base</code></td>
-<td><code>bun install</code> (all deps) + <code>bun run build</code> → <code>dist/</code> (app, daemon main, MCP stdio servers).</td>
+<td><code>bun install</code> (all deps) + <code>bun run build</code> → <code>dist/</code> (app, daemon, workflow runner, process-boundary probe, MCP stdio servers).</td>
 </tr>
 <tr>
 <td><code>deps</code></td>
@@ -2165,6 +2347,7 @@
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>bun<span class="w"> </span>run<span class="w"> </span>docker:build<span class="w">                </span><span class="c1"># both</span>
 </span></code></pre></div>
 <p>There is no default <code>Dockerfile</code>, always pass <code>-f</code>.</p>
+<p>The daemon image compiles a native preload guard that sets <code>PR_SET_DUMPABLE=0</code> before Bun starts. After each architecture-specific digest is pushed, <code>docker-build.yml</code> runs the bundled startup probe from that exact digest as UID/GID 1000 with no network, no capabilities, a read-only container root, and <code>no-new-privileges</code>. A digest is not published into the merged manifest unless the real child-to-parent <code>/proc/&lt;pid&gt;/environ</code> read is denied. The GitLab main-branch publisher builds and loads its amd64 image under a commit-local tag, runs the same restricted probe, then tags and pushes <code>latest-daemon</code>.</p>
 <h3 id="build-arguments">Build arguments<a class="headerlink" href="#build-arguments" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2222,9 +2405,9 @@
 </span></code></pre></div>
 <h3 id="verifying-image-attestations">Verifying image attestations<a class="headerlink" href="#verifying-image-attestations" title="Permanent link">&para;</a></h3>
 <blockquote>
-<p>Note: As SBOM file size is over 16MB, temporary disable SBOM attestations.</p>
+<p><strong>Attestations are currently disabled.</strong> The <code>provenance: mode=max</code> / <code>sbom: true</code> inputs, the <code>attestations: write</code> permission, and the <code>gh attestation verify</code> gate in <code>.github/workflows/docker-build.yml</code> are all commented out because the SBOM exceeded GitHub's 16MB attestation limit. The GitLab builds pass <code>--provenance false</code>. <strong>No published tag carries an attestation today</strong>, so the <code>gh attestation verify</code> commands below will fail until the inputs are restored. The section is retained because the workflow code is retained in place for re-enablement.</p>
 </blockquote>
-<p>Every published tag, both <code>-orchestrator</code> and <code>-daemon</code> variants and the bare <code>&lt;version&gt;</code> / <code>latest</code> aliases, ships with two Sigstore-signed attestations bound to the manifest-list digest:</p>
+<p>Once re-enabled, every published tag, both <code>-orchestrator</code> and <code>-daemon</code> variants and the bare <code>&lt;version&gt;</code> / <code>latest</code> aliases, ships with two Sigstore-signed attestations bound to the manifest-list digest:</p>
 <table>
 <thead>
 <tr>
@@ -2401,9 +2584,38 @@
 </tbody>
 </table>
 <p>The daemon image is ~2 GB unpacked. The same sizing applies to ephemeral daemon Pods spawned by the orchestrator (same image).</p>
+<h3 id="isolated-workflow-runner">Isolated workflow runner<a class="headerlink" href="#isolated-workflow-runner" title="Permanent link">&para;</a></h3>
+<p>Each structured workflow gets one Pod with fixed per-container resources from <code>src/k8s/workflow-runner-spawner.ts</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Request</th>
+<th>Limit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>500m</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>1 GiB</td>
+<td>4 GiB</td>
+</tr>
+<tr>
+<td>Ephemeral storage</td>
+<td>2 GiB</td>
+<td>10 GiB</td>
+</tr>
+</tbody>
+</table>
+<p><code>MAX_CONCURRENT_REQUESTS</code> is the controller's database admission ceiling for these Pods. The supported deployment has one controller replica; this is not a distributed cluster-wide semaphore.</p>
 <h3 id="disk">Disk<a class="headerlink" href="#disk" title="Permanent link">&para;</a></h3>
 <p>Each job clones the target repo to <code>CLONE_BASE_DIR</code> (default <code>/tmp/bot-workspaces</code>) with <code>git clone --depth=${CLONE_DEPTH}</code> (default <code>50</code>). The directory is removed in the pipeline's <code>finally</code> block.</p>
-<p>Peak disk = <code>average_repo_size × concurrent_jobs</code>. For monorepos, mount a dedicated volume:</p>
+<p>Peak disk = <code>average_repo_size × concurrent_jobs</code>. For shared daemons and the orchestrator's local development path, mount a dedicated volume:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">volumes</span><span class="p">:</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bot-workspaces</span>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="nt">emptyDir</span><span class="p">:</span>
@@ -2417,42 +2629,167 @@
 </span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bot-workspaces</span>
 </span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">        </span><span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/workspaces</span>
 </span></code></pre></div>
-<h2 id="ephemeral-daemon-kubernetes-requirements">Ephemeral-daemon Kubernetes requirements<a class="headerlink" href="#ephemeral-daemon-kubernetes-requirements" title="Permanent link">&para;</a></h2>
-<p>If you want the orchestrator to spawn ephemeral daemon Pods on demand, two things must exist in <code>EPHEMERAL_DAEMON_NAMESPACE</code>.</p>
-<h3 id="orchestrator-rbac">Orchestrator RBAC<a class="headerlink" href="#orchestrator-rbac" title="Permanent link">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io/v1</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-ephemeral-spawner</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${EPHEMERAL_DAEMON_NAMESPACE}</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="nt">rules</span><span class="p">:</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">""</span><span class="p p-Indicator">]</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"pods"</span><span class="p p-Indicator">]</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"create"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"get"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"delete"</span><span class="p p-Indicator">]</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="nn">---</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io/v1</span>
-</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RoleBinding</span>
-</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-ephemeral-spawner</span>
-</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${EPHEMERAL_DAEMON_NAMESPACE}</span>
-</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="nt">subjects</span><span class="p">:</span>
-</span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ServiceAccount</span>
-</span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app</span>
-</span><span id="__span-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="w">    </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${ORCHESTRATOR_NAMESPACE}</span>
-</span><span id="__span-8-20"><a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="nt">roleRef</span><span class="p">:</span>
-</span><span id="__span-8-21"><a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="w">  </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
-</span><span id="__span-8-22"><a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-ephemeral-spawner</span>
-</span><span id="__span-8-23"><a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a><span class="w">  </span><span class="nt">apiGroup</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io</span>
+<p>Each isolated runner gets one 10 GiB <code>emptyDir</code> mounted at <code>/tmp/bot-workspaces</code>. The clone and artifacts disappear with the Pod. Keep both the volume limit and the container's 10 GiB ephemeral-storage limit because they cover different accounting surfaces, but do not treat either as a filesystem quota. Kubernetes enforces local-storage excess through eviction, and its default directory scan misses deleted files that a process keeps open. The fixed runner-node placement below contains that failure mode away from control-plane and application nodes. Kubernetes documents the eviction behavior, deleted-open-file gap, and optional quota-based measurement in <a href="https://kubernetes.io/docs/concepts/storage/ephemeral-storage/">Local ephemeral storage</a>.</p>
+<h2 id="kubernetes-worker-requirements">Kubernetes worker requirements<a class="headerlink" href="#kubernetes-worker-requirements" title="Permanent link">&para;</a></h2>
+<p>Structured workflows require the controller to create workflow-runner Pods and Secrets in the dedicated <code>WORKFLOW_RUNNER_NAMESPACE</code>. Ephemeral shared-daemon scaling creates Pods in <code>EPHEMERAL_DAEMON_NAMESPACE</code>. Controller startup rejects equal namespace values because the runner admission policy validates every Pod in its namespace.</p>
+<h3 id="dedicated-runner-nodes">Dedicated runner nodes<a class="headerlink" href="#dedicated-runner-nodes" title="Permanent link">&para;</a></h3>
+<p>Provision a worker pool used only for workflow-runner Pods and required node daemons. Do not place control-plane components, the controller, databases, Valkey, or application workloads on it. Label and taint every node in that pool, and put the same label and taint on replacement-node templates:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>label<span class="w"> </span>node<span class="w"> </span>&lt;runner-node&gt;<span class="w"> </span>github-app.node-restriction.kubernetes.io/workflow-runner<span class="o">=</span><span class="nb">true</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>kubectl<span class="w"> </span>taint<span class="w"> </span>node<span class="w"> </span>&lt;runner-node&gt;<span class="w"> </span>github-app.node-restriction.kubernetes.io/workflow-runner<span class="o">=</span>true:NoSchedule
 </span></code></pre></div>
-<p>Without these verbs every spawn yields <code>dispatch_reason=ephemeral-spawn-failed</code> and the job is rejected with a tracking-comment infra error.</p>
+<p><code>WORKFLOW_RUNNER_NODE_LABEL</code> and <code>WORKFLOW_RUNNER_NODE_VALUE</code> change that key/value pair, so a cluster can point runners at a node pool it already labels and taints instead of adding a second pair. One setting drives both the <code>nodeSelector</code> and the <code>NoSchedule</code> toleration. Whatever pair you configure must also be set as <code>runnerNodeLabel</code> / <code>runnerNodeValue</code> in the runner boundary ConfigMap, or admission denies every runner Pod.</p>
+<p>Enable the Node authorizer and <code>NodeRestriction</code> admission plugin before using this pool. Kubernetes prevents kubelets from setting labels in the <code>node-restriction.kubernetes.io</code> namespace only when both controls are active. Verify those control-plane settings instead of inferring them from a successful label command. See <a href="https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#node-isolation-restriction">Node isolation/restriction</a>. Overriding <code>WORKFLOW_RUNNER_NODE_LABEL</code> to a key outside that reserved namespace gives this protection up: a compromised kubelet could then label its own node and attract runner Pods.</p>
+<p>Drain pre-existing non-runner workloads before treating a node as dedicated. The spawner always selects the configured label and carries only the matching <code>NoSchedule</code> toleration. The admission policy requires that exact selector and toleration, so a runner stays Pending if the dedicated pool is absent and cannot be mutated onto a shared or control-plane node. Taints affect scheduling, not existing Pods, and another workload with the same toleration could still enter the pool; restrict who can set that toleration and audit the actual node workload set after rollout and node replacement.</p>
+<h3 id="orchestrator-rbac">Orchestrator RBAC<a class="headerlink" href="#orchestrator-rbac" title="Permanent link">&para;</a></h3>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io/v1</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-ephemeral-daemon-spawner</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${EPHEMERAL_DAEMON_NAMESPACE}</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nt">rules</span><span class="p">:</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">""</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"pods"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"create"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="nn">---</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io/v1</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RoleBinding</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-ephemeral-daemon-spawner</span>
+</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${EPHEMERAL_DAEMON_NAMESPACE}</span>
+</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="nt">subjects</span><span class="p">:</span>
+</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ServiceAccount</span>
+</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app</span>
+</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">    </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${ORCHESTRATOR_NAMESPACE}</span>
+</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="nt">roleRef</span><span class="p">:</span>
+</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">  </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
+</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-ephemeral-daemon-spawner</span>
+</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="w">  </span><span class="nt">apiGroup</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io</span>
+</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a><span class="nn">---</span>
+</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io/v1</span>
+</span><span id="__span-9-26"><a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
+</span><span id="__span-9-27"><a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-workflow-runner-manager</span>
+</span><span id="__span-9-29"><a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${WORKFLOW_RUNNER_NAMESPACE}</span>
+</span><span id="__span-9-30"><a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a><span class="nt">rules</span><span class="p">:</span>
+</span><span id="__span-9-31"><a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">""</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-32"><a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"pods"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-33"><a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"create"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"get"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"delete"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-34"><a id="__codelineno-9-34" name="__codelineno-9-34" href="#__codelineno-9-34"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">apiGroups</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">""</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-35"><a id="__codelineno-9-35" name="__codelineno-9-35" href="#__codelineno-9-35"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"secrets"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-36"><a id="__codelineno-9-36" name="__codelineno-9-36" href="#__codelineno-9-36"></a><span class="w">    </span><span class="nt">verbs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"create"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"get"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"update"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"delete"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-9-37"><a id="__codelineno-9-37" name="__codelineno-9-37" href="#__codelineno-9-37"></a><span class="nn">---</span>
+</span><span id="__span-9-38"><a id="__codelineno-9-38" name="__codelineno-9-38" href="#__codelineno-9-38"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io/v1</span>
+</span><span id="__span-9-39"><a id="__codelineno-9-39" name="__codelineno-9-39" href="#__codelineno-9-39"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RoleBinding</span>
+</span><span id="__span-9-40"><a id="__codelineno-9-40" name="__codelineno-9-40" href="#__codelineno-9-40"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-41"><a id="__codelineno-9-41" name="__codelineno-9-41" href="#__codelineno-9-41"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-workflow-runner-manager</span>
+</span><span id="__span-9-42"><a id="__codelineno-9-42" name="__codelineno-9-42" href="#__codelineno-9-42"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${WORKFLOW_RUNNER_NAMESPACE}</span>
+</span><span id="__span-9-43"><a id="__codelineno-9-43" name="__codelineno-9-43" href="#__codelineno-9-43"></a><span class="nt">subjects</span><span class="p">:</span>
+</span><span id="__span-9-44"><a id="__codelineno-9-44" name="__codelineno-9-44" href="#__codelineno-9-44"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ServiceAccount</span>
+</span><span id="__span-9-45"><a id="__codelineno-9-45" name="__codelineno-9-45" href="#__codelineno-9-45"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app</span>
+</span><span id="__span-9-46"><a id="__codelineno-9-46" name="__codelineno-9-46" href="#__codelineno-9-46"></a><span class="w">    </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${ORCHESTRATOR_NAMESPACE}</span>
+</span><span id="__span-9-47"><a id="__codelineno-9-47" name="__codelineno-9-47" href="#__codelineno-9-47"></a><span class="nt">roleRef</span><span class="p">:</span>
+</span><span id="__span-9-48"><a id="__codelineno-9-48" name="__codelineno-9-48" href="#__codelineno-9-48"></a><span class="w">  </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Role</span>
+</span><span id="__span-9-49"><a id="__codelineno-9-49" name="__codelineno-9-49" href="#__codelineno-9-49"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-workflow-runner-manager</span>
+</span><span id="__span-9-50"><a id="__codelineno-9-50" name="__codelineno-9-50" href="#__codelineno-9-50"></a><span class="w">  </span><span class="nt">apiGroup</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io</span>
+</span></code></pre></div>
+<p>The controller uses <code>get</code> plus UID deletion preconditions to avoid deleting a replacement resource with the deterministic attempt name. It creates the Pod first and makes the per-attempt Secret an owned dependent of that exact Pod UID. It uses <code>update</code> only to rotate an existing owned Secret after an ambiguous create or controller-secret rotation. No worker Pod receives this ServiceAccount token.</p>
 <h3 id="daemon-secrets-secret"><code>daemon-secrets</code> Secret<a class="headerlink" href="#daemon-secrets-secret" title="Permanent link">&para;</a></h3>
-<p>Spawned ephemeral Pods get their config via <code>envFrom: secretRef: daemon-secrets</code>. Create this Secret once in <code>EPHEMERAL_DAEMON_NAMESPACE</code> with at minimum:</p>
+<p>Spawned ephemeral Pods get their config via <code>envFrom: secretRef: &lt;EPHEMERAL_DAEMON_SECRET_NAME&gt;</code>, which defaults to <code>daemon-secrets</code>. Create this Secret once in <code>EPHEMERAL_DAEMON_NAMESPACE</code> with at minimum:</p>
 <ul>
 <li><code>DAEMON_AUTH_TOKEN</code>: daemon ⇄ orchestrator handshake. <strong>Only source.</strong> The spawner does not inline this into the Pod spec, so it cannot leak via <code>kubectl get pod -o yaml</code> or the Pod audit log.</li>
 <li><code>ANTHROPIC_API_KEY</code> or <code>CLAUDE_CODE_OAUTH_TOKEN</code> (and <code>ALLOWED_OWNERS</code>) or Bedrock <code>AWS_*</code> vars.</li>
-<li><code>VALKEY_URL</code>, <code>DATABASE_URL</code>.</li>
 </ul>
 <p>GitHub App private-key material is <strong>not</strong> placed in this Secret. The orchestrator mints installation tokens and hands them per-job, so blast radius does not need to expand to every ephemeral Pod. <code>ORCHESTRATOR_URL</code> is provided inline by the spawner from <code>ORCHESTRATOR_PUBLIC_URL</code>.</p>
+<p>Never place <code>DATABASE_URL</code> or <code>VALKEY_URL</code> in <code>daemon-secrets</code>; shared daemons reach those services through the controller protocol.</p>
+<p><code>EPHEMERAL_DAEMON_SECRET_NAME</code> exists so a deployment whose persistent daemon pools already mount a suitable Secret can point ephemeral daemons at the same object instead of maintaining a second copy of the same credentials, which drift apart on rotation. It does not relax the contents rule above. Reusing a broader Secret gives every ephemeral Pod every key in it, so weigh that against the rotation cost. Reusing the controller's own Secret is the worst case: it hands short-lived agent Pods the GitHub App private key, the webhook secret, and the workflow-runner capability root.</p>
+<h3 id="workflow-runner-secrets-secret"><code>workflow-runner-secrets</code> Secret<a class="headerlink" href="#workflow-runner-secrets-secret" title="Permanent link">&para;</a></h3>
+<p>Create this provider-only Secret once in <code>WORKFLOW_RUNNER_NAMESPACE</code>. Put only the selected credential chain in it:</p>
+<ul>
+<li>Anthropic: <code>ANTHROPIC_API_KEY</code> or <code>CLAUDE_CODE_OAUTH_TOKEN</code>, never both. If both are configured on the controller, the runner deliberately receives only <code>ANTHROPIC_API_KEY</code>, matching Claude Code's documented precedence.</li>
+<li>Bedrock API key: <code>AWS_BEARER_TOKEN_BEDROCK</code> only.</li>
+<li>Bedrock static credentials: <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code>, plus <code>AWS_SESSION_TOKEN</code> only when the credentials are temporary.</li>
+</ul>
+<p>For production Bedrock runners, use a dedicated IAM principal with only the inference actions and model or inference-profile resources the selected SDK path needs. Do not grant non-Bedrock actions or <code>sts:AssumeRole</code>. AWS identifies <code>bedrock:InvokeModel</code> and <code>bedrock:InvokeModelWithResponseStream</code> as the core inference permissions and documents how to narrow actions and resources in <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/inference-prereq.html">Prerequisites for running model inference</a>. Use temporary IAM credentials, or a short-term Bedrock API key with automated Secret rotation. AWS recommends short-term API keys for production and long-term keys only for exploration in <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html">Amazon Bedrock API keys</a>. <code>AWS_BEARER_TOKEN_BEDROCK</code> is a Bedrock API key; <code>aws-actions/configure-aws-credentials</code> exports a temporary IAM access-key, secret-key, and session-token chain instead.</p>
+<p>The spawner reads <code>CLAUDE_PROVIDER</code>, <code>CLAUDE_MODEL</code>, <code>AWS_REGION</code>, optional <code>ANTHROPIC_BEDROCK_BASE_URL</code>, and <code>ALLOWED_OWNERS</code> from validated controller configuration and places those non-secret settings inline. A Bedrock base-URL override must be an absolute HTTPS URL with no username, password, query, or fragment; the attempt fails before its capability Secret is created otherwise. <code>AWS_PROFILE</code> is unsupported for isolated runners because they mount no AWS profile files. A Bedrock controller configured only with a profile fails the attempt before a Pod is created. Every selected credential reference is required, so a missing Secret key prevents the container from starting instead of silently selecting another chain.</p>
+<p>Do not place unused provider chains, GitHub App, PAT, database, Valkey, daemon, Kubernetes, or Context7 credentials in this Secret. The Pod references only the selected keys and never uses <code>envFrom</code>. Before connecting, the runner rejects dual Anthropic credentials, dual or incomplete Bedrock chains, cross-provider credentials, and controller credentials. <code>GH_ENTERPRISE_TOKEN</code> and <code>GITHUB_ENTERPRISE_TOKEN</code> are forbidden because <a href="https://cli.github.com/manual/gh_help_environment">GitHub CLI treats them as authentication for GitHub Enterprise Server hosts</a>.</p>
+<h3 id="workflow-runner-admission-boundary">Workflow-runner admission boundary<a class="headerlink" href="#workflow-runner-admission-boundary" title="Permanent link">&para;</a></h3>
+<p>Post-create reconciliation is not early enough to stop a mutated image or lifecycle hook: the kubelet can start the admitted Pod before the controller reads the create response. Install <a href="https://github.com/chrisleekr/github-app/blob/main/examples/workflow-runner-admission.yaml"><code>examples/workflow-runner-admission.yaml</code></a> before enabling structured workflows. It requires Kubernetes 1.30 or later, where <code>ValidatingAdmissionPolicy</code> is generally available.</p>
+<p>The <a href="https://github.com/chrisleekr/helm-charts/tree/main/charts/github-app"><code>github-app</code> Helm chart</a> packages this file behind <code>workflowRunner.enabled</code>, and is the recommended install path. It derives the boundary parameters below from the same values that render the controller's own config, so <code>runnerImage</code> cannot drift from <code>DAEMON_IMAGE</code>. This example stays the canonical copy of the policy: the chart carries its <code>spec</code> verbatim and a chart-side gate fails when the two differ. Apply the steps below by hand only when installing without the chart.</p>
+<p>The example creates a Restricted <code>github-app-runners</code> namespace and a fail-closed policy and binding. The binding selects the dedicated namespace and the policy validates every Pod create, Pod update, and ephemeral-container update in it. Before applying it:</p>
+<ol>
+<li>Set <code>workflow-runner-boundary.data.runnerImage</code> to the exact <code>@sha256:&lt;digest&gt;</code> image configured as <code>DAEMON_IMAGE</code>. Tags, including immutable release tags, are rejected by the controller and policy.</li>
+<li>Set <code>workflow-runner-boundary.data.orchestratorOrigin</code> to the WSS origin used by <code>ORCHESTRATOR_PUBLIC_URL</code>, without a path or trailing slash.
+   Set <code>runnerNodeLabel</code> and <code>runnerNodeValue</code> to the controller's <code>WORKFLOW_RUNNER_NODE_LABEL</code> / <code>WORKFLOW_RUNNER_NODE_VALUE</code> values.
+   Set <code>runnerImagePullSecret</code> to the controller's <code>WORKFLOW_RUNNER_IMAGE_PULL_SECRET</code> value: the name of an existing <code>kubernetes.io/dockerconfigjson</code> Secret in the runner namespace, or an empty string to forbid pull secrets entirely. The runner has no ServiceAccount token, so the kubelet reads this Secret and the container never can.</li>
+<li>Copy the controller's exact <code>provider</code>, <code>model</code>, optional <code>awsRegion</code>, <code>anthropicBedrockBaseUrl</code>, and <code>allowedOwners</code> values into the boundary ConfigMap. Use an empty string for an omitted optional setting.</li>
+<li>Set <code>providerCredential1..3</code> to the exact selected Secret-key names in spawner order: one Anthropic key; one Bedrock bearer key; or access key, secret key, and optional session token. Leave unused slots empty. The ConfigMap contains names and non-secret settings, never credential values.</li>
+<li>Provision and verify the dedicated labeled-and-tainted runner nodes described above. Label the controller namespace <code>github-app.chrislee.kr/workflow-controller=true</code>, retain the controller Pod labels from the example, and adapt the DNS selectors if the cluster does not label its DNS Pods <code>k8s-app=kube-dns</code>.</li>
+<li>Set <code>WORKFLOW_RUNNER_NAMESPACE=github-app-runners</code>, or consistently rename the Namespace, ConfigMap namespace, binding selector, and parameter namespace. Keep <code>EPHEMERAL_DAEMON_NAMESPACE</code> different.</li>
+<li>Apply the Namespace and ConfigMap first, then the policy and binding. Keep <code>parameterNotFoundAction: Deny</code>, <code>failurePolicy: Fail</code>, and <code>validationActions: [Deny, Audit]</code>.</li>
+<li>Before enabling workflows, require a server-side dry-run canary to be denied by <code>github-app-workflow-runner-boundary</code>. Policy <code>status.typeChecking</code> proves expression type checking completed; it does not test whether the binding is already enforcing requests. The CI harness polls this negative canary for up to 30 seconds before testing the production renderer.</li>
+</ol>
+<p>This canary is compatible with Restricted Pod Security, performs no write, and fails if admission returns an unrelated error:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nv">RUNNER_NAMESPACE</span><span class="o">=</span><span class="s2">"</span><span class="si">${</span><span class="nv">WORKFLOW_RUNNER_NAMESPACE</span><span class="k">:-</span><span class="nv">github</span><span class="p">-app-runners</span><span class="si">}</span><span class="s2">"</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="k">for</span><span class="w"> </span>attempt<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">$(</span>seq<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">30</span><span class="k">)</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="nv">output</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">    </span>kubectl<span class="w"> </span>create<span class="w"> </span>--dry-run<span class="o">=</span>server<span class="w"> </span>--output<span class="o">=</span>name<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">      </span>--namespace<span class="o">=</span><span class="s2">"</span><span class="si">${</span><span class="nv">RUNNER_NAMESPACE</span><span class="si">}</span><span class="s2">"</span><span class="w"> </span>--filename<span class="o">=</span>-<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="s">&lt;&lt;'YAML'</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="s">apiVersion: v1</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="s">kind: Pod</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="s">metadata:</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="s">  name: workflow-runner-policy-canary</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="s">spec:</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="s">  automountServiceAccountToken: false</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="s">  restartPolicy: Never</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="s">  securityContext:</span>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="s">    runAsNonRoot: true</span>
+</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="s">    seccompProfile:</span>
+</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="s">      type: RuntimeDefault</span>
+</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="s">  containers:</span>
+</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="s">    - name: canary</span>
+</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="s">      image: registry.invalid/canary@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</span>
+</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="s">      securityContext:</span>
+</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="s">        allowPrivilegeEscalation: false</span>
+</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a><span class="s">        capabilities:</span>
+</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a><span class="s">          drop: [ALL]</span>
+</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a><span class="s">YAML</span>
+</span><span id="__span-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a><span class="w">  </span><span class="k">)</span><span class="s2">"</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+</span><span id="__span-10-26"><a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">attempt</span><span class="si">}</span><span class="s2">"</span><span class="w"> </span>-eq<span class="w"> </span><span class="m">30</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+</span><span id="__span-10-27"><a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a><span class="w">      </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"workflow runner admission policy did not enforce within 30 seconds"</span><span class="w"> </span>&gt;<span class="p">&amp;</span><span class="m">2</span>
+</span><span id="__span-10-28"><a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a><span class="w">      </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+</span><span id="__span-10-29"><a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a><span class="w">    </span><span class="k">fi</span>
+</span><span id="__span-10-30"><a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a><span class="w">    </span>sleep<span class="w"> </span><span class="m">1</span>
+</span><span id="__span-10-31"><a id="__codelineno-10-31" name="__codelineno-10-31" href="#__codelineno-10-31"></a><span class="w">  </span><span class="k">elif</span><span class="w"> </span><span class="nb">printf</span><span class="w"> </span><span class="s1">'%s\n'</span><span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">output</span><span class="si">}</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-Fq<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-32"><a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a><span class="w">    </span><span class="s2">"ValidatingAdmissionPolicy 'github-app-workflow-runner-boundary'"</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+</span><span id="__span-10-33"><a id="__codelineno-10-33" name="__codelineno-10-33" href="#__codelineno-10-33"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"workflow runner admission policy is enforcing"</span>
+</span><span id="__span-10-34"><a id="__codelineno-10-34" name="__codelineno-10-34" href="#__codelineno-10-34"></a><span class="w">    </span><span class="k">break</span>
+</span><span id="__span-10-35"><a id="__codelineno-10-35" name="__codelineno-10-35" href="#__codelineno-10-35"></a><span class="w">  </span><span class="k">else</span>
+</span><span id="__span-10-36"><a id="__codelineno-10-36" name="__codelineno-10-36" href="#__codelineno-10-36"></a><span class="w">    </span><span class="nb">printf</span><span class="w"> </span><span class="s1">'%s\n'</span><span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">output</span><span class="si">}</span><span class="s2">"</span><span class="w"> </span>&gt;<span class="p">&amp;</span><span class="m">2</span>
+</span><span id="__span-10-37"><a id="__codelineno-10-37" name="__codelineno-10-37" href="#__codelineno-10-37"></a><span class="w">    </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+</span><span id="__span-10-38"><a id="__codelineno-10-38" name="__codelineno-10-38" href="#__codelineno-10-38"></a><span class="w">  </span><span class="k">fi</span>
+</span><span id="__span-10-39"><a id="__codelineno-10-39" name="__codelineno-10-39" href="#__codelineno-10-39"></a><span class="k">done</span>
+</span></code></pre></div>
+<p>The policy validates the final Pod after mutation. It binds the digest, controller URL, provider settings, selected credential-key names, and dedicated-node placement. It rejects changed identity labels, extra containers, volumes, annotations, finalizers, lifecycle hooks, security overrides, capability additions, changed environment names, sources, values, or resource budgets, direct node placement, affinity, altered node selectors, priority classes, scheduling/readiness gates, more than one image-pull Secret or one whose name differs from <code>runnerImagePullSecret</code>, altered tolerations, and ephemeral-container updates. The controller repeats the boundary check after create and during reconciliation. Kubernetes recommends final-state validation because mutating admission order is not stable: <a href="https://kubernetes.io/docs/concepts/cluster-administration/admission-webhooks-good-practices/#validate-mutations-before-admission">Admission Webhook Good Practices</a>. The <a href="https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/">ValidatingAdmissionPolicy reference</a> defines the fail policy, match conditions, parameter, binding, and deny behavior used by the example. The <a href="https://kubernetes.io/docs/reference/kubernetes-api/policy-resources/validating-admission-policy-v1/#ValidatingAdmissionPolicyStatus">policy status API</a> limits <code>typeChecking</code> to expression-checking results, which is why rollout also probes a real admission request.</p>
+<p>Treat the boundary ConfigMap, policy, binding, and namespace labels as cluster-security configuration. The controller needs no write access to them. Grant changes only to the deployment administrator, verify the policy status has no <code>expressionWarnings</code>, and require the negative canary denial before enabling workflows. Under a chart install these are release-managed, so change them through the values file rather than <code>kubectl</code>: a manual edit is reverted on the next sync. <code>bun run test:admission</code> installs the production manifest and renderer in a disposable pinned Kubernetes 1.30 cluster, waits for real binding enforcement, then verifies the exact Pod plus prohibited mutations.</p>
+<p>The GitHub admission job runs on GitHub-hosted pull-request runners. The current self-managed GitLab project has no dedicated ephemeral privileged runner, so its kind/DinD job is restricted to the protected default branch and uses digest-pinned job, service, and nested images. Do not enable this job on feature branches through the shared instance runner. GitLab states that privileged jobs can gain root access to the runner host and recommends isolated, ephemeral runners restricted to protected branches: <a href="https://docs.gitlab.com/runner/security/#reduce-the-security-risk-of-using-privileged-containers">runner security</a>.</p>
+<p>The controller separately creates <code>workflow-runner-&lt;attempt UUID&gt;</code> with one deadline-bound HMAC capability. The capability is signed by the controller-only <code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code>, not the shared-daemon key, and the Secret has one owner reference to the exact runner Pod UID. The target-repository token is delivered at most once and its GitHub-reported expiry must be no later than the immutable attempt deadline. A transport reconnect carries no job payload or repository credential. Payload preparation attempts best-effort revocation when delivery fails. After delivery, the runner attempts best-effort revocation after its final repository operation. The controller independently attempts revocation for reconnect, notification, and result-projection tokens through GitHub's <a href="https://docs.github.com/en/rest/apps/installations#revoke-an-installation-access-token">token self-revocation endpoint</a>, with a ten-second API timeout. Revocation failure does not block terminal handling. The repository token is not stored in PostgreSQL or Kubernetes, so a failed revocation, process crash, or node loss remains bounded by its single-repository scope and authoritative GitHub expiry. A process crash is terminal for that Pod, so <code>restartPolicy: Never</code> lets reconciliation fail the attempt promptly instead of looping a replacement process that cannot safely receive the credential again. Projection retries do not retain runner credentials or compute. Pod deletion uses the normal 30-second grace period. The cleanup receipt means Kubernetes accepted UID-preconditioned deletion, or the exact resource was already absent. A Pod may remain <code>Terminating</code> while finalizers run; the owned Secret is also eligible for garbage collection. Do not automate <code>--force --grace-period=0</code>: <a href="https://kubernetes.io/docs/reference/kubectl/generated/kubectl_delete/">Kubernetes warns that force deletion does not confirm the Pod processes have stopped</a>. If a node is partitioned, verify the node and process state before an operator force-deletes the exact Pod UID. Enable Kubernetes Secret encryption at rest and restrict Secret RBAC to this controller ServiceAccount.</p>
+<h3 id="resourcequota">ResourceQuota<a class="headerlink" href="#resourcequota" title="Permanent link">&para;</a></h3>
+<p>Each active workflow attempt consumes one Pod, one per-attempt Secret, and bounded ephemeral storage. Quota all three so a cleanup or retry defect cannot exhaust API-server or node capacity. This is an example ceiling, not a sizing recommendation:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ResourceQuota</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github-app-runner-objects</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${WORKFLOW_RUNNER_NAMESPACE}</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span><span class="nt">hard</span><span class="p">:</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">    </span><span class="nt">count/pods</span><span class="p">:</span><span class="w"> </span><span class="s">"10"</span>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="nt">count/secrets</span><span class="p">:</span><span class="w"> </span><span class="s">"12"</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">    </span><span class="nt">requests.ephemeral-storage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20Gi</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="w">    </span><span class="nt">limits.ephemeral-storage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100Gi</span>
+</span></code></pre></div>
+<h3 id="runner-node-pid-boundary">Runner-node PID boundary<a class="headerlink" href="#runner-node-pid-boundary" title="Permanent link">&para;</a></h3>
+<p>CPU, memory, and ephemeral-storage limits do not bound process IDs. Kubernetes does not support a Pod-spec PID limit, so every dedicated runner node must have a finite positive kubelet <code>podPidsLimit</code> and nonzero PID reservations for both the operating system and Kubernetes daemons. Audit the effective kubelet configuration on every runner node before rollout and after node-pool replacement. The default <code>podPidsLimit: -1</code> is unbounded and fails this prerequisite.</p>
+<p>Size the limit and <code>systemReserved.pid</code> / <code>kubeReserved.pid</code> from the node's <code>pid_max</code>, maximum Pod density, and system-daemon demand. Do not copy the test fixture's value into production. Kubernetes documents why fast PID exhaustion can destabilize kubelet and the container runtime, and why eviction alone is not a hard boundary: <a href="https://kubernetes.io/docs/concepts/policy/pid-limiting/">Process ID limits and reservations</a> and <a href="https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/">KubeletConfiguration <code>podPidsLimit</code></a>.</p>
 <h3 id="ephemeral-pod-security-posture">Ephemeral Pod security posture<a class="headerlink" href="#ephemeral-pod-security-posture" title="Permanent link">&para;</a></h3>
 <p>The spawner hardens every ephemeral Pod (see <code>src/k8s/ephemeral-daemon-spawner.ts</code>):</p>
 <ul>
@@ -2461,6 +2798,28 @@
 <li>Container: <code>allowPrivilegeEscalation: false</code>, <code>capabilities.drop: [ALL]</code>.</li>
 <li><code>restartPolicy: Never</code> and <code>activeDeadlineSeconds: 3600</code> cap the Pod hard.</li>
 </ul>
+<p>Workflow-runner Pods add stricter identity reconciliation (see <code>src/k8s/workflow-runner-spawner.ts</code>):</p>
+<ul>
+<li>one container, one size-limited workspace <code>emptyDir</code>, no other volumes, no init/sidecar/ephemeral containers, no service-account token, service links, or host PID/IPC/network namespaces;</li>
+<li><code>runAsNonRoot: true</code>, UID/GID 1000, <code>seccompProfile: RuntimeDefault</code>, no privilege escalation, and all Linux capabilities dropped;</li>
+<li><code>restartPolicy: Never</code>, <code>activeDeadlineSeconds: 4200</code>, and a 30-second termination grace period;</li>
+<li>digest-pinned image, default service account without a token, exact default scheduler and priority, fixed dedicated-node selector and toleration, and no caller-controlled placement or image-pull credentials;</li>
+<li>exact command, environment sources, security context, and resources verified after create and on every reconcile.</li>
+</ul>
+<p>Admission or service-mesh mutation that changes this boundary is rejected as a permanent runner-start failure. Exclude these Pods and their per-attempt Secrets from mutation, while preserving the labels the controller uses for ownership checks.</p>
+<h3 id="workflow-runner-egress-boundary">Workflow-runner egress boundary<a class="headerlink" href="#workflow-runner-egress-boundary" title="Permanent link">&para;</a></h3>
+<p>Install <code>github-app-workflow-runner-egress-boundary</code> from <a href="https://github.com/chrisleekr/github-app/blob/main/examples/workflow-runner-admission.yaml"><code>examples/workflow-runner-admission.yaml</code></a>, or set <code>workflowRunner.enabled</code> in the Helm chart, before enabling workflow dispatch. Once it selects a runner Pod for <code>Egress</code>, traffic is denied unless one of its three rules allows it:</p>
+<ol>
+<li>UDP/TCP DNS to the selected cluster DNS Pods on port 53.</li>
+<li>WSS to the selected controller Pods on port 3002.</li>
+<li>TCP 443 to public IPv4 and IPv6 addresses, excluding private, loopback, link-local, documentation, benchmark, multicast, and reserved ranges.</li>
+</ol>
+<p>Label the controller namespace <code>github-app.chrislee.kr/workflow-controller=true</code> and keep the controller Pod labels aligned with the policy. Adapt the DNS selector to the cluster's actual DNS labels. If <code>ORCHESTRATOR_PUBLIC_URL</code> uses a public ingress instead of the selected controller Pods, expose it on TCP 443. Verify these paths from the runner namespace before rollout.</p>
+<p>Kubernetes NetworkPolicies are additive. Audit every policy selecting runner Pods because another egress rule can widen this boundary. The portable API identifies destinations by Pod, namespace, or CIDR, not DNS name. The example therefore blocks cluster/private-network reachability and non-HTTPS public traffic, but it cannot distinguish GitHub and the selected AI provider from an attacker-controlled public HTTPS host. Deployments requiring exact public-host allowlisting must add a CNI-specific DNS policy or force runner egress through an allowlisted proxy, limited to the GitHub and provider endpoints the selected configuration needs.</p>
+<p>Private provider endpoints are denied by the example. If the selected provider uses a private endpoint, add only that endpoint's exact Pod, namespace, or CIDR destination and required port. Do not allow an entire private address range.</p>
+<p>The network policy is the primary metadata control. The runner also probes the AWS/Azure IPv4 endpoint and AWS/Google IPv6 endpoints before registration. Any HTTP response, including <code>401</code> or <code>403</code>, fails startup. A policy drop normally appears as a timeout, so timeouts and connection refusals are accepted as corroborating evidence, not treated as proof by themselves.</p>
+<p>For EKS worker nodes, also require IMDSv2 and set the response hop limit to <code>1</code>. AWS documents that setting as the Pod-blocking configuration. For AKS, prefer the platform IMDS restriction where its preview limitations are acceptable; existing clusters also require a node reimage after enabling it. These controls are independent of the policy and startup probe.</p>
+<p>Primary references: <a href="https://kubernetes.io/docs/concepts/services-networking/network-policies/">Kubernetes NetworkPolicy</a>, <a href="https://docs.aws.amazon.com/eks/latest/best-practices/identity-and-access-management.html">AWS EKS identity guidance</a>, <a href="https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html">AWS IRSA credential isolation</a>, <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html">AWS IMDS endpoints</a>, <a href="https://docs.cloud.google.com/compute/docs/metadata/querying-metadata">Google Cloud metadata endpoints</a>, <a href="https://learn.microsoft.com/en-us/azure/aks/operator-best-practices-cluster-security">Azure AKS cluster security</a>, and <a href="https://learn.microsoft.com/en-us/azure/aks/imds-restriction">AKS IMDS restriction</a>.</p>
 <h2 id="production-tunables-worth-double-checking">Production tunables worth double-checking<a class="headerlink" href="#production-tunables-worth-double-checking" title="Permanent link">&para;</a></h2>
 <p>The full schema lives at <a href="../configuration/"><code>configuration.md</code></a>. At minimum:</p>
 <table>
@@ -2485,7 +2844,7 @@
 </tr>
 <tr>
 <td><code>AGENT_TIMEOUT_MS</code></td>
-<td>Stay below 3600 s, the GitHub installation-token TTL</td>
+<td>Keep within the runner's effective token window; it aborts five minutes before the one-hour App token expiry</td>
 </tr>
 <tr>
 <td><code>CLONE_BASE_DIR</code></td>

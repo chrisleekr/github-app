@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://chrisleekr.github.io/github-app/use/invoking/">
       
       
-        <link rel="prev" href="../..">
+        <link rel="prev" href="../repo-config/">
       
       
         <link rel="next" href="../workflows/">
@@ -268,7 +268,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../repo-config/" class="md-tabs__link">
           
   
   
@@ -472,6 +472,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../repo-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -632,10 +660,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
             
   
   
@@ -653,8 +681,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1714,20 +1742,22 @@
     NL["Mention + NL classifier&lt;br/&gt;Bedrock single-turn"]:::route
     LabelEvt["issues.labeled or&lt;br/&gt;pull_request.labeled"]:::input
     LabelMatch["registry.getByLabel"]:::route
-    Enqueue["enqueueJob&lt;br/&gt;Valkey queue:jobs"]:::store
-    Daemon["Daemon claims offer"]:::work
+    Commit["Commit workflow + execution&lt;br/&gt;with open outbox receipt"]:::store
+    Enqueue["Publish workflow-run&lt;br/&gt;to Valkey queue:jobs"]:::store
+    Runner["Controller claims lease&lt;br/&gt;and starts one-attempt Pod"]:::work
     Pipe["src/core/pipeline.ts"]:::work
-    Track["Tracking comment finalised"]:::done
+    Durable["Store terminal result&lt;br/&gt;before projection"]:::store
+    Track["Tracking comment reconciled"]:::done
 
     Cmt --&gt; Verify --&gt; Idem --&gt; Allow --&gt; Router
     Router --&gt; Lit
     Router --&gt; NL
     LabelEvt --&gt; Allow
     Allow -. label path .-&gt; LabelMatch
-    Lit --&gt; Enqueue
-    NL --&gt; Enqueue
-    LabelMatch --&gt; Enqueue
-    Enqueue --&gt; Daemon --&gt; Pipe --&gt; Track
+    Lit --&gt; Commit
+    NL --&gt; Commit
+    LabelMatch --&gt; Commit
+    Commit --&gt; Enqueue --&gt; Runner --&gt; Pipe --&gt; Durable --&gt; Track
 
     classDef input fill:#0b5cad,stroke:#083e74,color:#ffffff
     classDef guard fill:#164a3a,stroke:#0d2c24,color:#ffffff
@@ -1758,7 +1788,7 @@
 <td>👀</td>
 </tr>
 <tr>
-<td>Job dispatched to a daemon</td>
+<td>Workflow queued</td>
 <td>🚀</td>
 </tr>
 <tr>
@@ -1842,7 +1872,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../.." class="md-footer__link md-footer__link--prev" aria-label="Previous: Home">
+          <a href="../repo-config/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Repo configuration">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1852,7 +1882,7 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Home
+                Repo configuration
               </div>
             </div>
           </a>

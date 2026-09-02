@@ -266,7 +266,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../use/invoking/" class="md-tabs__link">
+        <a href="../../use/repo-config/" class="md-tabs__link">
           
   
   
@@ -470,6 +470,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/repo-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/invoking/" class="md-nav__link">
         
   
@@ -511,10 +539,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
             
   
   
@@ -532,8 +560,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -2332,7 +2360,7 @@
 <tr>
 <td><code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code></td>
 <td><em>none</em></td>
-<td>Controller-only HMAC root for deadline-bound, per-attempt runner capabilities. Minimum 32 characters. Optional until the capability signer ships, then required on the controller. It must differ from both daemon-auth slots, and setting it on a worker is rejected at boot.</td>
+<td>Controller-only HMAC root for deadline-bound, per-attempt runner capabilities. Required on the controller, minimum 32 characters. It must differ from both daemon-auth slots, and setting it on a worker is rejected at boot.</td>
 </tr>
 <tr>
 <td><code>WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS</code></td>
@@ -2962,7 +2990,7 @@ before committing:</p>
 <tbody>
 <tr>
 <td>Controller (webhook server)</td>
-<td>GitHub App credentials, one AI provider credential, <code>VALKEY_URL</code>, <code>DATABASE_URL</code>, and <code>DAEMON_AUTH_TOKEN</code> (plus <code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code> once the signer ships); K8s API access, <code>DAEMON_IMAGE</code>, and a WSS <code>ORCHESTRATOR_PUBLIC_URL</code> for structured workflows.</td>
+<td>GitHub App credentials, one AI provider credential, <code>VALKEY_URL</code>, <code>DATABASE_URL</code>, <code>DAEMON_AUTH_TOKEN</code>, and <code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code>; K8s API access, <code>DAEMON_IMAGE</code>, and a WSS <code>ORCHESTRATOR_PUBLIC_URL</code> for structured workflows.</td>
 </tr>
 <tr>
 <td>Ephemeral shared-daemon scale-up</td>

@@ -266,7 +266,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../use/invoking/" class="md-tabs__link">
+        <a href="../../use/repo-config/" class="md-tabs__link">
           
   
   
@@ -470,6 +470,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/repo-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/invoking/" class="md-nav__link">
         
   
@@ -511,10 +539,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
             
   
   
@@ -532,8 +560,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1361,10 +1389,21 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#request-flow" class="md-nav__link">
+  <a href="#system-topology" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Request flow
+        System topology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#request-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request lifecycle
       
     </span>
   </a>
@@ -1395,10 +1434,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#single-target-four-reasons" class="md-nav__link">
+  <a href="#two-targets-five-reasons" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Single target, four reasons
+        Two targets, five reasons
       
     </span>
   </a>
@@ -1418,6 +1457,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#isolated-workflow-runners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Isolated workflow runners
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1476,6 +1526,17 @@
     <span class="md-ellipsis">
       
         System/user trust boundary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-repo-config-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-repo config gates
       
     </span>
   </a>
@@ -1669,10 +1730,21 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#request-flow" class="md-nav__link">
+  <a href="#system-topology" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Request flow
+        System topology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#request-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request lifecycle
       
     </span>
   </a>
@@ -1703,10 +1775,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#single-target-four-reasons" class="md-nav__link">
+  <a href="#two-targets-five-reasons" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Single target, four reasons
+        Two targets, five reasons
       
     </span>
   </a>
@@ -1726,6 +1798,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#isolated-workflow-runners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Isolated workflow runners
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1791,6 +1874,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-repo-config-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-repo config gates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#scheduled-actions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1849,59 +1943,175 @@
 
 
 <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
-<p>A single HTTP server process receives GitHub webhook events, acknowledges within ten seconds, and asynchronously hands each event to a daemon for execution. Every event walks the same path: verify → route → classify → enqueue → daemon claims the job → run the pipeline → finalise the tracking comment.</p>
-<h2 id="request-flow">Request flow<a class="headerlink" href="#request-flow" title="Permanent link">&para;</a></h2>
-<pre class="mermaid"><code>flowchart TD
-    GH["GitHub webhook&lt;br/&gt;POST /api/github/webhooks"]:::entry
-    VERIFY["Verify HMAC-SHA256"]:::guard
-    ACK["200 OK within 10 seconds"]:::ack
-    ROUTE["Handler dispatch&lt;br/&gt;delivery claim + allowlist + concurrency"]:::guard
-    TR["Haiku triage&lt;br/&gt;binary heavy classifier"]:::decide
-    QUEUE["Orchestrator job queue&lt;br/&gt;Valkey list"]:::store
-    SCALE{{"Scale-up decision&lt;br/&gt;heavy OR queue &gt;= threshold&lt;br/&gt;AND no persistent slots&lt;br/&gt;AND cooldown elapsed"}}:::fork
-    SPAWN["K8s API&lt;br/&gt;create bare Pod&lt;br/&gt;DAEMON_EPHEMERAL=true"]:::decide
-    FLEET["Daemon fleet&lt;br/&gt;persistent + ephemeral&lt;br/&gt;WebSocket connections"]:::target
-    PIPE["runPipeline&lt;br/&gt;clone + prompt + Claude Agent SDK"]:::work
-    FIN["Finalise tracking comment&lt;br/&gt;success, error, or cost summary"]:::done
+<p>A single controller process receives GitHub webhook events, acknowledges within ten seconds, and asynchronously dispatches execution. The controller is the control plane and the only component with PostgreSQL, Valkey, GitHub App key, and Kubernetes authority. Repository work runs outside that boundary. Structured <code>workflow-run</code> jobs use one-attempt Kubernetes runner Pods. Legacy and scoped jobs use the shared daemon fleet.</p>
+<h2 id="system-topology">System topology<a class="headerlink" href="#system-topology" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TB
+    GitHub["GitHub&lt;br/&gt;webhooks and API"]:::external
+    Postgres["PostgreSQL&lt;br/&gt;workflows, executions, leases, state"]:::store
+    Valkey["Valkey&lt;br/&gt;delivery claims, queue, processing lists, liveness"]:::store
+    Kubernetes["Kubernetes API&lt;br/&gt;Pod and Secret lifecycle"]:::external
+    Providers["LLM providers&lt;br/&gt;Anthropic and Bedrock"]:::external
 
-    GH --&gt; VERIFY --&gt; ACK
-    ACK -. async .-&gt; ROUTE
-    ROUTE --&gt; TR
-    TR --&gt; QUEUE
-    QUEUE --&gt; SCALE
-    SCALE --&gt;|yes| SPAWN
-    SPAWN --&gt; FLEET
-    SCALE --&gt;|no, or cooldown active| FLEET
-    QUEUE --&gt;|JobOffer| FLEET
-    FLEET --&gt; PIPE
-    PIPE --&gt; FIN
+    subgraph ControllerProcess["Controller process&lt;br/&gt;single supported replica"]
+        HttpIngress["Bun HTTP router&lt;br/&gt;src/app.ts and src/http-router.ts"]:::control
+        WebhookAdmission["Octokit webhook middleware&lt;br/&gt;signature verification"]:::guard
+        EventCallback["Event callback&lt;br/&gt;synchronous surface and owner gates"]:::guard
+        HttpResponse["HTTP 200 or 202&lt;br/&gt;response deadline"]:::guard
+        WebhookContinuation["Async event continuation&lt;br/&gt;delivery claim, repo policy, dispatch"]:::control
+        SchedulerSources["Internal schedulers&lt;br/&gt;ship tickles, proposals, scheduled actions"]:::control
+        DispatchControl["Dispatchers and ship reactor&lt;br/&gt;repo policy, mutex, routing"]:::control
+        DurableCommit["Durable state boundary&lt;br/&gt;workflow and execution transactions"]:::control
+        DispatchOutbox["Workflow dispatch outbox&lt;br/&gt;post-commit publication"]:::control
+        QueueWorker["Queue worker&lt;br/&gt;LMOVE processing lease"]:::control
+        DaemonControl["Daemon control&lt;br/&gt;fleet selection and offer protocol"]:::control
+        RunnerControl["Runner control&lt;br/&gt;admission, capability RPC, token minting"]:::control
+        ResultProjection["Result projection&lt;br/&gt;terminal state, cascade, GitHub output"]:::control
+        Reconciliation["Reconcilers&lt;br/&gt;outbox, liveness, expiry, resource cleanup"]:::recovery
+    end
 
-    classDef entry fill:#0b5cad,stroke:#083e74,color:#ffffff
-    classDef guard fill:#164a3a,stroke:#0d2c24,color:#ffffff
-    classDef ack fill:#2a6f2a,stroke:#1a4d1a,color:#ffffff
-    classDef decide fill:#8a5a00,stroke:#5c3d00,color:#ffffff
-    classDef fork fill:#6a2080,stroke:#451454,color:#ffffff
-    classDef target fill:#114a82,stroke:#0a2f56,color:#ffffff
-    classDef work fill:#4a2e7a,stroke:#311f50,color:#ffffff
-    classDef store fill:#5c3d00,stroke:#3d2900,color:#ffffff
-    classDef done fill:#2a6f2a,stroke:#1a4d1a,color:#ffffff</code></pre>
+    DaemonFleet["Shared daemon fleet&lt;br/&gt;persistent and ephemeral Pods"]:::daemon
+    DaemonExecution["Daemon execution boundary&lt;br/&gt;legacy pipeline or scoped executor"]:::work
+    RunnerPod["One-attempt workflow runner Pod&lt;br/&gt;owned capability Secret"]:::runner
+    RunnerExecution["Runner execution boundary&lt;br/&gt;named workflow handler"]:::work
+
+    GitHub --&gt; HttpIngress --&gt; WebhookAdmission --&gt; EventCallback --&gt; HttpResponse --&gt; GitHub
+    EventCallback -.-&gt;|"start async continuation"| WebhookContinuation --&gt; DispatchControl
+    SchedulerSources --&gt; DispatchControl
+    DispatchControl --&gt; DurableCommit
+    DurableCommit &lt;--&gt; Postgres
+    DurableCommit --&gt; DispatchOutbox --&gt; Valkey
+    Valkey &lt;--&gt; QueueWorker
+    QueueWorker --&gt; DaemonControl
+    QueueWorker --&gt; RunnerControl
+    DaemonControl &lt;--&gt; Postgres
+    DaemonControl &lt;--&gt; Valkey
+    RunnerControl &lt;--&gt; Postgres
+    DaemonControl &lt;--&gt; DaemonFleet
+    DaemonControl -.-&gt;|"scale ephemeral fleet"| Kubernetes
+    Kubernetes --&gt; DaemonFleet
+    RunnerControl --&gt; Kubernetes --&gt; RunnerPod
+    RunnerControl &lt;--&gt; RunnerPod
+    DaemonFleet --&gt; DaemonExecution
+    RunnerPod --&gt; RunnerExecution
+    DaemonExecution --&gt; GitHub
+    RunnerExecution --&gt; GitHub
+    DaemonExecution --&gt; Providers
+    RunnerExecution --&gt; Providers
+    DaemonExecution --&gt; DaemonControl --&gt; ResultProjection
+    RunnerExecution --&gt; RunnerControl --&gt; ResultProjection
+    ResultProjection &lt;--&gt; Postgres
+    ResultProjection --&gt; GitHub
+    Reconciliation &lt;--&gt; Postgres
+    Reconciliation &lt;--&gt; Valkey
+    Reconciliation --&gt; Kubernetes
+
+    classDef external fill:#2c3e50,stroke:#17202a,color:#ffffff
+    classDef guard fill:#6c3483,stroke:#4a235a,color:#ffffff
+    classDef control fill:#1f4e79,stroke:#102a43,color:#ffffff
+    classDef store fill:#7d6608,stroke:#4d3f05,color:#ffffff
+    classDef daemon fill:#1e6b3a,stroke:#0f3d21,color:#ffffff
+    classDef runner fill:#0b7285,stroke:#064653,color:#ffffff
+    classDef work fill:#8e2c62,stroke:#571b3c,color:#ffffff
+    classDef recovery fill:#4d5656,stroke:#2c3333,color:#ffffff</code></pre>
+<p>Solid arrows show the ordinary control or data path. Dotted arrows show asynchronous dispatch or scaling. PostgreSQL remains the durable authority; Valkey provides bounded idempotency, wake-up, queue, and liveness mechanisms.</p>
+<h2 id="request-lifecycle">Request lifecycle<a class="headerlink" href="#request-lifecycle" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TB
+    WebhookDelivery["GitHub webhook delivery"]:::external
+    VerifySignature["Verify HMAC signature&lt;br/&gt;route subscribed event"]:::guard
+    InvokeCallback["Invoke subscribed callback"]:::guard
+    SynchronousGates["Run synchronous gates&lt;br/&gt;event surface, bot sender, allowed owner"]:::guard
+    Acknowledge["Return HTTP 200 or 202&lt;br/&gt;within ten seconds"]:::guard
+    AsyncContinuation["Start fire-and-forget continuation"]:::control
+    DeliveryClaim["Apply delivery claim on guarded paths&lt;br/&gt;before durable or external work"]:::guard
+    RouteKind{"Dispatch path"}:::decision
+    ShipReactor["Ship reactor&lt;br/&gt;wake durable continuation"]:::control
+    WorkflowCommit["PostgreSQL transaction&lt;br/&gt;workflow_runs plus executions"]:::store
+    DaemonReceipt["Create execution receipt&lt;br/&gt;legacy or scoped payload"]:::store
+    LegacyTriage["Legacy triage and scaler&lt;br/&gt;heavy or queue overflow"]:::control
+    PublishOutbox["Publish committed workflow&lt;br/&gt;retryable dispatch outbox"]:::control
+    SharedQueue["Valkey queue:jobs"]:::store
+    ProcessingLease["Queue worker LMOVE&lt;br/&gt;instance processing list"]:::control
+    QueuedKind{"Queued job kind"}:::decision
+
+    RunnerClaim["Atomic PostgreSQL admission&lt;br/&gt;capacity, attempt, absolute deadline"]:::control
+    RunnerResources["Create bare Pod&lt;br/&gt;read UID, create owned Secret"]:::control
+    RunnerRegister["Capability-scoped WSS registration&lt;br/&gt;deliver repository token once"]:::guard
+    RunnerWork["Named workflow handler&lt;br/&gt;isolated checkout, agent and MCP as required"]:::runner
+    RunnerResult["workflow-runner:result&lt;br/&gt;validated terminal message"]:::runner
+    RunnerTerminal["Persist attempt and execution result&lt;br/&gt;before result ACK"]:::store
+    RunnerCleanup["Delete exact Pod and Secret&lt;br/&gt;with UID preconditions"]:::recovery
+
+    DaemonSelect["Select active daemon&lt;br/&gt;capabilities, draining state, load"]:::control
+    DaemonOffer["job:offer or scoped-job:offer&lt;br/&gt;offer timeout and retry"]:::control
+    DaemonAccept["job:accept then job:payload&lt;br/&gt;installation token and context"]:::guard
+    DaemonWork["Legacy pipeline or scoped executor&lt;br/&gt;unique checkout, agent and MCP as required"]:::daemon
+    DaemonResult["job:result or scoped-job:completion&lt;br/&gt;validated completion message"]:::daemon
+    DaemonTerminal["Fence daemon ownership&lt;br/&gt;finalize execution receipt"]:::store
+
+    Projection["Reconcile terminal state&lt;br/&gt;cascade, locks, tracking projection"]:::control
+    GitHubEffects["GitHub API effects&lt;br/&gt;comments, reviews, commits, pull requests"]:::external
+    RecoveryLoop["Periodic recovery&lt;br/&gt;outbox, lease expiry, disconnected daemons"]:::recovery
+
+    WebhookDelivery --&gt; VerifySignature --&gt; InvokeCallback --&gt; SynchronousGates
+    SynchronousGates --&gt; Acknowledge
+    SynchronousGates -.-&gt;|"return void and continue asynchronously"| AsyncContinuation
+    AsyncContinuation --&gt; DeliveryClaim --&gt; RouteKind
+    RouteKind --&gt;|"ship wake"| ShipReactor
+    ShipReactor --&gt; WorkflowCommit
+    RouteKind --&gt;|"structured workflow"| WorkflowCommit
+    RouteKind --&gt;|"legacy request"| LegacyTriage
+    LegacyTriage --&gt; DaemonReceipt
+    RouteKind --&gt;|"scoped or scheduled job"| DaemonReceipt
+    WorkflowCommit --&gt; PublishOutbox --&gt; SharedQueue
+    DaemonReceipt --&gt; SharedQueue
+    SharedQueue --&gt; ProcessingLease --&gt; QueuedKind
+
+    QueuedKind --&gt;|"workflow-run"| RunnerClaim
+    RunnerClaim --&gt; RunnerResources --&gt; RunnerRegister --&gt; RunnerWork
+    RunnerWork --&gt; RunnerResult --&gt; RunnerTerminal --&gt; Projection
+    RunnerTerminal --&gt; RunnerCleanup
+
+    QueuedKind --&gt;|"legacy or scoped"| DaemonSelect
+    DaemonSelect --&gt; DaemonOffer --&gt; DaemonAccept --&gt; DaemonWork
+    DaemonWork --&gt; DaemonResult --&gt; DaemonTerminal --&gt; Projection
+
+    RunnerWork --&gt; GitHubEffects
+    DaemonWork --&gt; GitHubEffects
+    Projection --&gt; GitHubEffects
+    RecoveryLoop -.-&gt;|"republish stale outbox"| SharedQueue
+    RecoveryLoop -.-&gt;|"expire fenced attempt"| RunnerTerminal
+    RecoveryLoop -.-&gt;|"fail orphaned execution"| DaemonTerminal
+    RecoveryLoop -.-&gt;|"retry owned cleanup"| RunnerCleanup
+
+    classDef external fill:#2c3e50,stroke:#17202a,color:#ffffff
+    classDef guard fill:#6c3483,stroke:#4a235a,color:#ffffff
+    classDef control fill:#1f4e79,stroke:#102a43,color:#ffffff
+    classDef store fill:#7d6608,stroke:#4d3f05,color:#ffffff
+    classDef daemon fill:#1e6b3a,stroke:#0f3d21,color:#ffffff
+    classDef runner fill:#0b7285,stroke:#064653,color:#ffffff
+    classDef decision fill:#9c640c,stroke:#633f08,color:#ffffff
+    classDef recovery fill:#4d5656,stroke:#2c3333,color:#ffffff</code></pre>
+<p>The webhook middleware verifies the signature, invokes the subscribed callback, and waits only for the callback's return. Event handlers run their cheap synchronous gates before returning <code>void</code>, then start a fire-and-forget continuation for delivery claims and dispatch. The HTTP acknowledgement and that continuation can overlap. Neither branch waits for repository execution.</p>
+<p>The two worker rails share the queue and durable execution accounting, but not execution authority or ordinary GitHub output ownership. A structured runner must transfer recovery authority to its PostgreSQL attempt before the processing-list item is released; the controller then stores and projects its terminal result. A daemon performs its GitHub effects directly and remains tied to its execution receipt and exact daemon incarnation through the offer, payload, and completion sequence.</p>
 <h2 id="key-concepts">Key concepts<a class="headerlink" href="#key-concepts" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Async processing.</strong> The webhook handler responds within ten seconds, so the side-effecting <code>events/*</code> handlers fire their dispatch with fire-and-forget semantics after the 200 OK is queued. Every box downstream of <code>ACK</code> runs after the HTTP response is on the wire. (<code>router.ts processRequest</code> is the equivalent path for the dev-only <code>/api/test/webhook</code> endpoint, not production.)</li>
-<li><strong>Webhook delivery idempotency (issue #202).</strong> GitHub is at-least-once: a delivery (auto-retry or operator redelivery) replays with the same <code>X-GitHub-Delivery</code> for up to 3 days. The four side-effecting handlers (<code>events/issue-comment.ts</code>, <code>events/review-comment.ts</code>, the label branches of <code>events/issues.ts</code> + <code>events/pull-request.ts</code>) call <code>claimDelivery(deliveryId)</code> (<code>src/webhook/idempotency.ts</code>) at the top of their dispatch path, before any LLM call, <code>workflow_runs</code> insert, or GitHub write. It is a Valkey <code>SET key 1 NX EX 259200</code> claim: <code>true</code> exactly once per delivery, <code>false</code> (and an early return) on a redelivery. It is <strong>fail-open</strong>, when Valkey is unconfigured or disconnected (gated on <code>isValkeyHealthy()</code>) it returns <code>true</code>, degrading to at-least-once rather than dropping or blocking webhooks. <code>events/review.ts</code> is exempt (idempotent reactor wake only). The durable backstop behind the best-effort Valkey layer is the <code>idx_workflow_runs_inflight</code> partial-unique index: the dispatcher rejects a second in-flight run for the same workflow+target even when the Valkey claim was skipped. The legacy in-memory <code>Map</code> + <code>isAlreadyProcessed</code> tracking-comment scan was retired in issue #211 (it only ever guarded the dev-test-only <code>router.ts processRequest</code> path, which production handlers bypass). <code>DATABASE_URL</code> is required to persist execution / dispatch history and the in-flight guard across restarts.</li>
-<li><strong>One request, one clone.</strong> Each delivery clones the repo into a unique temp directory under <code>CLONE_BASE_DIR</code> <strong>on the daemon host</strong>. Claude operates on local files via <code>cwd</code>. On PR events the checkout supplementally fetches <code>origin/&lt;baseBranch&gt;</code> (when it differs from the head ref) so the agent's <code>git diff origin/&lt;baseBranch&gt;...HEAD</code> and <code>git rebase origin/&lt;baseBranch&gt;</code> directives resolve first try. A sibling <code>${workDir}-artifacts</code> directory is created outside the checkout and exposed to the agent as <code>BOT_ARTIFACT_DIR</code>: workflow summary files (IMPLEMENT.md / REVIEW.md / RESOLVE.md) are written there so they can never be picked up by a <code>git add</code> inside the clone. Both directories are removed in the pipeline's <code>finally</code> block regardless of outcome.</li>
-<li><strong>GitHub credential resolution.</strong> <code>src/core/github-token.ts:resolveGithubToken()</code> is the single source of the GitHub credential the daemon uses. Default is an App installation token minted just-in-time from the cached <code>App</code> singleton in <code>src/orchestrator/connection-handler.ts</code>. When <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> is set, the helper short-circuits and returns the PAT instead, API/git authentication runs as the PAT owner. Commit author/committer metadata is <strong>not</strong> affected; <code>src/core/checkout.ts</code> hard-pins git <code>user.name</code>/<code>user.email</code> to <code>chrisleekr-bot[bot]</code> so commit objects still carry the bot identity. The git credential helper, executor <code>GH_TOKEN</code>/<code>GITHUB_TOKEN</code> env vars, and MCP server env all consume the resolved string without caring about its source.</li>
-<li><strong>The webhook server never runs the pipeline.</strong> Only daemons execute <code>runPipeline</code>. The webhook server is the orchestrator: it enqueues jobs and optionally spawns ephemeral daemons.</li>
-<li><strong>Every orchestrator runs a queue worker.</strong> <code>src/orchestrator/queue-worker.ts</code> polls <code>queue:jobs</code> via <code>LMOVE</code> into a per-instance processing list (<code>queue:processing:{instanceId}</code>), offers the job to a locally-connected daemon, and atomically re-queues it to the head when no local daemon can take it. Multi-orchestrator HA: <code>LMOVE</code> grants exactly-once claim across instances; the offer/accept round-trip stays in-process. Crash recovery is handled by each orchestrator draining its own processing list at startup, plus a cross-instance reaper (<code>src/orchestrator/valkey-cleanup.ts</code>) draining processing lists owned by instances whose <code>orchestrator:{id}:alive</code> liveness key has expired.</li>
+<li><strong>Async processing.</strong> The webhook callback runs synchronous event-surface and owner-authorization gates, starts its side-effecting continuation without awaiting it, and returns so the middleware can acknowledge within ten seconds. Delivery claims and dispatch run in that continuation and can overlap the HTTP response. (<code>router.ts processRequest</code> is the equivalent path for the dev-only <code>/api/test/webhook</code> endpoint, not production.)</li>
+<li><strong>Webhook delivery idempotency (issue #202).</strong> GitHub is at-least-once: a delivery (auto-retry or operator redelivery) replays with the same <code>X-GitHub-Delivery</code> for up to 3 days. The four side-effecting handlers (<code>events/issue-comment.ts</code>, <code>events/review-comment.ts</code>, the label branches of <code>events/issues.ts</code> + <code>events/pull-request.ts</code>) call <code>claimDelivery(deliveryId)</code> (<code>src/webhook/idempotency.ts</code>) at the top of their dispatch path, before any LLM call, <code>workflow_runs</code> insert, or GitHub write. It is a Valkey <code>SET key 1 NX EX 259200</code> claim: <code>true</code> exactly once per delivery, <code>false</code> (and an early return) on a redelivery. It is <strong>fail-open</strong>, when Valkey is unconfigured or disconnected (gated on <code>isValkeyHealthy()</code>) it returns <code>true</code>, degrading to at-least-once rather than dropping or blocking webhooks. <code>events/review.ts</code> is exempt (idempotent reactor wake only). The durable backstop behind the best-effort Valkey layer is the <code>idx_workflow_runs_inflight</code> partial-unique index: the dispatcher rejects a second in-flight run for the same workflow+target even when the Valkey claim was skipped. The legacy in-memory <code>Map</code> + <code>isAlreadyProcessed</code> tracking-comment scan was retired in issue #211 (it only ever guarded the dev-test-only <code>router.ts processRequest</code> path, which production handlers bypass). <code>DATABASE_URL</code> is required to persist execution / dispatch history and the in-flight guard across restarts. Two branches claim a <strong>suffixed</strong> key rather than the bare delivery id, because <code>claimDelivery</code> is one-shot per key and <code>pull_request.synchronize</code> fans out to more than one consumer: <code>`${deliveryId}:config-check`</code> for the PR config validator and <code>`${deliveryId}:auto-review`</code> for the auto-review dispatch. A shared key would let whichever branch ran first starve the other.</li>
+<li><strong>One request, one clone.</strong> Each execution clones the repo into a unique temp directory under <code>CLONE_BASE_DIR</code>, on a one-attempt runner Pod for structured workflows and on a shared daemon for legacy or scoped jobs. Claude operates on local files via <code>cwd</code>. A sibling <code>${workDir}-artifacts</code> directory holds workflow summaries outside the checkout. Both directories are removed in the pipeline's <code>finally</code> block.</li>
+<li><strong>GitHub credentials are repository-scoped at the runner boundary.</strong> In App mode the controller mints an installation token restricted to the target repository and sends only that token to the runner. The runner never receives the App private key. Structured workflows fail closed when <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> is configured because a PAT cannot be narrowed to one repository by the controller. Legacy and scoped shared-daemon jobs retain the existing token-resolution behavior.</li>
+<li><strong>Auto-review on push.</strong> <code>pull_request.synchronize</code> can dispatch <code>review</code> with no label and no mention, gated on two keys that must agree: the server's <code>AUTO_REVIEW_USERS</code> allowlist (which logins may trigger it) and the repo's <code>workflows.review.auto</code> (whether this repo wants it). The env half exists because auto-review <em>widens</em> what the bot does, and the <code>.github-app.yaml</code> <code>triggers:</code> block is narrowing-only by contract; the repo half exists because the env allowlist is server-wide. It matches the authenticated <strong>pusher</strong> (<code>payload.sender.login</code>), deliberately not the commit author the ship reactor resolves alongside it: the author is derived from a settable commit email, and this is an authorization decision. Three further guards keep it from feeding itself, all silent: our own pushes are skipped (<code>resolve</code> pushes a commit per fix), pushes whose diff fingerprint is unchanged are skipped (a rebase), and a review already in flight wins via <code>idx_workflow_runs_inflight</code> rather than queueing. Dispatch goes through <code>dispatchWorkflowByName({ auto: true })</code>, which suppresses every refusal comment and the <code>bot:*</code> label mutex, so an auto-trigger never writes to the PR except through the review itself.</li>
+<li><strong>The controller never runs repository code.</strong> Shared daemons execute legacy and scoped jobs. Structured <code>workflow-run</code> jobs execute in one-attempt Pods. The controller owns PostgreSQL, Valkey, GitHub App keys, runner admission, Kubernetes resources, and result projection.</li>
+<li><strong>The supported topology is one controller replica.</strong> <code>src/orchestrator/queue-worker.ts</code> leases queue items with <code>LMOVE</code>. Workflow admission and recovery authority are committed in PostgreSQL before the processing-list item is released. Startup recovers this instance's list, and every liveness-reaper pass returns items from lists whose 60-second orchestrator heartbeat has expired. The repository does not implement distributed controller session ownership or a distributed admission semaphore.</li>
+<li><strong>The daemon image enforces a Linux parent-process boundary.</strong> A compiled preload guard sets <code>PR_SET_DUMPABLE=0</code> before Bun application code. Shared daemons and workflow runners fail startup unless an empty-environment same-UID child receives <code>EACCES</code> or <code>EPERM</code> while reading the parent's <code>/proc/&lt;pid&gt;/environ</code>. The GitHub release workflow runs this exact probe against every pushed daemon image digest on both supported architectures. The GitLab main-branch publisher loads its amd64 image locally, runs the same probe, and pushes only after it passes.</li>
 <li><strong>MCP servers.</strong> Tracking-comment updates, inline PR reviews, scoped review-thread resolves, daemon-capability reports, repo-memory, and (optionally) Context7 library docs are exposed as MCP servers the agent can call. Git changes are made via the Bash tool against the cloned repo, not through a dedicated MCP server.</li>
 <li><strong>Destructive Bash is runtime-gated.</strong> The agent runs under <code>bypassPermissions</code> with the Bash tool allowed, so prompt-only bans alone do not stop a prompt-injected force-push or merge. A <code>PreToolUse</code> hook (<code>src/core/hooks/forbidden-bash.ts</code>, wired in <code>src/core/executor.ts</code>) denies any Bash command matching the shared <code>FORBIDDEN</code> set (force-push, <code>git reset --hard</code>, branch delete, history rewrite, <code>gh pr merge</code>, GraphQL merge mutations) before it executes. The pattern set is shared with the static <code>check:no-destructive</code> CI guard via <code>src/utils/forbidden-bash.ts</code>, so build-time and runtime gates cannot drift. A deny emits an <code>agent.hook.denied</code> log line.</li>
 </ul>
 <h2 id="dispatch-flow">Dispatch flow<a class="headerlink" href="#dispatch-flow" title="Permanent link">&para;</a></h2>
-<p>Dispatch collapsed to a single target, <code>daemon</code>, in migration <code>004_collapse_dispatch_to_daemon.sql</code>. Every job is claimed by some daemon in the fleet over WebSocket. The router decides only the <strong>reason</strong> the job lands there and whether to spawn an ephemeral daemon.</p>
-<h3 id="single-target-four-reasons">Single target, four reasons<a class="headerlink" href="#single-target-four-reasons" title="Permanent link">&para;</a></h3>
+<p>Migration <code>017_workflow_run_leases.sql</code> records the protocol that actually owns each execution. The queue worker branches before daemon selection: <code>workflow-run</code> items go to an isolated runner, while legacy and scoped items retain the shared-daemon offer protocol.</p>
+<h3 id="two-targets-five-reasons">Two targets, five reasons<a class="headerlink" href="#two-targets-five-reasons" title="Permanent link">&para;</a></h3>
 <p>Canonical source: <code>src/shared/dispatch-types.ts</code>.</p>
 <ul>
-<li><code>DispatchTarget</code> is <code>"daemon"</code> (the shared fleet) or <code>"workflow-runner"</code> (a one-attempt isolated Pod per structured-workflow attempt).</li>
+<li><code>DispatchTarget</code> = <code>"daemon"</code> for shared jobs or <code>"workflow-runner"</code> for structured workflows.</li>
 <li><code>DispatchReason</code> is one of:</li>
 </ul>
 <table>
@@ -1930,7 +2140,7 @@
 </tr>
 <tr>
 <td><code>workflow-runner</code></td>
-<td>A structured workflow claimed by the controller, run in its own one-attempt Pod rather than on the fleet.</td>
+<td>A structured workflow was committed for one isolated runner attempt.</td>
 </tr>
 </tbody>
 </table>
@@ -1943,8 +2153,24 @@
 <li><strong>Spawn.</strong> When both a trigger fires and cooldown has elapsed, the orchestrator calls the K8s API to create a bare Pod with <code>DAEMON_EPHEMERAL=true</code>. Only a true K8s API failure yields <code>ephemeral-spawn-failed</code>.</li>
 </ol>
 <p>The newly-spawned ephemeral daemon connects via WebSocket, registers with <code>isEphemeral: true</code>, claims the job, runs it, then drains and exits after <code>EPHEMERAL_DAEMON_IDLE_TIMEOUT_MS</code>.</p>
+<p>Every shared-daemon boot uses a new UUID. On socket close, the controller immediately removes that socket from its local connection, daemon-info, heartbeat, and dispatch state so it cannot receive more work. It then starts a serialized asynchronous cleanup, and same-ID registration waits for that cleanup before becoming current. One PostgreSQL transaction locks the exact daemon row, marks it inactive, fails its attempt-less workflow rows and queued/offered/running execution receipts, creates pending public-failure receipts, and releases matching scheduled-action locks. The controller projects those receipts immediately and retries missed projections from PostgreSQL, then removes the best-effort Valkey registry entry. The liveness reaper applies the same exact-incarnation database cleanup if no close callback arrives, including direct or scoped execution receipts that have no <code>workflow_runs</code> row. Controller shutdown stops new connections and drains pending registration and disconnect work before closing the database.</p>
+<h2 id="isolated-workflow-runners">Isolated workflow runners<a class="headerlink" href="#isolated-workflow-runners" title="Permanent link">&para;</a></h2>
+<p>Workflow producers commit the <code>workflow_runs</code> row and matching <code>executions</code> row in one PostgreSQL transaction. Queue publication happens after commit. <code>dispatch_enqueued_at</code> is the last successful wake-up reconciliation time, not proof that Valkey retained the item. A null or stale timestamp makes the periodic reaper reconstruct the byte-stable job from PostgreSQL and atomically ensure that one matching copy exists in either the shared queue or this controller's processing list. Publication failures increment <code>dispatch_retry_count</code>. Exceeding <code>JOB_MAX_RETRIES</code> or <code>WORKFLOW_DISPATCH_TIMEOUT_MS</code> fails the queued workflow and execution, releases the target lock, and stores a retryable <code>dispatch-expired</code> public projection. Capacity deferral moves the queue bytes unchanged and does not consume that publication retry budget. If a controller crashes after <code>LMOVE</code>, another live controller returns the processing-list item to the shared queue after the old controller's heartbeat expires.</p>
+<p>The queue worker admits a <code>workflow-run</code> only when the database capacity query and exact attempt claim succeed in the same transaction. The attempt ID is the row's <code>dispatch_generation_id</code>. A duplicate queue item either finds that same live attempt or is consumed as stale. Capacity deferral returns the exact processing-list item to the queue without increasing <code>retryCount</code>.</p>
+<p>The controller validates the provider boundary and digest-pinned <code>@sha256:&lt;digest&gt;</code> image, creates one bare Pod, reads its UID, then creates the per-attempt Secret as an owned dependent of that exact Pod. The Pod uses <code>restartPolicy: Never</code> because the repository token payload is delivered at most once. A process failure therefore becomes a terminal Pod failure for the controller to reconcile instead of restarting without credentials. A 10 GiB <code>emptyDir</code> and exact ephemeral-storage request/limit provide scheduling and eviction ceilings; a fixed node selector and taint toleration contain node-disk exhaustion to the dedicated runner pool. The runner Secret contains only an expiring HMAC capability derived from a controller-only root for <code>(runId, attemptId, expiresAtMs)</code>. The Pod references exactly one complete provider credential chain from the separately managed <code>workflow-runner-secrets</code> Secret. It never imports that Secret with <code>envFrom</code>.</p>
+<p>The runner receives:</p>
+<ul>
+<li>the provider credential selected by the deployment;</li>
+<li>a target-repository GitHub App installation token and its authoritative expiry;</li>
+<li>bounded repository memory, review learnings, policy, and handler-specific prior state;</li>
+<li>the deadline-bound HMAC-scoped WSS controller capability.</li>
+</ul>
+<p>It does not receive PostgreSQL, Valkey, Kubernetes credentials, the GitHub App private key, webhook secrets, a fleet-wide daemon token, or a global GitHub token. PAT mode fails closed for workflow runners. Startup also fails when the shared IPv4, AWS IPv6, or Google Cloud IPv6 metadata endpoint answers. Runner commands and results have an exact-value filter in the runner and deterministic plus encoded-secret scanning in the controller before an effect or durable write.</p>
+<p>The attempt claim writes one immutable 4,200-second PostgreSQL deadline. Heartbeat RPC can renew the lease only up to that deadline, and registration, commands, token minting, and result writes require both the lease and deadline to remain active. The runner aborts at the earlier of the database deadline or five minutes before its installation token expires. Loss of renewal also aborts the Agent SDK query and closes it explicitly. Payload preparation owns the repository token until the registered frame succeeds and attempts best-effort revocation if preparation or delivery fails. The runner attempts best-effort revocation after its final repository operation and before sending an ordinary retryable result. Controller-only reconnect, notification, and result-projection paths independently attempt revocation through GitHub's <a href="https://docs.github.com/en/rest/apps/installations#revoke-an-installation-access-token">token self-revocation endpoint</a>, with a ten-second API timeout. Revocation failure does not block terminal result handling. The token is deliberately not persisted, so a failed revocation, process crash, or node loss can leave its repository-scoped authority live until GitHub's authoritative expiry. Guaranteed revocation would require retaining the exact token and is outside this no-durable-token boundary. The controller stores a terminal result before applying retryable projections and before ACK. A reconnect processes the first stored result rather than rescanning retry bytes. Once both execution rows are terminal, resource reconciliation requests deletion of the exact Pod and Secret with UID preconditions independently of projection success. It records cleanup when Kubernetes accepts the deletes or the resources are already absent, preventing terminating Pods from starving later cleanup batches. Lease or absolute-deadline expiry atomically fails the attempt, its execution receipt, its running composite parent, and any matching scheduled-action lock before Valkey liveness is consulted.</p>
+<p>This is not exactly-once execution. A GitHub API request or git push can complete before the runner is fenced and can repeat after a controller crash during projection. Operators must inspect repository state before retrying an expired or interrupted attempt.</p>
 <h2 id="websocket-protocol">WebSocket protocol<a class="headerlink" href="#websocket-protocol" title="Permanent link">&para;</a></h2>
 <p>Schema in <code>src/shared/ws-messages.ts</code> (Zod discriminated union). Validation failures close the WebSocket with <code>POLICY_VIOLATION</code>. Every message has an envelope with <code>id</code> (UUID) and <code>timestamp</code> (ms).</p>
+<p>The daemon protocol is v2. Message discriminants follow <code>subject:action</code>, including <code>scoped-job:offer</code> and <code>scoped-job:completion</code>. Registration compares the peer's major version with <code>PROTOCOL_VERSION</code> before admitting work. During a major-version rollout, deploy the controller first and update the daemon image in the same rollout. The v2 controller gives a v1 daemon an urgent <code>daemon:update-required</code> and allows five seconds for acknowledgement without admitting work. An acknowledged socket stays open while the daemon drains, then closes from the daemon side; the controller force-closes it only after the configured drain timeout plus a short scheduling grace. An unacknowledged or otherwise incompatible peer closes with code <code>4003</code>, and a v2 daemon treats that close as terminal instead of reconnecting. The update message initiates graceful shutdown; it does not install the new daemon binary.</p>
 <h3 id="server-daemon">Server → Daemon<a class="headerlink" href="#server-daemon" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -1964,11 +2190,11 @@
 </tr>
 <tr>
 <td><code>job:offer</code></td>
-<td>Offer a workflow-run job.</td>
+<td>Offer a legacy shared-daemon job.</td>
 </tr>
 <tr>
-<td><code>scoped-job-offer</code></td>
-<td>Offer a scoped job (<code>scoped-rebase</code>, <code>scoped-fix-thread</code>, <code>scoped-explain-thread</code>, <code>scoped-open-pr</code>).</td>
+<td><code>scoped-job:offer</code></td>
+<td>Offer a scoped job (<code>scoped-rebase</code>, <code>scoped-fix-thread</code>, <code>scoped-open-pr</code>, <code>scheduled-action</code>).</td>
 </tr>
 <tr>
 <td><code>job:payload</code></td>
@@ -1980,7 +2206,7 @@
 </tr>
 <tr>
 <td><code>daemon:update-required</code></td>
-<td>Daemon version mismatch; force exit.</td>
+<td>Request graceful daemon shutdown after a version mismatch.</td>
 </tr>
 </tbody>
 </table>
@@ -2015,7 +2241,7 @@
 </tr>
 <tr>
 <td><code>job:result</code></td>
-<td>Workflow-run completion with <code>ExecutionResult</code> fields.</td>
+<td>Legacy completion with <code>ExecutionResult</code> fields.</td>
 </tr>
 <tr>
 <td><code>scoped-job:completion</code></td>
@@ -2035,8 +2261,9 @@
 </tr>
 </tbody>
 </table>
+<p>The isolated runner uses a separate schema in <code>src/shared/workflow-runner-messages.ts</code> at <code>/ws/workflow-runner/&lt;runId&gt;/&lt;attemptId&gt;</code>. Its messages are register, heartbeat, bounded command, terminal result, and their acknowledgements. HMAC authentication binds every connection to the path identity. Initial registration sets <code>needsJob: true</code>; the controller records one durable payload receipt before sending bounded input and the repository token. Transport reconnects set <code>needsJob: false</code>, receive no job or credential, and resume retained command or result messages against the same database attempt.</p>
 <h2 id="pr-shepherding-bridge">PR shepherding bridge<a class="headerlink" href="#pr-shepherding-bridge" title="Permanent link">&para;</a></h2>
-<p>The <code>bot:ship</code> lifecycle does <strong>not</strong> own a separate daemon-execution path. It bridges onto the existing <code>workflow_runs</code> pipeline so a single executor surface clones, runs the Agent SDK, and pushes, no parallel implementation to drift between.</p>
+<p>The <code>bot:ship</code> lifecycle does <strong>not</strong> own a second execution path. It bridges onto the existing <code>workflow_runs</code> pipeline, whose structured attempts run in isolated workflow-runner Pods. The legacy direct and scoped job rails remain on shared daemons.</p>
 <pre class="mermaid"><code>flowchart LR
     Trigger["bot:ship trigger&lt;br/&gt;literal / NL / label"]:::input
     SR["session-runner.ts"]:::core
@@ -2046,9 +2273,9 @@
     WR[("workflow_runs row&lt;br/&gt;state.shipIntentId")]:::store
     Q[("queue:jobs&lt;br/&gt;kind=workflow-run")]:::store
 
-    Daemon["Daemon process"]:::work
+    Runner["One-attempt runner Pod"]:::work
     Exec["src/core/pipeline.ts"]:::work
-    Done["markSucceeded(runId)"]:::work
+    Done["Store result and terminal state"]:::work
     Cascade["orchestrator.onStepComplete&lt;br/&gt;maybeEarlyWakeShipIntent"]:::core
     Tickle[("ship:tickle ZSET&lt;br/&gt;score=0")]:::store
 
@@ -2060,7 +2287,7 @@
     SR --&gt; Cont
     SR --&gt; Iter --&gt; WR
     Iter --&gt; Q
-    Q --&gt; Daemon --&gt; Exec --&gt; Done --&gt; Cascade --&gt; Tickle
+    Q --&gt; Runner --&gt; Exec --&gt; Done --&gt; Cascade --&gt; Tickle
     Timer --&gt; Due --&gt; Resume
     Tickle --&gt; Due
     Resume -. next iteration .-&gt; Iter
@@ -2069,9 +2296,9 @@
     classDef core fill:#8957e5,stroke:#4c2889,color:#ffffff
     classDef work fill:#7a3b1f,stroke:#3d1d0e,color:#ffffff
     classDef store fill:#0e8a16,stroke:#063d09,color:#ffffff</code></pre>
-<p>The reactor (<code>fanOut</code>) writes <code>wake_at = now()</code> and <code>ZADD ship:tickle 0 &lt;intent_id&gt;</code> so the next cron tick (typically under 30 s) re-enters the runner. This keeps daemon slots free between iterations and gives the bot crash-restart safety: on boot, <code>tickle-scheduler</code> reconciles missed wakes from Postgres into Valkey before the periodic timer's first tick.</p>
+<p>The reactor (<code>fanOut</code>) writes <code>wake_at = now()</code> and <code>ZADD ship:tickle 0 &lt;intent_id&gt;</code> so the next cron tick (typically under 30 s) re-enters the session runner. No workflow runner Pod is held between iterations. On boot, <code>tickle-scheduler</code> reconciles missed wakes from Postgres into Valkey before the periodic timer's first tick.</p>
 <h2 id="systemuser-trust-boundary">System/user trust boundary<a class="headerlink" href="#systemuser-trust-boundary" title="Permanent link">&para;</a></h2>
-<p>The agent executor (<code>src/core/executor.ts:208</code>) supports two prompt-layout strategies, selected by <code>PROMPT_CACHE_LAYOUT</code>. The legacy layout passes a single user-role string and the unmodified <code>claude_code</code> preset systemPrompt: simple, but the preset embeds dynamic sections (<code>cwd</code>, platform, shell, OS) that vary per delivery, so the prompt cache key churns and every job pays the 1-hour TTL cache-write surcharge with zero compensating reads.</p>
+<p>The agent executor (<code>src/core/executor.ts:231#useCacheableLayout</code>) supports two prompt-layout strategies, selected by <code>PROMPT_CACHE_LAYOUT</code>. The legacy layout passes a single user-role string and the unmodified <code>claude_code</code> preset systemPrompt: simple, but the preset embeds dynamic sections (<code>cwd</code>, platform, shell, OS) that vary per delivery, so the prompt cache key churns and every job pays the 1-hour TTL cache-write surcharge with zero compensating reads.</p>
 <p>The <code>cacheable</code> layout splits the prompt by trust:</p>
 <ul>
 <li><strong>Trusted scaffolding</strong> (<code>security_directive</code>, <code>freshness_directive</code>, workflow steps, commit / CAPABILITIES boilerplate) → <code>systemPrompt.append</code>. Built by <code>buildPromptParts()</code> in <code>src/core/prompt-builder.ts:481#buildPromptParts</code>. Byte-identical across jobs of the same shape, so the system-prompt prefix becomes a stable cache key.</li>
@@ -2110,6 +2337,131 @@
     classDef cache fill:#0b5cad,stroke:#083e74,color:#ffffff</code></pre>
 <p>The per-call nonce on <code>&lt;untrusted_*&gt;</code> tags lives only in the user message; the append references those tags by literal <code>&lt;nonce&gt;</code> placeholder. The attacker-unpredictable suffix stays intact (so injected user data cannot close the spotlight block with a fixed string) while the append remains byte-identical across calls. The trust boundary is now structural rather than positional: append = trusted, user message = data.</p>
 <p>Three handlers ship the split today: the main pipeline (<code>src/core/pipeline.ts</code>) reads <code>config.promptCacheLayout</code> and conditionally threads <code>buildPromptParts()</code> output through; <code>src/workflows/handlers/triage.ts</code> and <code>src/workflows/handlers/plan.ts</code> do the same with their handler-specific builders. The executor's completion log surfaces <code>cacheReadInputTokens</code>, <code>cacheCreationInputTokens</code>, and <code>promptCacheLayout</code> so operators can verify hits before deciding to roll out further. See <a href="../../operate/configuration/#prompt-cache-layout"><code>../operate/configuration.md</code></a> for the rollout playbook.</p>
+<h2 id="per-repo-config-gates">Per-repo config gates<a class="headerlink" href="#per-repo-config-gates" title="Permanent link">&para;</a></h2>
+<p>A repo's <code>.github-app.yaml</code> (see <a href="../../use/repo-config/">Repo configuration</a>) is
+read from the <strong>default branch only</strong>: <code>src/repo-config/fetcher.ts:126#fetchRepoConfig</code>
+calls <code>repos.getContent</code> with no <code>ref</code>, so a config edit inside a pull request is
+inert for that pull request. <code>test/repo-config/fetcher.test.ts</code> asserts the call
+carries no <code>ref</code>, so the invariant cannot regress silently.</p>
+<p>Exactly one module reads a head-ref copy, and it applies nothing:
+<code>src/repo-config/pr-check.ts:319#runPrConfigCheck</code> validates the PR's own copy
+purely to post an authoring verdict comment. It imports neither
+<code>fetchRepoConfig</code> nor <code>loadRepoPolicy</code>, so the read cannot populate the fetcher
+caches or reach the applied policy; <code>test/repo-config/pr-check.test.ts</code> asserts
+the absence of both symbols in that source file. Threading an optional <code>ref</code>
+through the fetcher instead was rejected for exactly this reason: it would put
+an attacker-chosen commit's config one flag-flip away from the policy the bot
+enforces.</p>
+<p>That verdict comment is still a GitHub write, so its handler
+(<code>src/webhook/events/pull-request.ts:138#handlePullRequestConfigCheck</code>) honours
+the repo-wide <code>enabled: false</code> master switch via <code>loadRepoPolicy</code> before calling
+into <code>pr-check.ts</code>. Only that switch, never the full Gate-1 rule set: the passive
+<code>triggers.*</code> filters exist to stop the bot <em>acting</em> on a pull request, and
+withholding authoring feedback because the config PR is a draft or its title
+matches <code>ignore_title_keywords</code> is the opposite of what an author wants. Same
+scope the scheduler applies to its unattended runs. The lookup lives in the
+handler rather than in <code>pr-check.ts</code> so that file stays structurally unable to
+reach the applied-policy path.</p>
+<p>The config is consumed at two distinct points.</p>
+<p><strong>Gate 1, pre-dispatch.</strong> Decides <em>whether the bot acts at all</em>. It runs before
+any <code>workflow_runs</code> row, label mutex, queue job, or tracking comment exists, so a
+blocked trigger leaves nothing behind but a log line.
+<code>src/repo-config/gate.ts:82#checkRepoGate</code> evaluates seven rules in order and
+returns the first that blocks. Three rules (repo disabled, workflow disabled,
+sender not in <code>allowed_users</code>) set <code>explain: true</code> and earn a one-line refusal
+comment; the four passive <code>triggers.*</code> filters set <code>explain: false</code> and stay
+silent, because a filter configured to keep the bot quiet must stay quiet.</p>
+<p>The order is load-bearing in one place: <code>ignore_authors</code> is checked <em>before</em>
+<code>allowed_users</code>. A bot login is normally in the former and absent from the
+latter, so the other order would answer every Renovate event with a public
+refusal comment, which is exactly the noise <code>ignore_authors</code> exists to prevent.</p>
+<p>Gate 1 is <strong>narrowing only</strong>. Every rule can refuse; none can permit. The
+<code>ALLOWED_OWNERS</code> env allowlist already ran in the webhook handler and a repo that
+failed it never reaches the gate, so no YAML value can readmit it.</p>
+<p>There are two dispatch chokepoints, not one, and both call the gate:</p>
+<table>
+<thead>
+<tr>
+<th>Chokepoint</th>
+<th>Covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/workflows/dispatcher.ts:183#applyRepoGate</code></td>
+<td><code>dispatchByLabel</code>, <code>dispatchByIntent</code>, <code>dispatchWorkflowByName</code></td>
+</tr>
+<tr>
+<td><code>src/workflows/ship/command-dispatch.ts:80#isBlockedByRepoConfig</code></td>
+<td>the canonical ship rail, which bypasses the dispatcher entirely</td>
+</tr>
+</tbody>
+</table>
+<p>A future third dispatch path would need the gate too. Two deliberate carve-outs:
+the <code>stop</code> and <code>abort</code> ship verbs run with <code>identityRulesOnly</code> (a config change
+must not strand a run it was meant to end, but <code>ignore_authors</code> and
+<code>allowed_users</code> still decide who may end one), and the comment path gates
+<em>before</em> the intent classifier runs, so a disabled repo never costs an LLM call.
+Because that path does not yet know the workflow name, rule 2 is skipped there
+and re-evaluated downstream.</p>
+<p>Rule 2 needs a registry workflow name, and the canonical rail speaks in
+<code>CommandIntent</code>s. Two intents collide with registry names, <code>ship</code> and <code>triage</code>,
+so <code>command-dispatch.ts</code> maps them through <code>INTENT_TO_WORKFLOW</code> before calling
+the gate. The mapping matters because the canonical parser runs first in the
+event handlers and returns before <code>dispatchByLabel</code>: a <code>bot:triage</code> label that
+did not carry its workflow name would never see the per-workflow toggle at all.
+A test fails if a colliding intent is missing from the map.</p>
+<p>The trigger facts rules 5 to 7 need (title, draft flag, base branch) are taken
+from the webhook payload and threaded in as a <code>TriggerContext</code>, so the gate costs
+no extra GitHub round trip. They are deliberately <strong>not</strong> fields on
+<code>DispatchTarget</code>: that object is persisted to <code>workflow_runs</code> and logged on every
+dispatch line, and the title is attacker-controlled free text.</p>
+<p><strong>Gate 2, during controller-owned payload preparation.</strong> Resolves <em>how</em> the
+agent runs and ships the result, alongside <code>reviewLearnings</code>.</p>
+<p><code>prepareWorkflowRunnerPayload</code> calls <code>loadRepoPolicy</code> + <code>policyForWorkflow</code>
+(<code>src/repo-config/effective.ts</code>), which merge <code>workflows.&lt;name&gt;</code> over <code>defaults</code>
+and clamp <code>max_turns</code> / <code>timeout</code> against <code>AGENT_MAX_TURNS</code> / <code>AGENT_TIMEOUT_MS</code>.
+The legacy direct-job rail performs the same resolution in <code>handleAccept</code>.
+Neither worker re-reads repository YAML. <code>toAgentPolicy</code> projects the result
+onto the wire as an optional <code>policy</code> object. <code>max_turns</code> remains the existing
+top-level <code>maxTurns</code> payload field, whose env fallback chain is
+<code>AGENT_MAX_TURNS ?? DEFAULT_MAXTURNS</code>.</p>
+<p>From the payload the object reaches the agent by three rails:</p>
+<ul>
+<li><strong>Isolated workflow rail via <code>runPipeline</code>.</strong>
+  <code>src/runner/workflow-executor.ts</code> puts it on <code>WorkflowRunContext.policy</code>; the
+  <code>review</code>, <code>resolve</code>, <code>implement</code>, and <code>remember</code> handlers forward it into
+  <code>runPipeline</code>'s <code>policy</code> override.</li>
+<li><strong>Workflow rail bypassing <code>runPipeline</code>.</strong> <code>plan</code> and <code>triage</code> own their
+  prompts and call <code>executeAgent</code> directly, so they never enter the pipeline.
+  They read the same <code>WorkflowRunContext.policy</code> and apply it themselves.</li>
+<li><strong>Direct-pipeline rail.</strong> <code>src/daemon/job-executor.ts</code> passes it straight
+  through to <code>runPipeline</code>.</li>
+</ul>
+<p>All three end at the same helper, <code>src/core/agent-policy.ts applyAgentPolicy</code>,
+which is where <code>model</code>, <code>extraAllowedTools</code>, the turn cap, and <code>timeoutMs</code> are
+turned into <code>executeAgent</code> options. It composes <code>timeoutMs</code> over the caller's
+abort signal with <code>AbortSignal.any</code> (so a daemon cancel is never swallowed),
+using an explicit controller that aborts with a named <code>Error</code> rather than
+<code>AbortSignal.timeout</code>, whose bare <code>TimeoutError</code> DOMException would defeat the
+executor's error-identity check. Its <code>dispose()</code> must be called in a <code>finally</code>,
+or a live timer keeps the event loop alive for the rest of the deadline.</p>
+<p>Two fields deliberately stay in <code>runPipeline</code> rather than moving to the helper,
+because both need fetched PR data plus the prompt builder: <code>pathFilters</code>
+(matches dropped from the fetched changed-file list) and <code>instructions</code> (put on
+<code>BotContext.reviewInstructions</code>). They therefore apply to <code>review</code> only, which
+is the sole workflow whose schema accepts them.</p>
+<p>Because the deadline is composed at the <code>executeAgent</code> call, <code>timeoutMs</code> bounds
+the agent invocation only: the tracking comment, token resolution, GitHub fetch,
+and repo clone run before the timer is armed. <code>AGENT_TIMEOUT_MS</code> is the outer
+bound over the whole run.</p>
+<p>A repo whose file failed validation still runs, on <code>DEFAULT_REPO_POLICY</code>, with
+the reason carried as <code>policy.warning</code>. Both rails render it, and both survive a
+re-render. The workflow rail persists the notice into the run's state under
+<code>CONFIG_NOTICE_KEY</code>, so <code>renderCommentBody</code> re-emits it on every subsequent
+mirror write instead of losing it after the first. The direct rail passes it to
+<code>createTrackingComment</code> and again to <code>finalizeTrackingComment</code>, which re-appends
+it only when the agent's own output did not already carry it through.</p>
 <h2 id="scheduled-actions">Scheduled actions<a class="headerlink" href="#scheduled-actions" title="Permanent link">&para;</a></h2>
 <p>A GitHub App receives no native cron event, so scheduled automation runs on an
 internal timer inside the webhook server (<code>src/scheduler/</code>), alongside the
@@ -2137,7 +2489,7 @@ comment. Missed slots are skipped, not backfilled. See
 </tr>
 <tr>
 <td><code>src/core/</code></td>
-<td>Pipeline: context → fetch → format → prompt → checkout → execute → finalise. <code>pipeline.ts</code> is the single execution path (daemon-side).</td>
+<td>Pipeline: context → fetch → format → prompt → checkout → execute → finalise. Shared by isolated runners and legacy daemons.</td>
 </tr>
 <tr>
 <td><code>src/ai/</code></td>
@@ -2145,15 +2497,19 @@ comment. Missed slots are skipped, not backfilled. See
 </tr>
 <tr>
 <td><code>src/orchestrator/</code></td>
-<td>WebSocket server, daemon registry, job queue, dispatcher, triage, ephemeral-daemon scaler. Embedded in the webhook server process.</td>
+<td>Controller authority, durable queues and leases, worker protocols, result reconciliation, daemon registry, and scaling.</td>
 </tr>
 <tr>
 <td><code>src/daemon/</code></td>
-<td>Standalone worker process (persistent or ephemeral). WebSocket client that accepts offers and runs <code>pipeline.ts</code>.</td>
+<td>Shared worker for legacy direct and scoped jobs.</td>
+</tr>
+<tr>
+<td><code>src/runner/</code></td>
+<td>One-attempt structured-workflow worker and its lease-fenced WSS client.</td>
 </tr>
 <tr>
 <td><code>src/k8s/</code></td>
-<td>Ephemeral daemon Pod spawner.</td>
+<td>Shared-daemon and isolated workflow-runner Pod spawners.</td>
 </tr>
 <tr>
 <td><code>src/mcp/</code></td>
@@ -2169,11 +2525,15 @@ comment. Missed slots are skipped, not backfilled. See
 </tr>
 <tr>
 <td><code>src/shared/</code></td>
-<td>Types shared between server and daemon (WebSocket messages, dispatch enums).</td>
+<td>Types shared by the controller, daemon, and isolated runner.</td>
 </tr>
 <tr>
 <td><code>src/utils/</code></td>
 <td>Retry, sanitisation, circuit breaker.</td>
+</tr>
+<tr>
+<td><code>test/</code></td>
+<td>Test suites mirroring the production source tree.</td>
 </tr>
 </tbody>
 </table>

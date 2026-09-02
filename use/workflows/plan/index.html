@@ -268,7 +268,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../../invoking/" class="md-tabs__link">
+        <a href="../../repo-config/" class="md-tabs__link">
           
   
   
@@ -475,6 +475,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../repo-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../invoking/" class="md-nav__link">
         
   
@@ -521,10 +549,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
             
   
   
@@ -542,8 +570,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1724,7 +1752,7 @@
 </tbody>
 </table>
 <h2 id="stop-conditions">Stop conditions<a class="headerlink" href="#stop-conditions" title="Permanent link">&para;</a></h2>
-<p>The agent writes <code>PLAN.md</code>; the pipeline reports success or failure. No turn cap: the agent runs to completion.</p>
+<p>The agent writes <code>PLAN.md</code>; the pipeline reports success or failure. There is no <em>default</em> turn cap, so the agent runs to completion. Three sources can bind one, and all three are honoured: the repo's <code>workflows.plan.max_turns</code> in <code>.github-app.yaml</code>, the operator's <code>AGENT_MAX_TURNS</code>, and <code>DEFAULT_MAXTURNS</code>. With all three unset, which is the stock deployment, the run is uncapped as before.</p>
 <h2 id="re-trigger-semantics">Re-trigger semantics<a class="headerlink" href="#re-trigger-semantics" title="Permanent link">&para;</a></h2>
 <p><code>plan</code> is <strong>fresh</strong> when a successful <code>plan</code> row exists for the issue created <strong>after</strong> the most recent successful <code>triage</code>. Re-applying the label when <code>plan</code> is stale enqueues a fresh run; an in-flight stale run is not interrupted, so wait for it to terminate before re-applying.</p>
 

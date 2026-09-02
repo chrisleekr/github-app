@@ -266,7 +266,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../use/invoking/" class="md-tabs__link">
+        <a href="../../use/repo-config/" class="md-tabs__link">
           
   
   
@@ -470,6 +470,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../use/repo-config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../use/invoking/" class="md-nav__link">
         
   
@@ -511,10 +539,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
         
           
-          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
             
   
   
@@ -532,8 +560,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_2">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1207,6 +1235,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-repo-config-log-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-repo config log events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auto-review-log-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-review log events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#output-secret-guard-log-events" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1385,6 +1435,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Inbound HTTP boundary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#routing-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2041,6 +2108,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-repo-config-log-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-repo config log events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auto-review-log-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-review log events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#output-secret-guard-log-events" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2220,6 +2309,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Inbound HTTP boundary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#routing-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2380,20 +2486,20 @@
 
 
 <h1 id="observability">Observability<a class="headerlink" href="#observability" title="Permanent link">&para;</a></h1>
-<p>Structured JSON logs via <a href="https://getpino.io">pino</a> are the primary signal. Every dispatch decision and every pipeline step carries a <code>deliveryId</code> so you can reconstruct a request end-to-end from a single log query, and the webhook event handlers plus the daemon workflow executor additionally carry a canonical <code>entityNumber</code> (the issue or PR number) so a request can be reconstructed by entity as well. When <code>DATABASE_URL</code> is configured, the same information is persisted to <code>executions</code> and <code>triage_results</code> for aggregate reporting.</p>
+<p>Structured JSON logs via <a href="https://getpino.io">pino</a> are the primary signal. Every dispatch decision and every pipeline step carries a <code>deliveryId</code> so you can reconstruct a request end-to-end from a single log query. Webhook handlers and worker execution loggers also carry a canonical <code>entityNumber</code> (the issue or PR number), so a request can be reconstructed by entity. When <code>DATABASE_URL</code> is configured, the same information is persisted to <code>executions</code> and <code>triage_results</code> for aggregate reporting.</p>
 <h2 id="log-redaction">Log redaction<a class="headerlink" href="#log-redaction" title="Permanent link">&para;</a></h2>
 <p>The exported <code>logger</code> in <code>src/logger.ts</code> is the canonical chokepoint for secret scrubbing, every child logger inherits its <code>redact.paths</code> list and its custom <code>err</code> serializer, so individual call sites do not need to remember to scrub. Two layers run on every emitted line:</p>
 <ol>
 <li>
-<p><strong>Path-based redaction</strong>: the exported <code>REDACT_PATHS</code> constant in <code>src/logger.ts</code> lists every field pino should replace with <code>[Redacted]</code> before the JSON is serialised. Paths covered: <code>authorization</code> and its <code>*.authorization</code> / <code>headers.authorization</code> / <code>*.headers.authorization</code> / <code>req.headers.authorization</code> / <code>request.headers.authorization</code> variants; the webhook signature header <code>x-hub-signature-256</code> (also wildcard-prefixed); <code>response.data.token</code>; and the named credential fields <code>token</code>, <code>installationToken</code>, <code>privateKey</code>, <code>webhookSecret</code>, <code>anthropicApiKey</code>, <code>claudeCodeOauthToken</code>, <code>daemonAuthToken</code>, <code>awsSecretAccessKey</code>, <code>awsSessionToken</code>, <code>awsBearerTokenBedrock</code>, <code>*.password</code>. The list is <code>Object.freeze</code>d so an accidental <code>push</code> from another module cannot silently weaken the policy.</p>
+<p><strong>Path-based redaction</strong>: the exported <code>REDACT_PATHS</code> constant in <code>src/logger.ts</code> lists every field pino should replace with <code>[Redacted]</code> before the JSON is serialised. Paths covered: <code>authorization</code> and its <code>*.authorization</code> / <code>headers.authorization</code> / <code>*.headers.authorization</code> / <code>req.headers.authorization</code> / <code>request.headers.authorization</code> variants; the webhook signature header <code>x-hub-signature-256</code> (also wildcard-prefixed); <code>response.data.token</code>; and the named credential fields <code>token</code>, <code>installationToken</code>, <code>privateKey</code>, <code>webhookSecret</code>, <code>anthropicApiKey</code>, <code>claudeCodeOauthToken</code>, <code>daemonAuthToken</code>, <code>daemonAuthTokenPrevious</code>, <code>workflowRunnerCapabilitySecret</code>, <code>workflowRunnerCapabilitySecretPrevious</code>, <code>awsSecretAccessKey</code>, <code>awsSessionToken</code>, <code>awsBearerTokenBedrock</code>, <code>*.password</code>. The list is <code>Object.freeze</code>d so an accidental <code>push</code> from another module cannot silently weaken the policy.</p>
 </li>
 <li>
-<p><strong><code>errSerializer</code> scrubbing</strong>: the exported <code>errSerializer</code> in <code>src/logger.ts</code> defers to pino's <code>stdSerializers.err</code> and then runs the result's <code>message</code>, <code>stack</code>, <code>request.headers</code>, and <code>response.data</code> through <code>redactGitHubTokens</code> (<code>src/utils/sanitize.ts</code>) plus an inline credential-URL scrubber that mirrors <code>redactValkeyUrl</code> (<code>src/orchestrator/valkey.ts</code>). The walker recurses through nested objects/arrays and replaces any key matching the sensitive-field-name set wholesale, so <code>err.response.data.meta.token</code> and <code>err.request.headers.forwarded.authorization</code> are caught at any depth: this is necessary because pino's path-based rules cannot match four-or-more segments deep on <code>err.*</code>. It also catches <code>ghs_…</code> installation tokens and App JWTs echoed inside <code>err.message</code> / <code>err.stack</code>.</p>
+<p><strong><code>errSerializer</code> scrubbing</strong>: the exported <code>errSerializer</code> in <code>src/logger.ts</code> defers to pino's <code>stdSerializers.err</code> and then runs primitive string errors plus the result's <code>message</code>, <code>stack</code>, <code>request.headers</code>, and <code>response.data</code> through the GitHub-token marker, credential-URL scrubber, and full <code>redactSecrets()</code> scanner from <code>src/utils/sanitize.ts</code>. The walker recurses through nested objects/arrays and replaces any key matching the sensitive-field-name set wholesale, so <code>err.response.data.meta.token</code> and <code>err.request.headers.forwarded.authorization</code> are caught at any depth. It also removes the raw webhook <code>event</code>, <code>payload</code>, <code>signature</code>, and unserialized aggregate-error carriers copied onto Octokit errors.</p>
 </li>
 </ol>
 <p>The serializer operates on a copy, so the original Error instance is never mutated.</p>
 <p>If you add a new secret-bearing config field to <code>src/config.ts</code>, add its property name to <code>REDACT_PATHS</code> in the same PR. The point helpers <code>redactGitHubTokens</code> and <code>redactValkeyUrl</code> remain in place for their non-log call sites (prompt sanitisation and the Valkey startup info log respectively); the logger config is the system-wide default.</p>
-<p>The crash path is covered too. <code>installFatalHandlers(processName)</code> in <code>src/logger.ts</code> registers <code>uncaughtException</code> and <code>unhandledRejection</code> handlers at both entrypoints (<code>src/app.ts</code>, <code>src/daemon/main.ts</code>) that log via <code>logger.fatal({ err })</code> and then <code>process.exit(1)</code>. Without them the runtime's default handler would print a plain <code>stderr</code> stack that bypasses <code>errSerializer</code>, so a token echoed inside an octokit error would reach the log shipper in cleartext. The default destination flushes synchronously on the process <code>exit</code> event, so the fatal line is written before exit; <code>pino.final</code> is intentionally not used because it throws when the logger is built with the dev-only <code>pino-pretty</code> transport. Crash lines carry <code>level: 60</code> (fatal) and a <code>processName</code> of <code>orchestrator</code> or <code>daemon</code>, so an alert on sustained <code>level:60</code> flags a crash-looping process.</p>
+<p>The crash path is covered too. <code>installFatalHandlers(processName)</code> in <code>src/logger.ts</code> registers <code>uncaughtException</code> and <code>unhandledRejection</code> handlers at all three entrypoints (<code>src/app.ts</code>, <code>src/daemon/main.ts</code>, and <code>src/runner/main.ts</code>) that log via <code>logger.fatal({ err })</code> and then <code>process.exit(1)</code>. Without them the runtime's default handler would print a plain <code>stderr</code> stack that bypasses <code>errSerializer</code>, so a token echoed inside an octokit error would reach the log shipper in cleartext. The default destination flushes synchronously on the process <code>exit</code> event, so the fatal line is written before exit; <code>pino.final</code> is intentionally not used because it throws when the logger is built with the dev-only <code>pino-pretty</code> transport. Crash lines carry <code>level: 60</code> (fatal) and a <code>processName</code> of <code>orchestrator</code>, <code>daemon</code>, or <code>workflow-runner</code>, so an alert on sustained <code>level:60</code> flags a crash-looping process.</p>
 <h2 id="common-log-fields">Common log fields<a class="headerlink" href="#common-log-fields" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2425,7 +2531,7 @@
 </tr>
 <tr>
 <td><code>dispatch_target</code></td>
-<td>Always <code>daemon</code> (singleton, kept as a field for DB/log stability).</td>
+<td>Execution protocol: <code>daemon</code> for legacy/scoped shared jobs or <code>workflow-runner</code> for structured workflows.</td>
 </tr>
 <tr>
 <td><code>dispatch_reason</code></td>
@@ -2663,6 +2769,192 @@
 </tr>
 </tbody>
 </table>
+<h2 id="per-repo-config-log-events">Per-repo config log events<a class="headerlink" href="#per-repo-config-log-events" title="Permanent link">&para;</a></h2>
+<p>The repo's <code>.github-app.yaml</code> (see <a href="../../use/repo-config/">Repo configuration</a>) is fetched at dispatch time and evaluated by Gate 1, then resolved again for Gate 2 during isolated-runner payload preparation or legacy shared-daemon accept. Every config-load failure mode is <strong>fail-open</strong>: a missing, unreachable, or invalid file yields the built-in defaults, so none of these events mean the bot stopped working. They mean it stopped honouring the repo's config.</p>
+<table>
+<thead>
+<tr>
+<th><code>event</code></th>
+<th>Level</th>
+<th>Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>repo_config.gate_blocked</code></td>
+<td>info</td>
+<td><code>reason</code> (the rule that blocked, human-readable) and <code>explained</code> (whether a refusal comment was posted) on every emitter. The dispatcher path (<code>src/workflows/dispatcher.ts</code>) adds <code>workflowName</code>, <code>target</code>, <code>deliveryId</code>, <code>senderLogin</code>; the two ship-rail emitters in <code>src/workflows/ship/command-dispatch.ts</code> carry <code>owner</code>, <code>repo</code>, <code>pr_number</code>, and <code>senderLogin</code> (both write <code>senderLogin</code> on the line itself, so one query catches all three emitters) but no <code>workflowName</code> or <code>deliveryId</code>. No run row, no queue job, no tracking comment was created.</td>
+</tr>
+<tr>
+<td><code>repo_config.invalid</code></td>
+<td>warn</td>
+<td><code>owner</code>, <code>repo</code>, <code>kind</code> (<code>schema</code> | <code>yaml-parse</code> | <code>not-a-file</code>), plus <code>issues</code> (zod issue list) on the <code>schema</code> branch and <code>err</code> on <code>yaml-parse</code>. The file exists but was ignored; defaults were used.</td>
+</tr>
+<tr>
+<td><code>repo_config.fetch_failed</code></td>
+<td>warn</td>
+<td><code>owner</code>, <code>repo</code>, <code>err</code>. A non-404 GitHub error reading the file (outage, rate limit, permission). Treated as "no config", and deliberately <strong>not</strong> cached, so the next dispatch retries.</td>
+</tr>
+<tr>
+<td><code>repo_config.gate_error</code></td>
+<td>error</td>
+<td><code>err</code>, plus <code>owner</code>/<code>repo</code> on the loader path. Something unexpected threw while resolving the policy. The trigger dispatches anyway.</td>
+</tr>
+<tr>
+<td><code>repo_config.policy_applied</code></td>
+<td>info</td>
+<td><code>owner</code>, <code>repo</code>, <code>deliveryId</code>, <code>workflow</code> (resolved name, or <code>none</code> for a job with no workflow), <code>model</code>, <code>maxTurns</code>, <code>timeoutMs</code>, <code>extraAllowedToolCount</code>, <code>pathFilterCount</code>, <code>hasInstructions</code>, <code>warned</code>. Shared jobs emit it from <code>handleAccept</code>. Structured workflows emit it while preparing the isolated-runner payload and add <code>runId</code> plus <code>attemptId</code>; reconnect preparation can repeat, so deduplicate those lines by <code>attemptId</code>. Emitted only when the run resolved a non-empty Gate-2 policy or <code>max_turns</code>; a repo with no config emits nothing.</td>
+</tr>
+<tr>
+<td><code>repo_config.path_filters_applied</code></td>
+<td>info</td>
+<td><code>filterCount</code>, <code>excludedCount</code>, <code>keptCount</code>. Emitted by <code>runPipeline</code> (<code>src/core/pipeline.ts</code>) when <code>review.path_filters</code> actually removed at least one changed file from the prompt.</td>
+</tr>
+<tr>
+<td><code>repo_config.path_filters_rejected</code></td>
+<td>warn</td>
+<td><code>rejectedCount</code>. Emitted once by <code>runPipeline</code> (<code>src/core/pipeline.ts</code>) when at least one <code>review.path_filters</code> glob failed the glob-safety guard and was dropped. The surviving globs still apply. The rejected patterns are deliberately <strong>not</strong> logged, since a glob is repo-authored text.</td>
+</tr>
+</tbody>
+</table>
+<p>The PR-side validation comment (<code>src/repo-config/pr-check.ts</code>) is a separate, read-only surface and uses its own <code>repo_config.pr_check.*</code> namespace, so a query on the events above never mixes "what the bot applied" with "what an author was told about a branch copy".</p>
+<table>
+<thead>
+<tr>
+<th><code>event</code></th>
+<th>Level</th>
+<th>Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>repo_config.pr_check.posted</code></td>
+<td>info</td>
+<td><code>owner</code>, <code>repo</code>, <code>prNumber</code>, <code>outcome</code> (<code>valid</code> | <code>invalid</code> | <code>too-large</code>). One sticky comment was upserted on the PR. A PR whose diff does not touch the config file emits nothing.</td>
+</tr>
+<tr>
+<td><code>repo_config.pr_check.head_missing</code></td>
+<td>info</td>
+<td><code>owner</code>, <code>repo</code>, <code>prNumber</code>. The diff listed the config file but <code>(path, head SHA)</code> returned 404. Usually the pull request deleted the file; a 404 alone does not prove that, so the event name says only what the status proves. No comment is posted: "invalid" would be a lie.</td>
+</tr>
+<tr>
+<td><code>repo_config.pr_check.read_failed</code></td>
+<td>info</td>
+<td><code>owner</code>, <code>repo</code>, <code>prNumber</code>. A non-404 error reading the head-ref copy. No comment is posted. Info rather than warn: this surface is advisory, and a failed read costs an author a hint, not the bot a behaviour.</td>
+</tr>
+<tr>
+<td><code>repo_config.pr_check.not_a_file</code></td>
+<td>warn</td>
+<td><code>owner</code>, <code>repo</code>, <code>prNumber</code>, <code>reason</code> (<code>type</code> when the path resolves to a directory or a symlink on the head ref, <code>no-content</code> when the blob came back with no decodable content).</td>
+</tr>
+<tr>
+<td><code>repo_config.pr_check.disabled</code></td>
+<td>info</td>
+<td><code>owner</code>, <code>repo</code>, <code>prNumber</code>. The default branch's config sets <code>enabled: false</code>, so this GitHub-write surface stayed silent. Only that repo-wide master switch is honoured here; the passive <code>triggers.*</code> filters are deliberately not applied, so draft or <code>ignore_title_keywords</code> pull requests still get authoring feedback.</td>
+</tr>
+</tbody>
+</table>
+<p>Unlike the head-ref reads above, a 404 on the <strong>default-branch</strong> fetcher read (<code>fetchRepoConfig</code>, the <code>repo_config.*</code> table) is <strong>not</strong> logged: having no config is the normal case, and it is negative-cached for 60 seconds so a repo without the file does not pay a REST call per dispatch.</p>
+<p>Two things worth alerting on. Any <code>repo_config.invalid</code> means someone merged a broken config to the default branch and the bot is silently running on defaults, so alert on <strong>presence, not rate</strong>: the invalid result is ETag-cached, so a permanently broken file emits the event once per process per file change, not once per dispatch. Any <code>repo_config.gate_error</code> at all is a bug, since the fetch path is already total.</p>
+<p><code>repo_config.gate_blocked</code> at <code>explained: false</code> is the quiet path (the passive <code>triggers.*</code> filters). If a user reports "the bot ignored me", this is the event to grep for first.</p>
+<p><code>repo_config.policy_applied</code> is the Gate-2 counterpart: it answers "did this
+run actually honour the repo's knobs?". Two fields carry no text on purpose.
+<code>hasInstructions</code> is a boolean rather than the instructions themselves (the
+string can be 10KB of repo prose), and <code>warned: true</code> means the repo's file
+failed validation and this run silently fell back to defaults, so it pairs
+with the <code>repo_config.invalid</code> line for the same repo. A <code>maxTurns</code> or
+<code>timeoutMs</code> lower than the repo asked for is not a bug: the resolver clamps
+both against <code>AGENT_MAX_TURNS</code> / <code>AGENT_TIMEOUT_MS</code>.</p>
+<h2 id="auto-review-log-events">Auto-review log events<a class="headerlink" href="#auto-review-log-events" title="Permanent link">&para;</a></h2>
+<p>Emitted by <code>maybeAutoReview</code> in <code>src/webhook/events/pull-request.ts</code> on
+<code>pull_request.synchronize</code>, and by the inline-comment MCP server. All carry the
+standard <code>deliveryId</code> / <code>owner</code> / <code>repo</code> / <code>entityNumber</code> / <code>senderLogin</code> fields
+except where noted.</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Level</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auto_review.skipped_self_push</code></td>
+<td>info</td>
+<td>The pusher is this bot. Expected after a <code>resolve</code> run pushes fixes; this is what stops review → resolve → push → review from looping.</td>
+</tr>
+<tr>
+<td><code>auto_review.skipped_repo_opt_out</code></td>
+<td>debug</td>
+<td>The repo does not set <code>workflows.review.auto: true</code>, or its config was missing/unreachable/invalid and the fail-open default applied. The most common reason for "nothing happened".</td>
+</tr>
+<tr>
+<td><code>auto_review.skipped_unchanged_diff</code></td>
+<td>info</td>
+<td>The PR's own diff is byte-identical to the last reviewed one, i.e. a rebase. No review was run.</td>
+</tr>
+<tr>
+<td><code>auto_review.skipped_ship_active</code></td>
+<td>info</td>
+<td><code>ship</code> is already driving this PR and runs its own review -&gt; resolve iteration. Avoids duplicate spend and a race on <code>idx_workflow_runs_inflight</code>.</td>
+</tr>
+<tr>
+<td><code>auto_review.ship_intent_check_failed</code></td>
+<td>warn</td>
+<td>The <code>ship_intents</code> lookup failed. Fail-open: the review still runs.</td>
+</tr>
+<tr>
+<td><code>auto_review.skipped_fork_pr</code></td>
+<td>info</td>
+<td>The PR's head is on a fork. Checkout resolves the head ref against the base repo, so a fork ref would clone the wrong tree; auto-review declines rather than guess.</td>
+</tr>
+<tr>
+<td><code>auto_review.outcome</code></td>
+<td>info</td>
+<td>Carries <code>status</code>: <code>dispatched</code> or <code>refused</code> (Gate 1 or an in-flight run). A <code>refused</code> here never posts to GitHub, and its <code>explained</code> is <code>false</code>.</td>
+</tr>
+<tr>
+<td><code>auto_review.fingerprint_failed</code></td>
+<td>warn</td>
+<td><code>pulls.listFiles</code> failed. Fail-open: the review still runs, so the only cost is a possible redundant review after a rebase.</td>
+</tr>
+<tr>
+<td><code>auto_review.fingerprint_skipped</code></td>
+<td>info</td>
+<td>The diff has 0 files, or 3000+ (GitHub's <code>listFiles</code> cap), so it cannot be fingerprinted. Same fail-open consequence; a rebase on such a PR always re-reviews.</td>
+</tr>
+<tr>
+<td><code>auto_review.fingerprint_read_failed</code></td>
+<td>warn</td>
+<td>Valkey read failed. Fail-open, same consequence as above.</td>
+</tr>
+<tr>
+<td><code>auto_review.fingerprint_write_failed</code></td>
+<td>warn</td>
+<td>Valkey write failed. The next push re-reviews once.</td>
+</tr>
+<tr>
+<td><code>auto_review.failed</code></td>
+<td>error</td>
+<td>Dispatch threw. Carries <code>err</code>. The webhook is unaffected; the reactor already fired.</td>
+</tr>
+<tr>
+<td><code>mcp.inline_comment.deduped</code></td>
+<td>info</td>
+<td>A finding was skipped because this bot already has a live comment at that <code>path</code> / <code>line</code> / <code>side</code>. Carries all three plus <code>pull_number</code>.</td>
+</tr>
+<tr>
+<td><code>mcp.inline_comment.dedup_check_failed</code></td>
+<td>warn</td>
+<td>The existing-comment lookup failed. Fail-open: the comment is posted, so a duplicate is possible.</td>
+</tr>
+</tbody>
+</table>
+<p>An auto-review that produces no visible effect is normal. Grep
+<code>auto_review.skipped_repo_opt_out</code> first, then <code>auto_review.skipped_unchanged_diff</code>,
+then <code>repo_config.gate_blocked</code>. A <code>refused</code> <code>auto_review.outcome</code> with an
+in-flight reason means a push arrived mid-review and was dropped by design.</p>
 <h2 id="output-secret-guard-log-events">Output secret-guard log events<a class="headerlink" href="#output-secret-guard-log-events" title="Permanent link">&para;</a></h2>
 <p><code>safePostToGitHub</code> (<code>src/utils/github-output-guard.ts</code>) is the output-side chokepoint for every byte sent to GitHub. It emits structured <code>warn</code>/<code>error</code> events when the regex pass or the optional LLM scanner acts on a body. Per the logging contract, none of these carry the matched bytes, surrounding context, or a hash, only <code>kinds</code>, counts, lengths, <code>callsite</code>, and <code>deliveryId</code>.</p>
 <table>
@@ -2698,6 +2990,21 @@
 <td><code>secret_redaction_emptied_body</code></td>
 <td>error</td>
 <td>Body was whitespace-only after redaction; the GitHub call is skipped entirely (no blank comment).</td>
+</tr>
+<tr>
+<td><code>workflow_runner_output_rejected</code></td>
+<td>warn</td>
+<td>The controller's encoded-secret scan found a credential in a runner command or result. Carries <code>scanner: "llm"</code>, <code>callsite</code>, <code>kinds</code>, and <code>matchCount</code>. The command is rejected; a result becomes a fixed safe failure.</td>
+</tr>
+<tr>
+<td><code>workflow_runner_output_scan_unavailable</code></td>
+<td>error</td>
+<td>The runner-output LLM scanner was disabled, threw, or timed out. Carries <code>scanner: "llm"</code>, <code>callsite</code>, and a scrubbed <code>err</code> on errors. Runner RPC fails closed: commands are rejected and results become a fixed safe failure. General GitHub output retains its documented fail-open behavior.</td>
+</tr>
+<tr>
+<td><code>workflow_runner_terminal_projection_rejected</code></td>
+<td>warn</td>
+<td>GitHub rejected a detailed terminal tracking projection with status 422. Carries <code>runId</code>, <code>attemptId</code>, and <code>status</code>; the controller retries once with fixed operator text and keeps the durable result pending if that fallback fails.</td>
 </tr>
 </tbody>
 </table>
@@ -2921,8 +3228,8 @@
 <tbody>
 <tr>
 <td><code>ship.iteration.enqueued</code></td>
-<td><code>iteration.runIteration</code> after <code>enqueueJob</code></td>
-<td>A non-ready verdict bridged into the daemon <code>workflow_runs</code> pipeline. One row per iteration.</td>
+<td><code>iteration.runIteration</code> after <code>publishWorkflowRunById</code></td>
+<td>A non-ready verdict bridged into the isolated <code>workflow_runs</code> runner pipeline. One row per iteration.</td>
 </tr>
 <tr>
 <td><code>ship.iteration.terminal_cap</code></td>
@@ -2971,34 +3278,40 @@
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>| count by pr.repo
 </span></code></pre></div>
 <h2 id="dispatch-reasons">Dispatch reasons<a class="headerlink" href="#dispatch-reasons" title="Permanent link">&para;</a></h2>
-<p>Canonical source: <code>src/shared/dispatch-types.ts</code>. Five values across two targets: the four daemon-fleet reasons land on <code>dispatch_target=daemon</code>, and <code>workflow-runner</code> lands on <code>dispatch_target=workflow-runner</code>.</p>
+<p>Canonical source: <code>src/shared/dispatch-types.ts</code>. Five values across two execution targets.</p>
 <table>
 <thead>
 <tr>
 <th>Reason</th>
+<th>Target</th>
 <th>When the router sets it</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>persistent-daemon</code></td>
+<td><code>daemon</code></td>
 <td>Routed to an existing persistent daemon. The default, hot path. Also used during cooldown when a scale-up was warranted but blocked by the cooldown window.</td>
 </tr>
 <tr>
 <td><code>ephemeral-daemon-triage</code></td>
+<td><code>daemon</code></td>
 <td>Triage returned <code>heavy=true</code> and an ephemeral daemon Pod was spawned.</td>
 </tr>
 <tr>
 <td><code>ephemeral-daemon-overflow</code></td>
+<td><code>daemon</code></td>
 <td>Queue length ≥ <code>EPHEMERAL_DAEMON_SPAWN_QUEUE_THRESHOLD</code> <strong>and</strong> the persistent pool has zero free slots; a spawn drains the overflow.</td>
 </tr>
 <tr>
 <td><code>ephemeral-spawn-failed</code></td>
+<td><code>daemon</code></td>
 <td>A spawn was required but the K8s API call failed. The job is rejected with a tracking-comment infra error.</td>
 </tr>
 <tr>
 <td><code>workflow-runner</code></td>
-<td>A structured workflow (<code>triage</code>, <code>plan</code>, <code>implement</code>, <code>review</code>, <code>resolve</code>) claimed by the controller and run in a one-attempt isolated Pod, not on the shared daemon fleet.</td>
+<td><code>workflow-runner</code></td>
+<td>A structured workflow was committed for an isolated attempt.</td>
 </tr>
 </tbody>
 </table>
@@ -3164,7 +3477,7 @@ daemon executor.</p>
 </table>
 <p>The slow line is independent of rate-limit headers, so a slow response from an endpoint with no <code>x-ratelimit-*</code> headers still surfaces. This is the GitHub-side counterpart to the dispatcher's <code>offer_latency_ms</code>. Tune the floor with <code>GITHUB_API_SLOW_REQUEST_MS</code> (<code>config.ts#githubApiSlowRequestMs</code>).</p>
 <h2 id="github-app-installation-token-mints">GitHub App installation-token mints<a class="headerlink" href="#github-app-installation-token-mints" title="Permanent link">&para;</a></h2>
-<p>The orchestrator mints App installation tokens at six call sites, all routed through <code>mintInstallationToken</code> (<code>src/orchestrator/installation-token.ts#mintInstallationToken</code>). Each mint emits one structured line. Schema pinned by <code>GithubAppTokenMintLogSchema</code> (<code>src/orchestrator/log-fields.ts#GithubAppTokenMintLogSchema</code>). <code>cache_hit</code> is exact, not a latency heuristic: <code>@octokit/auth-app</code> serves cached tokens synchronously and only issues <code>POST /app/installations/{id}/access_tokens</code> on a miss.</p>
+<p>The orchestrator mints App installation tokens at eight call sites, all routed through <code>mintInstallationToken</code> (<code>src/orchestrator/installation-token.ts#mintInstallationToken</code>). Each mint emits one structured line. Schema pinned by <code>GithubAppTokenMintLogSchema</code> (<code>src/orchestrator/log-fields.ts#GithubAppTokenMintLogSchema</code>). <code>cache_hit</code> is exact, not a latency heuristic: <code>@octokit/auth-app</code> serves cached tokens synchronously and only issues <code>POST /app/installations/{id}/access_tokens</code> on a miss.</p>
 <table>
 <thead>
 <tr>
@@ -3189,7 +3502,7 @@ daemon executor.</p>
 </tr>
 </tbody>
 </table>
-<p><code>via</code> is one of <code>handleAccept</code>, <code>handleScopedAccept</code>, <code>shipTickleResume</code>, <code>proposalPoller</code>, <code>schedulerRunAction</code>, <code>notifyExpiredWorkflowAttempts</code>, <code>notifyExpiredWorkflowDispatches</code>, <code>notifyRunnerStartFailures</code>, <code>notifyDisconnectedDaemonWorkflows</code>, <code>notifyMigrationInterruptedWorkflows</code>, <code>reconcileWorkflowCascade</code>, <code>workflowRunnerPayload</code>, <code>workflowRunnerResult</code> (canonical source: <code>TOKEN_MINT_VIA</code> in <code>src/orchestrator/log-fields.ts</code>). The token, App JWT, and private key are never logged (security invariant 2); <code>err</code> is serialized through the secret-scrubbing pino error serializer.</p>
+<p><code>via</code> carries 13 values against those eight call sites: <code>getNotificationOctokit</code> in <code>workflow-expiry-notifier.ts</code> is one shared call site that its six notifier callers each label differently. <code>via</code> is one of <code>handleAccept</code>, <code>handleScopedAccept</code>, <code>shipTickleResume</code>, <code>proposalPoller</code>, <code>schedulerRunAction</code>, <code>notifyExpiredWorkflowAttempts</code>, <code>notifyExpiredWorkflowDispatches</code>, <code>notifyRunnerStartFailures</code>, <code>notifyDisconnectedDaemonWorkflows</code>, <code>notifyMigrationInterruptedWorkflows</code>, <code>reconcileWorkflowCascade</code>, <code>workflowRunnerPayload</code>, <code>workflowRunnerResult</code> (canonical source: <code>TOKEN_MINT_VIA</code> in <code>src/orchestrator/log-fields.ts</code>). The token, App JWT, and private key are never logged (security invariant 2); <code>err</code> is serialized through the secret-scrubbing pino error serializer.</p>
 <h2 id="inbound-http-boundary">Inbound HTTP boundary<a class="headerlink" href="#inbound-http-boundary" title="Permanent link">&para;</a></h2>
 <p>Structured access-log family for the webhook server's inbound HTTP surface (webhook entry, HMAC verification failure, readiness probe, operator scheduler endpoint). Schema pinned in <code>src/app-log-fields.ts#HttpLogFieldsSchema</code>; emit sites in <code>src/app.ts</code>. All lines carry bounded metadata only, never the webhook secret, the <code>X-Hub-Signature-256</code> bytes, the raw request body, or <code>Authorization</code> headers.</p>
 <table>
@@ -3250,9 +3563,19 @@ daemon executor.</p>
 <td><code>status</code> (500), <code>err</code></td>
 <td>Operator endpoint threw; <code>err</code> secret-scrubbed.</td>
 </tr>
+<tr>
+<td><code>http.request.failed</code></td>
+<td>error</td>
+<td><code>err</code></td>
+<td>The router itself threw, caught by the <code>Bun.serve</code> <code>error</code> hook; answers 500. Carries no request data.</td>
+</tr>
 </tbody>
 </table>
 <p>The <code>kind</code> discriminator on <code>http.webhook.error</code> separates signature-verification failures (botched webhook-secret rotation) from downstream handler exceptions.</p>
+<p><code>http.request.failed</code> is the last-resort boundary for any route, distinct from <code>http.scheduler.run.failed</code> (one endpoint's own <code>catch</code>). It deliberately carries only the secret-scrubbed <code>err</code>: an unhandled throw may have been triggered by attacker-shaped input, so no path or header is recorded.</p>
+<h3 id="routing-contract">Routing contract<a class="headerlink" href="#routing-contract" title="Permanent link">&para;</a></h3>
+<p>Every path resolves to a response; there is no fallthrough. Unrecognised paths get an explicit <code>404</code>. This matters because the pre-<code>Bun.serve</code> handler delegated unmatched paths to the octokit webhook middleware, which returns <code>false</code> without writing anything, leaving the request unanswered and the socket open until the peer gave up. Routing is matched on a parsed, trailing-slash-normalised pathname, so <code>/healthz</code>, <code>/healthz/</code>, and <code>/healthz?x=1</code> all resolve alike. The router lives in <code>src/http-router.ts#createFetchHandler</code>, kept free of side effects so it is testable without booting the process.</p>
+<p>The server sets a 30s <code>idleTimeout</code>. That is the enforced backstop the <code>node:http</code> compat shim lacked: it accepts <code>requestTimeout</code>/<code>headersTimeout</code> but does not honour them, so a handler that never responded left the connection open indefinitely. Keep the value above octokit's own 9s webhook timeout.</p>
 <h2 id="scheduler-scan-lifecycle-events">Scheduler scan lifecycle events<a class="headerlink" href="#scheduler-scan-lifecycle-events" title="Permanent link">&para;</a></h2>
 <p>The scheduled-actions scheduler (<code>src/scheduler/scheduler.ts#createScheduler</code>) emits a <code>scheduler.scan.*</code> lifecycle on every timer tick. These are scan-level signals (heartbeat, duration, traffic, saturation), orthogonal to the per-action <code>scheduler.action.*</code> transitions. Schema pinned in <code>src/scheduler/log-fields.ts#SCHEDULER_LOG_EVENTS</code>. Scheduler lines carry no <code>deliveryId</code> (the scan is timer-driven, not request-scoped).</p>
 <table>
@@ -3313,7 +3636,7 @@ daemon executor.</p>
 <td><code>workflow.run.running</code></td>
 <td>info</td>
 <td><em>none</em></td>
-<td>Daemon flipped the row to <code>running</code>.</td>
+<td>A worker claim flipped the row to <code>running</code>.</td>
 </tr>
 <tr>
 <td><code>workflow.run.succeeded</code></td>
@@ -3349,7 +3672,7 @@ daemon executor.</p>
 <td><code>workflow.run.enqueue_failed</code></td>
 <td>error</td>
 <td><code>reason</code></td>
-<td>Post-insert enqueue/publish failed; compensating <code>markFailed</code> released the in-flight guard.</td>
+<td>Initial post-commit publication failed. The row stays queued with an open outbox generation while retrying. Retry-budget or <code>WORKFLOW_DISPATCH_TIMEOUT_MS</code> expiry fails the workflow and execution, releases the target guard, and durably queues a <code>dispatch-expired</code> public projection.</td>
 </tr>
 </tbody>
 </table>
@@ -3576,11 +3899,11 @@ daemon executor.</p>
 <tbody>
 <tr>
 <td><code>eventsPerTarget(days)</code></td>
-<td>Count of executions grouped by <code>dispatch_target</code>. Post-collapse this is always a single <code>daemon</code> row, query <code>dispatch_reason</code> directly for the per-reason split.</td>
+<td>Count of executions grouped by <code>dispatch_target</code>, separating shared-daemon jobs from isolated structured workflows.</td>
 </tr>
 <tr>
 <td><code>triageRate(days)</code></td>
-<td>Share of events whose <code>dispatch_reason</code> is <code>ephemeral-daemon-triage</code>.</td>
+<td>Share of shared-daemon executions whose <code>dispatch_reason</code> is <code>ephemeral-daemon-triage</code>; workflow runners are excluded from the denominator.</td>
 </tr>
 <tr>
 <td><code>avgConfidenceAndFallback(days)</code></td>
@@ -3610,7 +3933,8 @@ daemon executor.</p>
 <li><strong>Token-mint cache misses.</strong> A drop in <code>github.app.token.mint.succeeded</code> <code>cache_hit:true</code> rate means a regression is bypassing the cached App singleton and paying a network mint per dispatch.</li>
 <li><strong>Webhook signature failures.</strong> Any sustained <code>event:"http.webhook.error" AND kind:"signature_mismatch"</code> rate is a botched <code>GITHUB_WEBHOOK_SECRET</code> rotation dropping deliveries.</li>
 <li><strong>Scheduler saturation.</strong> A gap in <code>scheduler.scan.started</code> longer than the scan interval means the timer stalled; any <code>scheduler.scan.skipped_overlap</code> over a 5m window means scans are saturating the interval (precursor to drifting cron slots).</li>
-<li><strong>Workflow enqueue failures.</strong> Any <code>event:"workflow.run.enqueue_failed"</code> means a row was inserted but never reached a daemon; the compensating <code>markFailed</code> ran, but a sustained rate points at a broker outage.</li>
+<li><strong>Workflow enqueue failures.</strong> Any <code>event:"workflow.run.enqueue_failed"</code> means the first publication attempt failed. PostgreSQL owns the queued row and open outbox generation while the reaper retries. Retry-budget or dispatch-age expiry terminalizes the workflow and execution, releases the target guard, and retries the <code>dispatch-expired</code> public projection. A sustained rate points at a broker outage.</li>
+<li><strong>Runner output scanner outage.</strong> Any <code>event:"workflow_runner_output_scan_unavailable"</code> is an error and fails runner RPC closed. Restore the configured scanner before retrying affected workflows.</li>
 <li><strong>Daemon reconnect storms.</strong> <code>event:"daemon.connection.reconnect_scheduled" AND attempt &gt;= 5</code> flags a daemon stuck in backoff.</li>
 <li><strong>Workspace crashloop fingerprint.</strong> A non-zero <code>count</code> on <code>event:"workspace.cleanup.exit"</code> means a daemon exited with in-flight workspaces.</li>
 <li><strong>Ephemeral-spawn failures by kind.</strong> Break <code>dispatch_reason=ephemeral-spawn-failed</code> down with <code>event:"k8s.spawn.failed"</code> <code>kind</code>: <code>infra-absent</code> (deploy regression), <code>api-rejected</code> (RBAC/validation), <code>api-unavailable</code> (control-plane). A sustained <code>k8s.spawn.decision_skipped reason:"cooldown"</code> rate means the fleet is under-scaled.</li>
