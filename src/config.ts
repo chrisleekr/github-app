@@ -15,6 +15,11 @@ const nonEmptyOptionalString = z.preprocess(
   z.string().optional(),
 );
 
+const hmacRootSecret = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  z.string().min(32).optional(),
+);
+
 /**
  * Duration field that accepts either a positive integer (ms) or a
  * duration string with `h`/`m`/`s` suffix (e.g. `4h`, `30m`, `1.5h`,
@@ -116,7 +121,7 @@ const configSchema = z
 
     // Model override, required when provider=bedrock (Bedrock uses different model ID format),
     // optional input for anthropic. The schema-level .transform below defaults the
-    // anthropic path to "claude-opus-4-7", so the inferred Config.model is `string`
+    // anthropic path to "claude-opus-5", so the inferred Config.model is `string`
     // (not `string | undefined`), consumers do not need to handle the undefined case.
     model: z.string().min(1).optional(),
 
@@ -157,13 +162,13 @@ const configSchema = z
     // Local dev: AWS SSO profile (after: le aws login -e dev).
     // Passed to the Claude Code subprocess env so the AWS SDK credential chain resolves it.
     awsProfile: z.string().optional(),
-    // Explicit key credentials, use in CI/CD or non-SSO environments. Prefer
-    // `awsProfile` locally and `awsBearerTokenBedrock` (OIDC) in GitHub Actions.
+    // Explicit IAM credentials, use in CI/CD or non-SSO environments. Isolated
+    // runners require a dedicated Bedrock-only principal and temporary keys.
     awsAccessKeyId: z.string().optional(),
     awsSecretAccessKey: z.string().optional(),
     awsSessionToken: z.string().optional(),
-    // OIDC bearer token, set automatically by aws-actions/configure-aws-credentials
-    // in GitHub Actions. Do not hand-set in long-running environments.
+    // Amazon Bedrock API key. This is distinct from the temporary IAM
+    // credentials exported by aws-actions/configure-aws-credentials.
     awsBearerTokenBedrock: z.string().optional(),
     // Overrides the Bedrock runtime endpoint. Leave unset unless fronting Bedrock
     // with a VPC endpoint or proxy, otherwise the SDK picks the correct regional URL.
@@ -247,11 +252,15 @@ const configSchema = z
     // not linger across restarts. Set via WORKSPACE_STALE_TTL_MS (issue #221).
     workspaceStaleTtlMs: z.coerce.number().int().positive().default(3_600_000),
 
-    // Override max turns for the Claude Agent SDK, used as a FALLBACK ONLY on
-    // src/core/executor.ts when invoked without an explicit `maxTurns`
-    // argument. Since the dispatch-collapse, the orchestrator always passes
-    // `config.defaultMaxTurns` to the daemon, so this knob only affects
-    // non-dispatched internal callers.
+    // Override max turns for the Claude Agent SDK. Two roles: the fallback on
+    // src/core/executor.ts when invoked without an explicit `maxTurns`, and
+    // the first env link in the orchestrator's accept-site chain (see the
+    // `maxTurns` assignment in src/orchestrator/connection-handler.ts, which
+    // reads `workflowPolicy.maxTurns ?? agentMaxTurns ?? defaultMaxTurns`).
+    // It is also the FIRST LINK in the ceiling chain `src/repo-config/effective.ts`
+    // clamps a repo's `max_turns` against (`agentMaxTurns ?? defaultMaxTurns`, so
+    // with this unset DEFAULT_MAXTURNS is the ceiling). Either way a repo can
+    // lower the cap but never raise it.
     agentMaxTurns: z.coerce.number().int().positive().optional(),
 
     // Absolute path to the Claude Code CLI entry point (cli.js).
@@ -279,12 +288,31 @@ const configSchema = z
         return parsed.length === 0 ? undefined : parsed;
       }),
 
-    // --- 6. Data layer (mandatory in server mode) ---
+    // Auto-review allowlist. When one of these logins pushes to an open PR
+    // (`pull_request.synchronize`), the `review` workflow is dispatched with no
+    // label and no mention. Unset/empty is the off switch.
+    // Widening, unlike every other allowlist here, which is why it lives in
+    // operator env and not repo YAML: `.github-app.yaml` `triggers:` is
+    // narrowing-only. Layered under ALLOWED_OWNERS and Gate 1, so it cannot
+    // readmit a repo or a workflow either of those rejected. The repo must also
+    // opt in via `workflows.review.auto`; neither key alone enables anything.
+    // Set via AUTO_REVIEW_USERS (comma-separated, e.g. "chrisleekr,acme").
+    autoReviewUsers: z
+      .string()
+      .optional()
+      .transform((v): string[] | undefined => {
+        if (v === undefined || v === "") return undefined;
+        const parsed = v
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        return parsed.length === 0 ? undefined : parsed;
+      }),
 
-    // `valkeyUrl` backs the daemon job queue. `databaseUrl` backs the
-    // `executions` + `triage_results` tables. Both are required in server
-    // mode (no ORCHESTRATOR_URL) and optional in daemon mode (the daemon
-    // talks to the orchestrator over WebSocket, not to the data layer).
+    // --- 6. Data layer (mandatory in controller mode) ---
+
+    // The controller owns execution, workflow, and queue state. Shared
+    // daemons and isolated workflow runners use WebSocket RPC only.
     valkeyUrl: z.string().optional(),
     databaseUrl: z.string().optional(),
 
@@ -313,6 +341,14 @@ const configSchema = z
     // `undefined` rather than surviving as a "valid" but empty Bearer
     // credential after `Bearer ` is prepended.
     daemonAuthTokenPrevious: nonEmptyOptionalString,
+
+    // Controller-only HMAC root for one-attempt workflow runner capabilities.
+    // It must never be mounted into a shared daemon or isolated runner.
+    workflowRunnerCapabilitySecret: hmacRootSecret,
+
+    // Optional predecessor accepted only while rotating the controller-only
+    // capability root. Per-attempt capabilities remain deadline-bound.
+    workflowRunnerCapabilitySecretPrevious: hmacRootSecret,
 
     // Presence of ORCHESTRATOR_URL flips the process from SERVER mode to
     // DAEMON mode: the webhook HTTP server does NOT start and GitHub App
@@ -363,11 +399,8 @@ const configSchema = z
     // Off by default: detection ships first, self-heal is opt-in.
     socketHealthSelfHealEnabled: z.boolean().default(false),
 
-    // How long an execution may sit in status="running" before the watcher treats
-    // it as abandoned and marks it failed. Should generally be ≥ agentTimeoutMs
-    // so a legitimate long run isn't reaped mid-flight; the built-in default
-    // equals agentTimeoutMs (both 3_600_000ms / 60 min), which is the minimum
-    // safe setting.
+    // Startup-only recovery threshold for unfenced non-workflow executions.
+    // It must not be used by the periodic reaper while a daemon may still run.
     staleExecutionThresholdMs: z.coerce.number().int().positive().default(3_600_000),
 
     // Post-SIGTERM window the daemon uses to finish in-flight work before
@@ -376,8 +409,13 @@ const configSchema = z
     // graceful shutdown should raise this to ≥ agentTimeoutMs.
     daemonDrainTimeoutMs: z.coerce.number().int().positive().default(300_000),
 
-    // Retries for TRANSIENT daemon dispatch failures only.
+    // Retries for transient daemon dispatch and workflow publication failures.
     jobMaxRetries: z.coerce.number().int().nonnegative().default(3),
+
+    // Maximum time a durable workflow may remain queued without acquiring an
+    // isolated runner lease. This bounds the in-flight target lock even when a
+    // wake-up is lost or repeatedly rejected as stale.
+    workflowDispatchTimeoutMs: z.coerce.number().int().positive().default(4_200_000),
 
     // How long the orchestrator waits for a daemon in the fleet to claim a
     // job offer before re-queueing it for another daemon to pick up.
@@ -421,6 +459,10 @@ const configSchema = z
     // persistent daemons.
     daemonEphemeral: z.boolean().default(false),
 
+    // One-attempt Kubernetes runner. It communicates through controller RPC
+    // and must start without database, Valkey, PAT, or daemon-fleet secrets.
+    workflowRunner: z.boolean().default(false),
+
     // Idle-exit timeout for ephemeral daemons. After this much wall-clock time
     // with zero active jobs, the ephemeral daemon shuts down and the Pod is
     // reclaimed by K8s. Capped below the Pod's default
@@ -444,10 +486,37 @@ const configSchema = z
     // burst headroom.
     ephemeralDaemonSpawnQueueThreshold: z.coerce.number().int().positive().default(3),
 
-    // K8s namespace into which the orchestrator spawns ephemeral-daemon Pods.
-    // The orchestrator's ServiceAccount must hold `create/get/delete` on pods
-    // in this namespace.
-    ephemeralDaemonNamespace: z.string().default("default"),
+    // K8s namespace for ephemeral shared daemons.
+    ephemeralDaemonNamespace: z.string().trim().min(1).default("default"),
+
+    // Name of the existing Secret in `ephemeralDaemonNamespace` that spawned
+    // daemon Pods mount via `envFrom`. Configurable so a deployment can point
+    // ephemeral daemons at the Secret its persistent daemon pools already use
+    // instead of provisioning a second copy of the same credentials.
+    ephemeralDaemonSecretName: z.string().trim().min(1).default("daemon-secrets"),
+
+    // Dedicated namespace for isolated workflow runners. Keeping this separate
+    // lets admission validate every Pod request in the namespace without
+    // blocking the distinct shared-daemon Pod shape.
+    workflowRunnerNamespace: z.string().trim().min(1).default("github-app-runners"),
+
+    // Runner nodeSelector and its NoSchedule toleration both derive from this
+    // pair, so one setting targets an existing node pool. The default keeps the
+    // `node-restriction.kubernetes.io/` prefix, which the NodeRestriction
+    // admission plugin stops a kubelet from assigning to itself; overriding to
+    // an unprefixed key gives that protection up.
+    workflowRunnerNodeLabel: z
+      .string()
+      .trim()
+      .min(1)
+      .default("github-app.node-restriction.kubernetes.io/workflow-runner"),
+    workflowRunnerNodeValue: z.string().trim().min(1).default("true"),
+
+    // Names a dockerconfigjson Secret that already exists in the runner
+    // namespace. The admission boundary pins this name, so a runner Pod may
+    // reference this Secret and no other. Empty means the Pod carries no pull
+    // secret, which only works against a registry allowing anonymous pull.
+    workflowRunnerImagePullSecret: z.string().trim().default(""),
 
     // Container image the orchestrator launches for ephemeral daemons. Should
     // match the tag the persistent daemon Deployment is running. Optional at
@@ -558,15 +627,17 @@ const configSchema = z
     // if Bedrock latency or cost is unacceptable for the deployment.
     llmOutputScannerEnabled: z.boolean().default(true),
 
-    // Model alias for the scanner call. Sonnet 4.6 by default, the
-    // higher-reasoning model materially reduces false-negatives on
-    // obfuscated/encoded secrets vs. Haiku, at the cost of per-call latency.
-    // Operators can downgrade to a Haiku alias if budget pressure dominates.
-    llmOutputScannerModel: z.string().default("sonnet-4-6"),
+    // Model alias for the scanner call. Haiku 4.5 is the latency floor and
+    // what the per-call budget below is sized around. A Sonnet alias detects
+    // more obfuscated/encoded variants; raise the timeout with it, because the
+    // isolated-runner boundary treats a slow scan as a rejection.
+    llmOutputScannerModel: z.string().default("haiku-4-5"),
 
-    // Hard cap per scanner call. Treated as a fail-open failure (post body
-    // that survived the regex pass, log a warn) when exceeded.
-    llmOutputScannerTimeoutMs: z.coerce.number().int().positive().default(3_000),
+    // Hard cap per scanner call. Fail-open on the GitHub-output path (post the
+    // body that survived the regex pass, log a warn); fail-CLOSED on the
+    // isolated-runner boundary, where a timeout discards a completed run. Sized
+    // for that second case, so it is deliberately generous.
+    llmOutputScannerTimeoutMs: z.coerce.number().int().positive().default(30_000),
 
     // --- 11. Agent maxTurns ---
 
@@ -710,7 +781,7 @@ const configSchema = z
     // `allowed_users`) would go dark fleet-wide with nothing saying why.
     repoConfigFile: z
       .string()
-      .transform((str) => str.trim())
+      .transform((s) => s.trim())
       .pipe(z.string().min(1))
       .default(".github-app.yaml"),
 
@@ -726,18 +797,19 @@ const configSchema = z
     validateServerModeCredentials(data, ctx);
     validateProviderCredentials(data, ctx);
     validateDataLayerConfig(data, ctx);
+    validateWorkerNamespaces(data, ctx);
   })
   // Runs only if .superRefine added no issues, so by this point:
   //   - provider=bedrock guarantees data.model is defined
   //     (validateProviderCredentials errors otherwise)
   //   - provider=anthropic falls through with data.model possibly undefined
-  // We default the anthropic branch to Opus 4.7 here. Doing it in .transform
+  // We default the anthropic branch to Opus 5 here. Doing it in .transform
   // narrows the inferred Config type: `model` becomes `string`, not
   // `string | undefined`, so downstream code drops the defensive `?.` / `??`.
   // Override via CLAUDE_MODEL when cost-sensitive.
   .transform((data) => ({
     ...data,
-    model: data.model ?? "claude-opus-4-7",
+    model: data.model ?? "claude-opus-5",
   }));
 
 /**
@@ -825,47 +897,102 @@ function validateProviderCredentials(
   }
 }
 
-/**
- * After the dispatch-to-daemon collapse, every server-mode process needs
- * the data layer (DB + Valkey + DAEMON_AUTH_TOKEN) to orchestrate the
- * daemon fleet. Daemon-mode processes only need DAEMON_AUTH_TOKEN for the
- * WebSocket handshake.
- */
+/** The controller owns PostgreSQL and Valkey; runners use scoped RPC. */
+function sameConfiguredSecret(left: string | undefined, right: string | undefined): boolean {
+  if (left === undefined || right === undefined) return false;
+
+  return left === right;
+}
+
 function validateDataLayerConfig(
   data: {
     orchestratorUrl?: string | undefined;
     databaseUrl?: string | undefined;
     valkeyUrl?: string | undefined;
     daemonAuthToken?: string | undefined;
+    daemonAuthTokenPrevious?: string | undefined;
+    workflowRunnerCapabilitySecret?: string | undefined;
+    workflowRunnerCapabilitySecretPrevious?: string | undefined;
+    workflowRunner: boolean;
   },
   ctx: z.RefinementCtx,
 ): void {
-  const isDaemonMode = (data.orchestratorUrl?.trim().length ?? 0) > 0;
-
+  if (data.workflowRunner) {
+    if ((data.workflowRunnerCapabilitySecret?.trim().length ?? 0) > 0) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "WORKFLOW_RUNNER_CAPABILITY_SECRET must not be set on a workflow runner: " +
+          "a runner receives a per-attempt capability, never the signing root",
+        path: ["workflowRunnerCapabilitySecret"],
+      });
+    }
+    return;
+  }
   if ((data.daemonAuthToken?.trim().length ?? 0) === 0) {
     ctx.addIssue({
       code: "custom",
-      message: "DAEMON_AUTH_TOKEN is required (set on both orchestrator and daemon)",
+      message: "DAEMON_AUTH_TOKEN is required (set on controller and shared daemons)",
       path: ["daemonAuthToken"],
     });
   }
 
-  if (isDaemonMode) return;
+  if ((data.orchestratorUrl?.trim().length ?? 0) > 0) return;
+
+  // Not required yet: no code on this branch signs or verifies a capability, so
+  // demanding the root here would only crashloop a controller that rolls this
+  // image before the secret is provisioned. The slice that ships the signer
+  // makes it mandatory. The cross-check below still applies when it is set.
+  const daemonSecrets = [data.daemonAuthToken, data.daemonAuthTokenPrevious];
+  const capabilitySecrets = [
+    data.workflowRunnerCapabilitySecret,
+    data.workflowRunnerCapabilitySecretPrevious,
+  ];
+  if (
+    capabilitySecrets.some((capability) =>
+      daemonSecrets.some((daemon) => sameConfiguredSecret(capability, daemon)),
+    )
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Workflow runner capability roots must differ from daemon authentication roots",
+      path: ["workflowRunnerCapabilitySecret"],
+    });
+  }
 
   if ((data.databaseUrl?.trim().length ?? 0) === 0) {
     ctx.addIssue({
       code: "custom",
-      message: "DATABASE_URL is required in server mode",
+      message: "DATABASE_URL is required for orchestrator workflow state",
       path: ["databaseUrl"],
     });
   }
   if ((data.valkeyUrl?.trim().length ?? 0) === 0) {
     ctx.addIssue({
       code: "custom",
-      message: "VALKEY_URL is required in server mode",
+      message: "VALKEY_URL is required for orchestrator workflow dispatch",
       path: ["valkeyUrl"],
     });
   }
+}
+
+/** The runner admission policy covers every Pod in its namespace. */
+function validateWorkerNamespaces(
+  data: {
+    orchestratorUrl?: string | undefined;
+    workflowRunner: boolean;
+    ephemeralDaemonNamespace: string;
+    workflowRunnerNamespace: string;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const isController = !data.workflowRunner && (data.orchestratorUrl?.trim().length ?? 0) === 0;
+  if (!isController || data.workflowRunnerNamespace !== data.ephemeralDaemonNamespace) return;
+  ctx.addIssue({
+    code: "custom",
+    message: "WORKFLOW_RUNNER_NAMESPACE must differ from EPHEMERAL_DAEMON_NAMESPACE",
+    path: ["workflowRunnerNamespace"],
+  });
 }
 
 export type Config = z.infer<typeof configSchema>;
@@ -907,6 +1034,28 @@ export function assertPatRequiresAllowlist(cfg: Config): void {
   if ((cfg.githubPersonalAccessToken?.trim().length ?? 0) > 0 && cfg.allowedOwners?.length !== 1) {
     throw new Error(
       "ALLOWED_OWNERS must contain exactly one owner when GITHUB_PERSONAL_ACCESS_TOKEN is set.",
+    );
+  }
+}
+
+/**
+ * Tenancy guard for AUTO_REVIEW_USERS. Every other allowlist in this file
+ * narrows; this one WIDENS, since it starts an unattended agent run (Bash tool,
+ * on a clone, spending tokens) with no per-event human action. `isOwnerAllowed`
+ * returns `{ allowed: true }` for every owner when ALLOWED_OWNERS is unset
+ * (`src/webhook/authorize.ts`), so without this assertion the whole chain to
+ * "run an agent on a stranger's repository" is a login-string match plus a key
+ * that the third-party repo owner controls.
+ *
+ * Not `length !== 1` like the two guards above: auto-review carries no personal
+ * identity or shared rate-limit bucket, so several owners are fine. It just may
+ * not be unbounded.
+ */
+export function assertAutoReviewRequiresAllowlist(cfg: Config): void {
+  if ((cfg.autoReviewUsers?.length ?? 0) > 0 && (cfg.allowedOwners?.length ?? 0) === 0) {
+    throw new Error(
+      "ALLOWED_OWNERS must be set when AUTO_REVIEW_USERS is set: auto-review starts " +
+        "unattended agent runs, so it must be bound to owners you control.",
     );
   }
 }
@@ -975,7 +1124,10 @@ function loadConfig(): Config {
     workspaceStaleTtlMs: process.env["WORKSPACE_STALE_TTL_MS"],
     cloneDepth: process.env["CLONE_DEPTH"],
     triggerPhrase: process.env["TRIGGER_PHRASE"],
-    botAppLogin: process.env["BOT_APP_LOGIN"],
+    // `blankToUndefined`, so a chart rendering an unset optional key as ""
+    // still gets the zod default. `.default()` only fires on undefined, and an
+    // empty login now hard-fails the inline-comment MCP server at startup.
+    botAppLogin: blankToUndefined(process.env["BOT_APP_LOGIN"]),
     port: process.env["PORT"],
     logLevel: process.env["LOG_LEVEL"],
     nodeEnv: process.env.NODE_ENV,
@@ -988,6 +1140,7 @@ function loadConfig(): Config {
     agentMaxTurns: process.env["AGENT_MAX_TURNS"],
     claudeCodePath: process.env["CLAUDE_CODE_PATH"],
     allowedOwners: process.env["ALLOWED_OWNERS"],
+    autoReviewUsers: process.env["AUTO_REVIEW_USERS"],
 
     // Group 6, Data layer
     valkeyUrl: process.env["VALKEY_URL"],
@@ -999,6 +1152,9 @@ function loadConfig(): Config {
     // Group 8, Daemon / Orchestrator WebSocket
     daemonAuthToken: process.env["DAEMON_AUTH_TOKEN"],
     daemonAuthTokenPrevious: process.env["DAEMON_AUTH_TOKEN_PREVIOUS"],
+    workflowRunnerCapabilitySecret: process.env["WORKFLOW_RUNNER_CAPABILITY_SECRET"],
+    workflowRunnerCapabilitySecretPrevious:
+      process.env["WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS"],
     orchestratorUrl: process.env["ORCHESTRATOR_URL"],
     heartbeatIntervalMs: process.env["HEARTBEAT_INTERVAL_MS"],
     heartbeatTimeoutMs: process.env["HEARTBEAT_TIMEOUT_MS"],
@@ -1014,6 +1170,7 @@ function loadConfig(): Config {
     staleExecutionThresholdMs: process.env["STALE_EXECUTION_THRESHOLD_MS"],
     daemonDrainTimeoutMs: process.env["DAEMON_DRAIN_TIMEOUT_MS"],
     jobMaxRetries: process.env["JOB_MAX_RETRIES"],
+    workflowDispatchTimeoutMs: process.env["WORKFLOW_DISPATCH_TIMEOUT_MS"],
     offerTimeoutMs: process.env["OFFER_TIMEOUT_MS"],
     queueWorkerBackoffMaxMs: process.env["QUEUE_WORKER_BACKOFF_MAX_MS"],
     livenessReaperIntervalMs: process.env["LIVENESS_REAPER_INTERVAL_MS"],
@@ -1024,10 +1181,16 @@ function loadConfig(): Config {
 
     // Group 9, Ephemeral daemon (K8s-spawned scale-up)
     daemonEphemeral: parseBooleanEnv("DAEMON_EPHEMERAL", process.env["DAEMON_EPHEMERAL"]),
+    workflowRunner: parseBooleanEnv("WORKFLOW_RUNNER", process.env["WORKFLOW_RUNNER"]),
     ephemeralDaemonIdleTimeoutMs: process.env["EPHEMERAL_DAEMON_IDLE_TIMEOUT_MS"],
     ephemeralDaemonSpawnCooldownMs: process.env["EPHEMERAL_DAEMON_SPAWN_COOLDOWN_MS"],
     ephemeralDaemonSpawnQueueThreshold: process.env["EPHEMERAL_DAEMON_SPAWN_QUEUE_THRESHOLD"],
     ephemeralDaemonNamespace: process.env["EPHEMERAL_DAEMON_NAMESPACE"],
+    ephemeralDaemonSecretName: process.env["EPHEMERAL_DAEMON_SECRET_NAME"],
+    workflowRunnerNamespace: process.env["WORKFLOW_RUNNER_NAMESPACE"],
+    workflowRunnerNodeLabel: process.env["WORKFLOW_RUNNER_NODE_LABEL"],
+    workflowRunnerNodeValue: process.env["WORKFLOW_RUNNER_NODE_VALUE"],
+    workflowRunnerImagePullSecret: process.env["WORKFLOW_RUNNER_IMAGE_PULL_SECRET"],
     daemonImage: process.env["DAEMON_IMAGE"],
     orchestratorPublicUrl: process.env["ORCHESTRATOR_PUBLIC_URL"],
 
@@ -1112,6 +1275,7 @@ function loadConfig(): Config {
 
   assertOauthRequiresAllowlist(cfg);
   assertPatRequiresAllowlist(cfg);
+  assertAutoReviewRequiresAllowlist(cfg);
 
   // The file stopped being scheduler-specific once it grew feature toggles.
   // The old name still works so an upgrade doesn't silently change which
@@ -1135,26 +1299,19 @@ function loadConfig(): Config {
   }
 
   // H6: Warn when WebSocket URLs use unencrypted ws:// in production.
-  // Installation tokens and DAEMON_AUTH_TOKEN are transmitted over this connection.
+  // Runner capabilities and installation tokens cross this connection.
   if (cfg.nodeEnv === "production") {
     if (cfg.orchestratorUrl?.startsWith("ws://") === true) {
       console.warn(
         "[config] WARNING: ORCHESTRATOR_URL uses ws:// (unencrypted) in production. " +
-          "Installation tokens and DAEMON_AUTH_TOKEN are transmitted in cleartext. Use wss:// for production.",
+          "Runner credentials are transmitted in cleartext. Use wss:// for production.",
       );
     }
   }
 
-  // H7 (issue #102, defense layer 1b): warn when orchestrator-only secrets
-  // are present in a daemon process. The Helm chart should mount only
-  // `daemon-secrets` on daemon Pods; `orchestrator-secrets` (App private
-  // key, webhook secret, DB / Valkey URLs) belong on the orchestrator Pod
-  // alone. A misconfigured deployment that mounts both bundles wouldn't
-  // crash, the daemon doesn't read these keys, but it weakens the
-  // capability-minimization gate in `buildProviderEnv()` (the agent
-  // subprocess can no longer leak them simply because they aren't there).
-  // Warn only, never refuse to start, since a downed daemon is worse than
-  // a degraded security posture.
+  // H7 (issue #102, defense layer 1b): surface controller-only secrets on a
+  // worker. Shared daemons warn; workflow-runner main adds a fail-closed deny
+  // set before it connects.
   //
   // Detection heuristic: only daemons set `ORCHESTRATOR_URL` (they connect
   // TO the orchestrator) or `DAEMON_EPHEMERAL`. The orchestrator/webhook
@@ -1164,7 +1321,8 @@ function loadConfig(): Config {
   //
   // `console.warn` (not pino) on purpose: config loads before the logger is
   // built, so this is the only available channel at this point.
-  const isDaemonProcess = (cfg.orchestratorUrl?.trim().length ?? 0) > 0 || cfg.daemonEphemeral;
+  const isDaemonProcess =
+    (cfg.orchestratorUrl?.trim().length ?? 0) > 0 || cfg.daemonEphemeral || cfg.workflowRunner;
   if (isDaemonProcess) {
     const leakedKeys: string[] = [];
     if ((process.env["GITHUB_APP_PRIVATE_KEY"]?.trim().length ?? 0) > 0)
@@ -1174,10 +1332,14 @@ function loadConfig(): Config {
     if ((process.env["DATABASE_URL"]?.trim().length ?? 0) > 0) leakedKeys.push("DATABASE_URL");
     if ((process.env["VALKEY_URL"]?.trim().length ?? 0) > 0) leakedKeys.push("VALKEY_URL");
     if ((process.env["REDIS_URL"]?.trim().length ?? 0) > 0) leakedKeys.push("REDIS_URL");
+    if ((process.env["WORKFLOW_RUNNER_CAPABILITY_SECRET"]?.trim().length ?? 0) > 0)
+      leakedKeys.push("WORKFLOW_RUNNER_CAPABILITY_SECRET");
+    if ((process.env["WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS"]?.trim().length ?? 0) > 0)
+      leakedKeys.push("WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS");
     if (leakedKeys.length > 0) {
       console.warn(
-        `[config] WARNING: orchestrator-only secret(s) present on daemon process: ${leakedKeys.join(", ")}. ` +
-          "Mount these only via `orchestrator-secrets` on the orchestrator Pod; the daemon does not need them. " +
+        `[config] WARNING: orchestrator-only secret(s) present on worker process: ${leakedKeys.join(", ")}. ` +
+          "Mount these only on the orchestrator Pod. " +
           "See docs/operate/configuration.md for the K8s Secret split contract.",
       );
     }

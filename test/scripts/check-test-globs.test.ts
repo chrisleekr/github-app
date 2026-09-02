@@ -53,8 +53,8 @@ afterEach(() => {
 describe("scripts/check-test-globs.ts", () => {
   it("exits 0 when every test file is covered by the runner globs", () => {
     const root = makeFixture({
-      runnerGlobs: "test/**/*.test.ts src/**/*.test.ts",
-      testFiles: ["test/foo.test.ts", "test/nested/bar.test.ts", "src/scheduler/baz.test.ts"],
+      runnerGlobs: "test/**/*.test.ts",
+      testFiles: ["test/foo.test.ts", "test/nested/bar.test.ts"],
     });
     fixtures.push(root);
     const { exitCode, stdout } = runScript(root);
@@ -63,8 +63,8 @@ describe("scripts/check-test-globs.ts", () => {
   });
 
   it("exits 1 and names a test file living outside the globbed roots", () => {
-    // This is the issue #201 shape: runner globs only `test/`, a colocated
-    // `src/**/*.test.ts` is silently dark.
+    // The canonical runner glob covers only `test/`; a colocated source test
+    // must be reported instead of silently going dark.
     const root = makeFixture({
       runnerGlobs: "test/**/*.test.ts",
       testFiles: ["test/foo.test.ts", "src/scheduler/due-evaluator.test.ts"],

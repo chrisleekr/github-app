@@ -281,6 +281,17 @@ RUN set -eux; \
   [ -d "$d" ] && chown -R bun:bun "$d" || true; \
   done
 
+# 11c. Protect the worker's initial environment from same-UID agent children.
+# The constructor runs inside each dynamically linked process before its main
+# function. The Agent SDK allowlist omits LD_PRELOAD, so agent children do not
+# inherit this controller-only setting.
+COPY native/daemon-process-guard.c /tmp/daemon-process-guard.c
+RUN install -d /usr/local/lib/github-app && \
+  cc -O2 -Wall -Wextra -Werror -fPIC -shared \
+  /tmp/daemon-process-guard.c \
+  -o /usr/local/lib/github-app/daemon-process-guard.so && \
+  rm /tmp/daemon-process-guard.c
+
 # 12. Docker CLI: Claude agents shell `docker build`/`docker compose` against a
 #     dind sidecar. Matches src/k8s/job-spawner.ts major pin for client/daemon
 #     compatibility. docker:29-cli ships Go 1.26.x which patches CVE-2025-47907
@@ -311,14 +322,15 @@ ARG GIT_HASH=unspecified
 # Bun does not expose: under Bun the SDK falsely picks the `-musl` variant
 # on glibc systems, so we bypass auto-detection by pointing at the
 # `@anthropic-ai/claude-code` global install (correct libc for this image).
-ENV CLAUDE_CODE_PATH=/usr/bin/claude
+ENV CLAUDE_CODE_PATH=/usr/bin/claude \
+  LD_PRELOAD=/usr/local/lib/github-app/daemon-process-guard.so
 
 LABEL maintainer="Chris Lee"
 LABEL com.chrisleekr.bot.package-version=${PACKAGE_VERSION}
 LABEL com.chrisleekr.bot.git-hash=${GIT_HASH}
 LABEL com.chrisleekr.bot.variant=daemon
 
-# Bundled app and MCP stdio servers (dist/app.js, dist/daemon/main.js, dist/mcp/servers/*.js).
+# Bundled app, daemon, one-attempt runner, and MCP stdio servers.
 COPY --from=development --chown=bun:bun /app/dist ./dist
 COPY --from=development --chown=bun:bun /app/package.json ./
 

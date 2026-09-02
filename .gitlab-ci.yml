@@ -13,9 +13,11 @@ stages:
 
 .main_branch: &main_branch
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_MESSAGE =~ /^chore\(release\):/
+    # Exclusion first: rules stop at the first match. Skips release-please's
+    # release commit, whose tree already built one commit earlier.
+    - if: '$CI_COMMIT_MESSAGE =~ /^chore\(\w+\): release /'
       when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 # Reusable configurations
 .cache_config: &cache_config
@@ -43,6 +45,9 @@ build:
     policy: pull
   script:
     - bun run build
+    # Must run AFTER the build: resolves every MCP server registered in
+    # src/mcp/registry.ts against the emitted dist/ bundles.
+    - bun run check:mcp-bundle
   needs:
     - dependencies
   artifacts:
@@ -50,7 +55,9 @@ build:
       - dist/
     expire_in: 1 hour
 
-lint:
+# Quality gates run on every branch, main included. They used to be
+# feature-branch-only, which meant main published an image nothing had checked.
+.gate: &gate
   stage: test
   interruptible: true
   cache:
@@ -58,51 +65,75 @@ lint:
     policy: pull
   needs:
     - dependencies
-  <<: *feature_branch
+
+lint:
+  <<: *gate
   script:
     - bun run lint
 
 format:
-  stage: test
-  interruptible: true
-  cache:
-    <<: *cache_config
-    policy: pull
-  needs:
-    - dependencies
-  <<: *feature_branch
+  <<: *gate
   script:
     - bun run format
 
 typecheck:
-  stage: test
-  interruptible: true
-  cache:
-    <<: *cache_config
-    policy: pull
-  needs:
-    - dependencies
-  <<: *feature_branch
+  <<: *gate
   script:
     - bun run typecheck
 
-# test-unit:
-#   stage: test
-#   interruptible: true
-#   cache:
-#     <<: *cache_config
-#     policy: pull
-#   needs:
-#     - dependencies
-#   script:
-#     - bun test
-#   coverage: /All files[^\|]*\|[^\|]*\s+([\d\.]+)/
-#   artifacts:
-#     name: coverage
-#     when: always
-#     expire_in: 2 days
-#     paths:
-#       - coverage/
+test-unit:
+  <<: *gate
+  # Postgres + Valkey match the service containers in .github/workflows/ci.yml.
+  # Without them the DB-backed suites skip themselves and the gate covers nothing.
+  services:
+    - name: pgvector/pgvector:pg17
+      alias: postgres
+    - name: valkey/valkey:9
+      alias: valkey
+  variables:
+    POSTGRES_USER: bot
+    POSTGRES_PASSWORD: bot
+    POSTGRES_DB: github_app
+    TEST_DATABASE_URL: postgres://bot:bot@postgres:5432/github_app_test
+    # Read directly by test code (test/preload.ts, liveness-reaper.test.ts), so
+    # it is set explicitly rather than relying on the preload default.
+    VALKEY_URL: redis://valkey:6379
+  before_script:
+    # bash: scripts/test-isolated.sh needs globstar. postgresql-client: the
+    # readiness probe and the seed. git: test/core/checkout.test.ts builds a
+    # real repo fixture via Bun's $`git ...`.
+    - apk add --no-cache bash git postgresql-client
+    # The loop's exit status is `sleep`'s, so re-probe after it to fail clearly.
+    - |
+      for _ in $(seq 1 30); do
+        pg_isready -h postgres -U bot -d github_app && break
+        sleep 2
+      done
+      pg_isready -h postgres -U bot -d github_app \
+        || { echo "postgres did not accept connections within 60s"; exit 1; }
+    # `services:` cannot mount files, so init-test-db.sql never reaches
+    # /docker-entrypoint-initdb.d/. Create the test database explicitly.
+    - PGPASSWORD=bot psql -h postgres -U bot -d github_app -v ON_ERROR_STOP=1 -f scripts/init-test-db.sql
+  script:
+    - bun run test
+  # No `coverage:` regex or artifact: test-isolated.sh runs one bun process per
+  # file and prints output only on failure, so there is no aggregate to parse.
+
+# The invariant guards from .github/workflows/ci.yml. They catch stale generated
+# artifacts and drifted pins, which a build alone cannot see.
+guards:
+  <<: *gate
+  script:
+    - bun run check:dockerfile-base-sync
+    - bun run check:action-pins
+    - bun run check:runner-pins
+    - bun run check:test-globs
+    - bun run check:no-destructive
+    - bun run check:env-contract
+    - bun run check:config-schema
+    - bun run audit:ci
+    # check:docs-sync is absent on purpose: it diffs BASE_SHA...HEAD_SHA, so it
+    # is PR-scoped and empty on main. .github/workflows/ci.yml owns it.
 
 # Publish in branch with dev tag (for testing)
 publish-dev-npm:
@@ -120,43 +151,14 @@ publish-dev-npm:
     - echo "@chrisleekr:registry=https://${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/" > .npmrc
     - echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" >> .npmrc
     - bunx npm version prerelease --preid=dev-${CI_COMMIT_SHORT_SHA} --no-git-tag-version
-    - bun publish --registry "https://${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/" --tag dev-${CI_COMMIT_SHORT_SHA}
+    - bun publish --ignore-scripts --registry "https://${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/" --tag dev-${CI_COMMIT_SHORT_SHA}
 
-publish-dev-docker:
-  stage: release
-  interruptible: true
-  needs:
-    - dependencies
-  <<: *feature_branch
-  image: docker:29-dind
-  services:
-    - name: docker:29-dind
-      alias: docker
-  variables:
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_TLS_VERIFY: 1
-    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
-  # Set reference for this block
-  before_script: &before_script_docker
-    - apk add curl git jq
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
-    - docker context create dind
-    - docker buildx create --driver docker-container --use dind --buildkitd-flags '--allow-insecure-entitlement network.host'
-  script:
-    - PACKAGE_VERSION=$(grep -m1 version package.json | cut -c 15- | rev | cut
-      -c 3- | rev)
-    - GIT_HASH=$(git rev-parse --short HEAD)
-    - docker buildx build --progress plain --platform linux/amd64,linux/arm64
-      --allow network.host --provenance false
-      --build-arg PACKAGE_VERSION=$PACKAGE_VERSION --build-arg GIT_HASH=$GIT_HASH
-      --build-arg NODE_ENV=production --target production --pull --tag
-      $CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:dev-${CI_COMMIT_SHORT_SHA} --push .
-# Versioned releases are cut on GitHub by release-please (see
-# .github/workflows/release-please.yml), not from this GitLab mirror, to avoid
-# releasing the same repository twice.
-
-publish-tag-docker:
+# Images publish from main only. Each job pushes a mutable `latest-*` tag plus
+# an immutable `:${PACKAGE_VERSION}` tag, so a pinned consumer keeps receiving
+# builds and a rollback target survives the next main build. Feature branches
+# build nothing. GitHub releases are cut separately by release-please, which
+# publishes the versioned images to Docker Hub, not to this registry.
+.docker_release: &docker_release
   stage: release
   <<: *main_branch
   image: docker:29-dind
@@ -168,15 +170,75 @@ publish-tag-docker:
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
-  before_script: *before_script_docker
-  script:
-    - apk add --no-cache git
-    - git pull origin main
-    - PACKAGE_VERSION=$(grep -m1 version package.json | cut -c 15- | rev | cut
-      -c 3- | rev)
+  # `needs` is a DAG, not a stage barrier: every gate that must hold before
+  # publishing has to be listed, `build` included (it runs check:mcp-bundle).
+  # `artifacts: false` because these jobs build their own dist/ inside the image.
+  needs:
+    - job: dependencies
+      artifacts: false
+    - job: lint
+      artifacts: false
+    - job: format
+      artifacts: false
+    - job: typecheck
+      artifacts: false
+    - job: test-unit
+      artifacts: false
+    - job: guards
+      artifacts: false
+    - job: build
+      artifacts: false
+  before_script:
+    - apk add --no-cache curl git jq
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+    - docker context create dind
+    - docker buildx create --driver docker-container --use dind --buildkitd-flags '--allow-insecure-entitlement network.host'
+    # jq, not grep|cut|rev: the old chain assumed a fixed column offset.
+    - PACKAGE_VERSION=$(jq -r .version package.json)
     - GIT_HASH=$(git rev-parse --short HEAD)
+    - export PACKAGE_VERSION GIT_HASH
+
+# The tag is overwritten on every main build, by design. `--provenance false` is
+# carried over from the previous job: an attestation adds unknown/unknown entries
+# to the manifest index, which downstream digest resolution has to cope with.
+publish-orchestrator-docker:
+  <<: *docker_release
+  timeout: 45m
+  script:
     - docker buildx build --progress plain --platform linux/amd64,linux/arm64
+      --file Dockerfile.orchestrator
       --allow network.host --provenance false
-      --build-arg PACKAGE_VERSION=$PACKAGE_VERSION --build-arg GIT_HASH=$GIT_HASH
-      --build-arg NODE_ENV=production --target production --pull --tag
-      $CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:${PACKAGE_VERSION} --push .
+      --build-arg "PACKAGE_VERSION=$PACKAGE_VERSION" --build-arg "GIT_HASH=$GIT_HASH"
+      --target production --pull
+      --tag $CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:latest-orchestrator
+      --tag $CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:${PACKAGE_VERSION}-orchestrator
+      --push .
+
+# amd64 only: Dockerfile.daemon carries a large toolchain, and an emulated arm64
+# leg on an amd64 runner would exceed the job timeout.
+publish-daemon-docker:
+  <<: *docker_release
+  timeout: 55m
+  script:
+    - DAEMON_TEST_IMAGE="github-app-daemon:${CI_COMMIT_SHA}"
+    - docker buildx build --progress plain --platform linux/amd64
+      --file Dockerfile.daemon
+      --allow network.host --provenance false
+      --build-arg "PACKAGE_VERSION=$PACKAGE_VERSION" --build-arg "GIT_HASH=$GIT_HASH"
+      --target production --pull --tag "$DAEMON_TEST_IMAGE" --load .
+    - >-
+      docker run --rm
+      --user 1000:1000
+      --read-only
+      --network none
+      --cap-drop ALL
+      --security-opt no-new-privileges=true
+      --entrypoint bun
+      "$DAEMON_TEST_IMAGE"
+      run dist/daemon/process-boundary-smoke.js
+    - docker tag "$DAEMON_TEST_IMAGE"
+      "$CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:latest-daemon"
+    - docker tag "$DAEMON_TEST_IMAGE"
+      "$CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:${PACKAGE_VERSION}-daemon"
+    - docker push "$CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:latest-daemon"
+    - docker push "$CI_REGISTRY/chrisleekr/${CI_PROJECT_NAME}:${PACKAGE_VERSION}-daemon"

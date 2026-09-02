@@ -31,7 +31,7 @@ const client = new Anthropic({ authToken: token });
 
 const MODELS: readonly { label: string; id: string }[] = [
   { label: "sonnet-4-6 (alias)", id: "claude-sonnet-4-6" },
-  { label: "opus-4-7", id: "claude-opus-4-7" },
+  { label: "opus-5 (default)", id: "claude-opus-5" },
   { label: "haiku-4-5 (snapshot)", id: "claude-haiku-4-5-20251001" },
 ];
 

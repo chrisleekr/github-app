@@ -35,6 +35,7 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
     const db = requireSql();
     await db.unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
+      DROP TABLE IF EXISTS workflow_attempt_commands CASCADE;
       DROP TABLE IF EXISTS review_learnings CASCADE;
       DROP TABLE IF EXISTS scheduled_action_state CASCADE;
       DROP TABLE IF EXISTS comment_cache CASCADE;
@@ -101,11 +102,11 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
     const { loadReviewLearnings } = await import("../../src/orchestrator/review-learnings");
 
     // Loader is intentionally file-glob agnostic AND pure-read: the
-    // orchestrator does not yet know which files the PR touched at
-    // job-accept time, so the daemon-side prompt-builder applies the filter
+    // controller does not yet know which files the PR touched during payload
+    // preparation, so the worker-side prompt-builder applies the filter
     // via pickApplicableLearnings. Per 1.5.E, the use_count bump moved to
-    // bumpReviewLearningUsage and fires only after the daemon reports the
-    // applied ids in job:result.
+    // bumpReviewLearningUsage and fires only after the worker reports the
+    // applied ids in its terminal result.
     const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, {}, db);
 
     expect(loaded.length).toBe(1);

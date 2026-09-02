@@ -43,16 +43,9 @@ export interface ExistingComment {
  * suppressed while that thread lives. Both are acceptable; neither is asserted.
  * Switching to GraphQL `PullRequestReviewThread.isOutdated` would settle it.
  */
-/** The diff position a finding wants to post at. */
-export interface CommentLocation {
-  readonly path: string;
-  readonly line: number;
-  readonly side: string;
-}
-
 export function hasDuplicateAt(
   existing: readonly ExistingComment[],
-  target: CommentLocation,
+  target: { readonly path: string; readonly line: number; readonly side: string },
   selfLogin: string | null,
 ): boolean {
   return existing.some(

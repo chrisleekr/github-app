@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  assertAutoReviewRequiresAllowlist,
   assertOauthRequiresAllowlist,
   assertPatRequiresAllowlist,
+  blankToUndefined,
   type Config,
   configSchema,
   parseBooleanEnv,
@@ -13,6 +15,7 @@ const BASE = {
   privateKey: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
   webhookSecret: "secret",
   daemonAuthToken: "daemon-token",
+  workflowRunnerCapabilitySecret: "workflow-runner-capability-root-secret",
   databaseUrl: "postgres://user:pass@localhost:55432/db",
   valkeyUrl: "redis://localhost:56379",
 };
@@ -36,7 +39,7 @@ describe("configSchema: Anthropic provider", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.provider).toBe("anthropic");
-      expect(result.data.model).toBe("claude-opus-4-7");
+      expect(result.data.model).toBe("claude-opus-5");
     }
   });
 
@@ -131,28 +134,70 @@ describe("configSchema: data layer validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("waives DB + Valkey when ORCHESTRATOR_URL is set (daemon mode)", () => {
-    const result = configSchema.safeParse({
-      appId: "123",
-      privateKey: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
-      webhookSecret: "secret",
+  it("does not yet require a workflow runner capability secret in server mode", () => {
+    // Becomes mandatory in the slice that ships the capability signer. Until
+    // then, demanding it would only crashloop a controller rolled before the
+    // secret is provisioned.
+    const { workflowRunnerCapabilitySecret, ...withoutCapabilitySecret } = ANTHROPIC_BASE;
+    expect(workflowRunnerCapabilitySecret).toBeDefined();
+    expect(configSchema.safeParse(withoutCapabilitySecret).success).toBe(true);
+  });
+
+  it("rejects capability roots reused from either daemon authentication slot", () => {
+    const shared = "shared-authentication-root-secret-123";
+    const cases = [
+      { daemonAuthToken: shared, workflowRunnerCapabilitySecret: shared },
+      { daemonAuthToken: shared, workflowRunnerCapabilitySecretPrevious: shared },
+      { daemonAuthTokenPrevious: shared, workflowRunnerCapabilitySecret: shared },
+      { daemonAuthTokenPrevious: shared, workflowRunnerCapabilitySecretPrevious: shared },
+    ];
+
+    for (const reused of cases) {
+      expect(configSchema.safeParse({ ...ANTHROPIC_BASE, ...reused }).success).toBe(false);
+    }
+  });
+
+  it("does not require DB or Valkey in shared daemon mode", () => {
+    const daemonBase = {
       provider: "anthropic",
       anthropicApiKey: "sk-ant-test",
       daemonAuthToken: "daemon-token",
       orchestratorUrl: "wss://orchestrator.example.com",
-    });
-    expect(result.success).toBe(true);
+    };
+    expect(configSchema.safeParse(daemonBase).success).toBe(true);
   });
 
   it("still requires DAEMON_AUTH_TOKEN in daemon mode (ORCHESTRATOR_URL set)", () => {
-    // The DB/Valkey waiver must not cascade into waiving daemon auth,
-    // an orchestrator-connected daemon without a shared token would
-    // accept unauthenticated connections on restart.
     const { daemonAuthToken, ...withoutToken } = ANTHROPIC_BASE;
     expect(daemonAuthToken).toBeDefined();
     const result = configSchema.safeParse({
       ...withoutToken,
       orchestratorUrl: "wss://orchestrator.example.com",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("allows an isolated workflow runner without data-layer or daemon credentials", () => {
+    const result = configSchema.safeParse({
+      provider: "anthropic",
+      anthropicApiKey: "sk-ant-test",
+      orchestratorUrl: "wss://orchestrator.example.com/ws/workflow-runner/run/attempt",
+      workflowRunner: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a workflow runner carrying the capability signing root", () => {
+    // WORKFLOW_RUNNER=true waives every data-layer check, so a controller env
+    // that picked up the flag by accident would otherwise start clean and die
+    // at first DB use. A runner is issued a per-attempt capability and never
+    // the root, so its presence identifies a misapplied flag at boot.
+    const result = configSchema.safeParse({
+      provider: "anthropic",
+      anthropicApiKey: "sk-ant-test",
+      orchestratorUrl: "wss://orchestrator.example.com/ws/workflow-runner/run/attempt",
+      workflowRunner: true,
+      workflowRunnerCapabilitySecret: "workflow-runner-capability-root-secret",
     });
     expect(result.success).toBe(false);
   });
@@ -168,6 +213,12 @@ describe("configSchema: ephemeral-daemon defaults", () => {
       expect(result.data.ephemeralDaemonSpawnCooldownMs).toBe(30_000);
       expect(result.data.ephemeralDaemonSpawnQueueThreshold).toBe(3);
       expect(result.data.ephemeralDaemonNamespace).toBe("default");
+      expect(result.data.ephemeralDaemonSecretName).toBe("daemon-secrets");
+      expect(result.data.workflowRunnerNamespace).toBe("github-app-runners");
+      expect(result.data.workflowRunnerNodeLabel).toBe(
+        "github-app.node-restriction.kubernetes.io/workflow-runner",
+      );
+      expect(result.data.workflowRunnerNodeValue).toBe("true");
     }
   });
 
@@ -179,6 +230,10 @@ describe("configSchema: ephemeral-daemon defaults", () => {
       ephemeralDaemonSpawnCooldownMs: 10_000,
       ephemeralDaemonSpawnQueueThreshold: 5,
       ephemeralDaemonNamespace: "ops",
+      ephemeralDaemonSecretName: "github-app-secrets",
+      workflowRunnerNamespace: "workflow-ops",
+      workflowRunnerNodeLabel: "node.homelab/class",
+      workflowRunnerNodeValue: "worker",
       daemonImage: "ghcr.io/org/daemon:1.2.3",
       orchestratorPublicUrl: "wss://orchestrator.example.com",
     });
@@ -187,8 +242,21 @@ describe("configSchema: ephemeral-daemon defaults", () => {
       expect(result.data.daemonEphemeral).toBe(true);
       expect(result.data.ephemeralDaemonIdleTimeoutMs).toBe(60_000);
       expect(result.data.ephemeralDaemonNamespace).toBe("ops");
+      expect(result.data.ephemeralDaemonSecretName).toBe("github-app-secrets");
+      expect(result.data.workflowRunnerNamespace).toBe("workflow-ops");
+      expect(result.data.workflowRunnerNodeLabel).toBe("node.homelab/class");
+      expect(result.data.workflowRunnerNodeValue).toBe("worker");
       expect(result.data.daemonImage).toBe("ghcr.io/org/daemon:1.2.3");
     }
+  });
+
+  it("rejects a controller that shares the workflow-runner namespace", () => {
+    const result = configSchema.safeParse({
+      ...ANTHROPIC_BASE,
+      ephemeralDaemonNamespace: "workers",
+      workflowRunnerNamespace: "workers",
+    });
+    expect(result.success).toBe(false);
   });
 
   it("rejects a non-ws URL for orchestratorPublicUrl", () => {
@@ -316,6 +384,27 @@ describe("parseBooleanEnv", () => {
   it("throws on unknown values", () => {
     expect(() => parseBooleanEnv("X", "maybe")).toThrow();
     expect(() => parseBooleanEnv("X", "")).toThrow();
+  });
+});
+
+describe("blankToUndefined", () => {
+  it("treats undefined, empty, and whitespace-only as unset", () => {
+    expect(blankToUndefined(undefined)).toBeUndefined();
+    expect(blankToUndefined("")).toBeUndefined();
+    expect(blankToUndefined("   ")).toBeUndefined();
+  });
+
+  it("passes a real value through untrimmed", () => {
+    expect(blankToUndefined(" .github-app.yaml ")).toBe(" .github-app.yaml ");
+  });
+
+  it("lets the deprecated alias win only when the new name is blank", () => {
+    // Mirrors the REPO_CONFIG_FILE ?? SCHEDULER_CONFIG_FILE chain in
+    // loadConfig. A chart rendering an unset key as "" must not win the
+    // chain, or the path resolves to the repo root for every repo.
+    expect(blankToUndefined("") ?? blankToUndefined("legacy.yaml")).toBe("legacy.yaml");
+    expect(blankToUndefined("new.yaml") ?? blankToUndefined("legacy.yaml")).toBe("new.yaml");
+    expect(blankToUndefined("") ?? blankToUndefined("")).toBeUndefined();
   });
 });
 
@@ -597,5 +686,44 @@ describe("configSchema: PROMPT_CACHE_LAYOUT", () => {
   it("rejects an unknown layout value", () => {
     const result = configSchema.safeParse({ ...ANTHROPIC_BASE, promptCacheLayout: "turbo" });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("assertAutoReviewRequiresAllowlist", () => {
+  const withOwners = (owners: string | undefined, users: string | undefined): Config =>
+    configSchema.parse({
+      ...ANTHROPIC_BASE,
+      ...(owners === undefined ? {} : { allowedOwners: owners }),
+      ...(users === undefined ? {} : { autoReviewUsers: users }),
+    });
+
+  it("rejects AUTO_REVIEW_USERS with no ALLOWED_OWNERS", () => {
+    // Every other allowlist here narrows; this one widens. `isOwnerAllowed`
+    // permits every owner when ALLOWED_OWNERS is unset, so the whole chain to
+    // "run an agent on a stranger's repo" would be a login-string match plus a
+    // key that stranger controls.
+    expect(() => {
+      assertAutoReviewRequiresAllowlist(withOwners(undefined, "chrisleekr"));
+    }).toThrow(/ALLOWED_OWNERS must be set/);
+  });
+
+  it("accepts AUTO_REVIEW_USERS bound to one owner", () => {
+    expect(() => {
+      assertAutoReviewRequiresAllowlist(withOwners("acme", "chrisleekr"));
+    }).not.toThrow();
+  });
+
+  it("accepts several owners, unlike the OAuth and PAT guards", () => {
+    // Auto-review carries no personal identity and no shared rate-limit bucket,
+    // so it only needs the list to be non-empty, not singular.
+    expect(() => {
+      assertAutoReviewRequiresAllowlist(withOwners("acme,other", "chrisleekr"));
+    }).not.toThrow();
+  });
+
+  it("ignores an unset AUTO_REVIEW_USERS entirely", () => {
+    expect(() => {
+      assertAutoReviewRequiresAllowlist(withOwners(undefined, undefined));
+    }).not.toThrow();
   });
 });

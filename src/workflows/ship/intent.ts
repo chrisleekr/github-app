@@ -19,6 +19,7 @@
 import type { SQL } from "bun";
 
 import { requireDb } from "../../db";
+import { isPostgresUniqueViolation } from "../../db/postgres-error";
 import {
   appendIteration,
   type AppendIterationInput,
@@ -70,11 +71,7 @@ export async function createIntent(
     );
     return { ok: true, intent };
   } catch (err: unknown) {
-    // Postgres unique_violation == SQLSTATE 23505. Bun.sql exposes the
-    // raw error fields on the rejection; we prefer structured detection
-    // over message-substring matching (which breaks if Postgres changes
-    // wording or the DB driver wraps the error).
-    if (isUniqueViolation(err, "ship_intents_one_active_per_pr")) {
+    if (isPostgresUniqueViolation(err, "ship_intents_one_active_per_pr")) {
       const existing = await dbFindActiveIntent(input.owner, input.repo, input.pr_number, sql);
       if (existing !== null) {
         return { ok: false, reason: "already_in_progress", existing };
@@ -82,29 +79,6 @@ export async function createIntent(
     }
     throw err;
   }
-}
-
-function isUniqueViolation(err: unknown, constraint: string): boolean {
-  if (err === null || typeof err !== "object") return false;
-  const e = err as {
-    errno?: unknown;
-    code?: unknown;
-    constraint?: unknown;
-    constraint_name?: unknown;
-    message?: unknown;
-  };
-  // Bun.sql surfaces the SQLSTATE on `errno` ("23505" = unique_violation)
-  // and a high-level class string on `code` ("ERR_POSTGRES_SERVER_ERROR").
-  // The constraint name comes back verbatim on `constraint`. Prefer the
-  // structured constraint match; fall back to SQLSTATE + message match
-  // when older drivers omit the constraint field.
-  if (e.constraint === constraint) return true;
-  if (e.constraint_name === constraint) return true;
-  if (e.errno === "23505") {
-    const message = e.message;
-    if (typeof message === "string") return message.includes(constraint);
-  }
-  return false;
 }
 
 export async function getActiveIntent(

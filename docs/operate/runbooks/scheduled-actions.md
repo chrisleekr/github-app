@@ -18,6 +18,14 @@ scheduler: ALLOWED_OWNERS is unset; ... not starting
 To disable a single action without touching the bot, set `enabled: false` on
 that action in the repo's `.github-app.yaml`.
 
+To silence every action in one repo, set the **document-level** `enabled: false`
+(top level, not inside an action). It short-circuits both the cron scan and the
+manual endpoint, so a repo that opted out of the bot does not keep running
+unattended cron work. The manual endpoint reports it as
+`the bot is disabled for this repository`, distinct from the per-action
+`action "<name>" is disabled`. See
+[Per-repo configuration](../../use/repo-config.md).
+
 ## Force a run
 
 ```bash
@@ -29,8 +37,14 @@ curl -X POST https://<bot-host>/api/scheduler/run \
 `409` means a run is already in-flight (see below). A manual run is recorded
 against `last_run_at` at the current instant, so if it fires within the grace
 window before a cron slot, that cron slot is treated as already done and
-skipped: the manual run stands in for it. The endpoint also honours
-`enabled: false` (returns a non-enqueued reason); enable the action to run it.
+skipped: the manual run stands in for it.
+
+The endpoint honours both disablement levels and returns a non-enqueued reason
+naming which one applies. `the bot is disabled for this repository` means the
+**document-level** `enabled: false` above, and clearing it is the only way to
+force a run: enabling the action alone does not lift it. `action "<name>" is
+disabled` means the per-action flag, which the action's own `enabled: true`
+clears.
 
 ## Diagnose
 
@@ -49,7 +63,7 @@ The per-action state lives in the `scheduled_action_state` table
 ## Stuck `in_flight_job_id`
 
 The single-flight lock is taken when a run is claimed. It is normally cleared
-the moment the run completes (the scoped-job-completion handler), so a healthy
+the moment the run completes (the `scoped-job-completion` handler), so a healthy
 run releases it immediately. As a backstop it is also **self-healing**: the
 claim treats a lock older than `2 × AGENT_TIMEOUT_MS` (always longer than the
 longest possible run) as released, so a daemon that died mid-run does not

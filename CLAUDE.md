@@ -82,7 +82,7 @@ The runtime bot in `src/` supports three authentication modes (see `src/config.t
 2. **`CLAUDE_CODE_OAUTH_TOKEN`**, Max/Pro subscription OAuth token (`sk-ant-oat...`, generated via `claude setup-token`). **Requires `ALLOWED_OWNERS`** to be set to a single-tenant value, because the [Agent SDK Note](https://code.claude.com/docs/en/agent-sdk/overview) prohibits serving other users' repos from a personal subscription quota. The token is forwarded to the Claude CLI subprocess via `buildProviderEnv()` in `src/core/executor.ts`; the CLI's own [auth precedence chain](https://code.claude.com/docs/en/authentication#authentication-precedence) picks between credentials if multiple are set.
 3. **AWS Bedrock**, full credential chain via `CLAUDE_PROVIDER=bedrock` + `AWS_REGION` + `CLAUDE_MODEL` (Bedrock model ID format). Credential resolution handled by the AWS SDK inside the subprocess.
 
-Default agent execution model when `CLAUDE_MODEL` is unset and `CLAUDE_PROVIDER=anthropic`: `claude-opus-4-7` (Opus 4.7). The Bedrock path still requires an explicit `CLAUDE_MODEL` (Bedrock model IDs differ from Anthropic's).
+Default agent execution model when `CLAUDE_MODEL` is unset and `CLAUDE_PROVIDER=anthropic`: `claude-opus-5` (Opus 5). The Bedrock path still requires an explicit `CLAUDE_MODEL` (Bedrock model IDs differ from Anthropic's).
 
 The scheduled research workflow in `.github/workflows/research.yml` also uses `CLAUDE_CODE_OAUTH_TOKEN`, but via `anthropics/claude-code-action@v1`: that path is separately sanctioned for CI and is not subject to the `ALLOWED_OWNERS` requirement.
 
@@ -102,7 +102,7 @@ GitHub-side auth defaults to the App installation token minted on demand from `G
 - Strict TypeScript: `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `useUnknownInCatchVariables`, etc.
 - Pre-commit hooks via Husky + lint-staged (auto-format + lint on staged files).
 - Conventional commits enforced via commitlint.
-- Test files live under `test/<mirror>/foo.test.ts` or colocated as `src/.../foo.test.ts`; both are CI-gated. The runner (`scripts/test-isolated.sh`) globs `test/**/*.test.ts src/**/*.test.ts`, and `bun run check:test-globs` (`scripts/check-test-globs.ts`) fails CI if any `*.test.ts` is not reachable by that glob set, so a colocated test cannot go dark while CI stays green (issue #201).
+- Test files live under `test/<mirror>/foo.test.ts` only. The runner (`scripts/test-isolated.sh`) globs `test/**/*.test.ts` and runs each match in its own Bun process, because `mock.module()` is process-global and bleeds across files. `bun run check:test-globs` (`scripts/check-test-globs.ts`) derives the glob set from the runner script itself and fails CI if any `*.test.ts` in the repo is unreachable by it, so a test colocated under `src/` trips the guard instead of silently going dark (issue #201).
 
 ## CI/CD Pipeline
 

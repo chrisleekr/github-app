@@ -21,10 +21,13 @@ interface CapturedCall {
 }
 
 const createNamespacedPod = mock((_args: CapturedCall) => Promise.resolve({ body: {} }));
+let loadFromDefaultError: Error | null = null;
 
 class MockKubeConfig {
   loadFromCluster() {}
-  loadFromDefault() {}
+  loadFromDefault() {
+    if (loadFromDefaultError !== null) throw loadFromDefaultError;
+  }
   makeApiClient(_apiClass: unknown) {
     return { createNamespacedPod };
   }
@@ -48,6 +51,7 @@ beforeEach(() => {
   _resetK8sClientForTests();
   createNamespacedPod.mockClear();
   createNamespacedPod.mockImplementation(() => Promise.resolve({ body: {} }));
+  loadFromDefaultError = null;
   process.env["KUBERNETES_SERVICE_HOST"] = "10.0.0.1";
   delete process.env["KUBECONFIG"];
 });
@@ -88,6 +92,7 @@ describe("spawnEphemeralDaemon: Pod spec", () => {
     const envMap = new Map(container.env.map((e) => [e.name, e.value]));
     expect(envMap.get("DAEMON_EPHEMERAL")).toBe("true");
     expect(envMap.get("ORCHESTRATOR_URL")).toBe("wss://orch.example.com");
+    expect(envMap.get("LD_PRELOAD")).toBe("/usr/local/lib/github-app/daemon-process-guard.so");
     // Credentials (including DAEMON_AUTH_TOKEN) must come from the
     // `daemon-secrets` Secret via envFrom, never inline in the Pod spec,
     // where they'd be readable via `kubectl get pod -o yaml`.
@@ -104,6 +109,31 @@ describe("spawnEphemeralDaemon: Pod spec", () => {
     const call = createNamespacedPod.mock.calls[0] as [CapturedCall];
     const spec = (call[0].body as { spec: { automountServiceAccountToken: boolean } }).spec;
     expect(spec.automountServiceAccountToken).toBe(false);
+  });
+
+  it("runs without CAP_SYS_PTRACE or privilege escalation", async () => {
+    await spawnEphemeralDaemon({
+      deliveryId: "del-security",
+      image: "ghcr.io/org/daemon:1.0.0",
+      orchestratorUrl: "wss://orch.example.com",
+    });
+    const call = createNamespacedPod.mock.calls[0] as [CapturedCall];
+    const securityContext = (
+      call[0].body as {
+        spec: {
+          containers: [
+            {
+              securityContext: {
+                allowPrivilegeEscalation: boolean;
+                capabilities: { drop: string[] };
+              };
+            },
+          ];
+        };
+      }
+    ).spec.containers[0].securityContext;
+    expect(securityContext.allowPrivilegeEscalation).toBe(false);
+    expect(securityContext.capabilities.drop).toEqual(["ALL"]);
   });
 
   it("sanitises an unsafe deliveryId into a valid K8s label value", async () => {
@@ -134,7 +164,9 @@ describe("spawnEphemeralDaemon: Pod spec", () => {
     expect(spec.activeDeadlineSeconds).toBeGreaterThan(0);
   });
 
-  it("pulls credentials from the daemon-secrets Secret via envFrom", async () => {
+  // Pins the EPHEMERAL_DAEMON_SECRET_NAME default: a deployment that never sets
+  // it keeps mounting `daemon-secrets`.
+  it("pulls credentials from the configured Secret via envFrom", async () => {
     await spawnEphemeralDaemon({
       deliveryId: "del-sec",
       image: "ghcr.io/org/daemon:1.0.0",
@@ -167,6 +199,32 @@ describe("spawnEphemeralDaemon: error kinds", () => {
     }
     expect(caught).toBeInstanceOf(EphemeralSpawnError);
     expect((caught as InstanceType<typeof EphemeralSpawnError>).kind).toBe("infra-absent");
+  });
+
+  it("does not expose kubeconfig parser context when authentication loading fails", async () => {
+    delete process.env["KUBERNETES_SERVICE_HOST"];
+    process.env["KUBECONFIG"] = "/tmp/malformed-kubeconfig";
+    loadFromDefaultError = new Error("password: kube-secret\nclient-key-data: private-key");
+    _resetK8sClientForTests();
+
+    let caught: unknown;
+    try {
+      await spawnEphemeralDaemon({
+        deliveryId: "x",
+        image: "img",
+        orchestratorUrl: "wss://x",
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(EphemeralSpawnError);
+    expect((caught as InstanceType<typeof EphemeralSpawnError>).kind).toBe("auth-load-failed");
+    expect((caught as Error).message).toBe(
+      "Kubernetes authentication configuration could not be loaded",
+    );
+    expect((caught as Error).message).not.toContain("kube-secret");
+    expect((caught as Error).message).not.toContain("private-key");
   });
 
   it("maps 4xx to api-rejected", async () => {

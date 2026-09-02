@@ -21,7 +21,7 @@
  * (`duration_ms`) are snake_case. `deliveryId` is optional because system-spawned
  * runs (ship iteration, orchestrator cascade children) have no originating
  * webhook delivery. `duration_ms` is carried only on terminal events that own a
- * start timestamp (the daemon executor's `startedAt`).
+ * start timestamp supplied by the execution owner.
  */
 import { z } from "zod";
 
@@ -62,7 +62,7 @@ export const WorkflowRunLogFieldsSchema = z.union([
     target,
     deliveryId,
   }),
-  /** Info: the daemon flipped the row to `running` and took ownership. */
+  /** Info: an execution owner flipped the row to `running`. */
   z.strictObject({
     event: z.literal(WORKFLOW_RUN_LOG_EVENTS.running),
     runId,
@@ -121,9 +121,8 @@ export const WorkflowRunLogFieldsSchema = z.union([
     reason: z.string(),
   }),
   /**
-   * Error: the post-insert enqueue/publish failed; the compensating
-   * `markFailed` released the in-flight guard. `runId` exists (the row was
-   * inserted then failed).
+   * Error: the first post-commit publication failed. The queued row and its
+   * in-flight guard remain durable while the outbox retries. `runId` exists.
    */
   z.strictObject({
     event: z.literal(WORKFLOW_RUN_LOG_EVENTS.enqueueFailed),
@@ -207,8 +206,8 @@ export function logWorkflowRunIncomplete(
 
 /**
  * Terminal failure. `level` distinguishes a handler-reported failure (`warn`)
- * from an uncaught throw (`error`); the daemon executor logs the throw at
- * `error` with the standard `err` field, this event mirrors that level.
+ * from an uncaught throw (`error`); the execution owner logs the throw with
+ * the standard `err` field, this event mirrors that level.
  */
 export function logWorkflowRunFailed(
   log: Logger,
@@ -258,7 +257,7 @@ export function logWorkflowRunDispatchRefused(
   );
 }
 
-/** Error: post-insert enqueue failed; the in-flight guard was released. */
+/** Error: initial publication failed; the durable outbox retains the queued run. */
 export function logWorkflowRunEnqueueFailed(
   log: Logger,
   fields: BaseFields & { reason: string },

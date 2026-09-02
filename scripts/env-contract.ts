@@ -38,6 +38,13 @@ const CONFIG_DOC = join(repoRoot, "docs/operate/configuration.md");
 // (e.g. AWS_BEARER_TOKEN_BEDROCK, DAEMON_AUTH_TOKEN_PREVIOUS). No config-only var
 // contains any of these words as a segment.
 const SECRET_NAME_RE = /(?:^|_)(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|BEARER)(?:_|$)/;
+// Names that carry a credential word but hold a reference, not a credential.
+// A Secret's own name is public: it renders into a Pod spec and `kubectl get pod
+// -o yaml`, so it belongs in the ConfigMap alongside the namespace it lives in.
+const NON_SECRET_NAME_ALLOWLIST: ReadonlySet<string> = new Set([
+  "EPHEMERAL_DAEMON_SECRET_NAME",
+  "WORKFLOW_RUNNER_IMAGE_PULL_SECRET",
+]);
 // URL / DSN / connection-string names usually carry embedded credentials, so they
 // must be classified secret unless explicitly listed as a plain, non-secret
 // endpoint. This inverts the default to fail-safe for connection-string shapes.
@@ -120,12 +127,13 @@ function main(): void {
   // (URL/DSN) must be classified secret unless explicitly allowlisted.
   for (const e of entries) {
     const looksSecret =
-      SECRET_NAME_RE.test(e.env) ||
+      (SECRET_NAME_RE.test(e.env) && !NON_SECRET_NAME_ALLOWLIST.has(e.env)) ||
       (SECRET_URL_RE.test(e.env) && !NON_SECRET_URL_ALLOWLIST.has(e.env));
     if (looksSecret && e.kind !== "secret") {
       errs.push(
         `${e.env} looks like a secret; add it to SECRET_ENV_VARS in src/config-secret-env.ts ` +
-          `(or, if it is a non-secret endpoint URL, add it to NON_SECRET_URL_ALLOWLIST in scripts/env-contract.ts)`,
+          `(or, if it names a resource rather than holding a credential, add it to ` +
+          `NON_SECRET_NAME_ALLOWLIST or NON_SECRET_URL_ALLOWLIST in scripts/env-contract.ts)`,
       );
     }
   }

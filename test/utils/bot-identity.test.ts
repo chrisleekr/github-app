@@ -10,12 +10,7 @@
 
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
-interface TestConfig {
-  botAppLogin: string;
-  githubPersonalAccessToken?: string;
-}
-
-const testConfig: TestConfig = {
+const testConfig: { botAppLogin: string; githubPersonalAccessToken?: string } = {
   botAppLogin: "chrisleekr-bot[bot]",
 };
 void mock.module("../../src/config", () => ({
