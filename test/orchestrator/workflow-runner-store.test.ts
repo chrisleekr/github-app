@@ -488,6 +488,36 @@ describe.skipIf(sql === null)("workflow runner admission", () => {
     });
   });
 
+  it("reaches a valid pending result behind a full page of schema-invalid rows", async () => {
+    const { findPendingWorkflowRunnerResults, storeWorkflowRunnerResult } =
+      await import("../../src/orchestrator/workflow-runner-store");
+    const broken = await claimedWorkflow(41);
+    await storeWorkflowRunnerResult(succeededResult(broken), requireSql());
+    // Simulate a payload that passed the schema on the way in and no longer
+    // does, which is what a schema narrowing across a deploy leaves behind.
+    await requireSql()`
+      UPDATE executions
+         SET workflow_result_payload = jsonb_build_object('runId', 'not-a-uuid')
+       WHERE delivery_id = ${broken.executionDeliveryId}
+    `;
+
+    const healthy = await claimedWorkflow(42);
+    const payload = succeededResult(healthy);
+    await storeWorkflowRunnerResult(payload, requireSql());
+
+    // `limit = 1` makes the first page exactly the invalid row. Without paging
+    // past it the loader returns nothing here, forever: the query re-selects the
+    // same earliest row on every pass.
+    expect(await findPendingWorkflowRunnerResults(requireSql(), 1)).toEqual([
+      {
+        runId: healthy.runId,
+        attemptId: healthy.attemptId,
+        executionDeliveryId: healthy.executionDeliveryId,
+        payload,
+      },
+    ]);
+  });
+
   it("reports registration, pending result, processed result, and cleanup states", async () => {
     const {
       findPendingWorkflowRunnerResults,

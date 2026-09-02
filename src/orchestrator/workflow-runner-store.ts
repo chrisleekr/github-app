@@ -577,52 +577,66 @@ export async function getWorkflowRunnerResultProcessingState(
   return row.result_processed_at === null ? "pending" : "processed";
 }
 
+/**
+ * Bounded scan past schema-invalid rows. Skipping an invalid row leaves it
+ * pending, and the query re-selects the same earliest rows every pass, so a full
+ * page of invalid rows would hide every valid result behind them forever. Paging
+ * lets the pass reach them; the cap keeps one wedged table from making each pass
+ * scan without limit.
+ */
+const PENDING_RESULT_MAX_PAGES = 10;
+
 export async function findPendingWorkflowRunnerResults(
   sql: SQL = requireDb(),
   limit = 100,
 ): Promise<PendingWorkflowRunnerResult[]> {
-  const rows: {
-    run_id: string;
-    attempt_id: string;
-    delivery_id: string;
-    workflow_result_payload: unknown;
-  }[] = await sql`
-    SELECT wr.id AS run_id, wr.attempt_id, e.delivery_id, e.workflow_result_payload
-      FROM executions AS e
-      JOIN workflow_runs AS wr ON wr.execution_delivery_id = e.delivery_id
-     WHERE e.workflow_result_payload IS NOT NULL
-       AND e.result_processed_at IS NULL
-       AND wr.attempt_id = e.offer_id
-     ORDER BY e.completed_at
-     LIMIT ${limit}
-  `;
-  // Per-row `safeParse`: a single unparseable stored payload must not reject the
-  // whole loader. `reconcilePendingWorkflowRunnerResults` awaits this outside its
-  // per-result try, so one bad row would otherwise stall every other pending
-  // result behind it on every pass.
   const results: PendingWorkflowRunnerResult[] = [];
-  for (const row of rows) {
-    const parsed = WorkflowRunnerResultPayloadSchema.safeParse(row.workflow_result_payload);
-    if (!parsed.success) {
-      logger.error(
-        {
-          event: "workflow_runner_result_payload_invalid",
-          runId: row.run_id,
-          attemptId: row.attempt_id,
-          err: parsed.error,
-        },
-        "Stored workflow runner result payload is schema-invalid; skipping",
-      );
-      continue;
+  for (let page = 0; page < PENDING_RESULT_MAX_PAGES && results.length < limit; page++) {
+    const rows: {
+      run_id: string;
+      attempt_id: string;
+      delivery_id: string;
+      workflow_result_payload: unknown;
+    }[] =
+      // eslint-disable-next-line no-await-in-loop -- pages are ordered and capped
+      await sql`
+      SELECT wr.id AS run_id, wr.attempt_id, e.delivery_id, e.workflow_result_payload
+        FROM executions AS e
+        JOIN workflow_runs AS wr ON wr.execution_delivery_id = e.delivery_id
+       WHERE e.workflow_result_payload IS NOT NULL
+         AND e.result_processed_at IS NULL
+         AND wr.attempt_id = e.offer_id
+       ORDER BY e.completed_at, e.delivery_id
+       LIMIT ${limit} OFFSET ${page * limit}
+    `;
+    for (const row of rows) {
+      const parsed = WorkflowRunnerResultPayloadSchema.safeParse(row.workflow_result_payload);
+      if (!parsed.success) {
+        // Left pending on purpose. The payload cannot be projected, but whether
+        // an unprojectable result should terminalize the user's run or wait for
+        // an operator is a policy call this loader does not get to make.
+        logger.error(
+          {
+            event: "workflow_runner_result_payload_invalid",
+            runId: row.run_id,
+            attemptId: row.attempt_id,
+            err: parsed.error,
+          },
+          "Stored workflow runner result payload is schema-invalid; skipping",
+        );
+        continue;
+      }
+      results.push({
+        runId: row.run_id,
+        attemptId: row.attempt_id,
+        executionDeliveryId: row.delivery_id,
+        payload: parsed.data,
+      });
     }
-    results.push({
-      runId: row.run_id,
-      attemptId: row.attempt_id,
-      executionDeliveryId: row.delivery_id,
-      payload: parsed.data,
-    });
+    // A short page is the end of the table, so there is nothing to page past.
+    if (rows.length < limit) break;
   }
-  return results;
+  return results.slice(0, limit);
 }
 
 export async function markWorkflowRunnerResultProcessed(
