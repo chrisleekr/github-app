@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.17.0](https://github.com/chrisleekr/github-app/compare/v1.16.1...v1.17.0) (2026-09-02)
+
+
+### Features
+
+* **core:** extract HTTP router and add output-safety primitives ([#285](https://github.com/chrisleekr/github-app/issues/285)) ([1e66d72](https://github.com/chrisleekr/github-app/commit/1e66d7212a85e566c36c0ce3f1572016db306175))
+* **repo-config:** add per-repo .github-app.yaml control surface ([#286](https://github.com/chrisleekr/github-app/issues/286)) ([938aa20](https://github.com/chrisleekr/github-app/commit/938aa208029e6478cde454ae9727c09b43902cc7))
+* **runner:** add the config surface and process boundary ([#290](https://github.com/chrisleekr/github-app/issues/290)) ([e5c6545](https://github.com/chrisleekr/github-app/commit/e5c6545a623bb1e945952ad32e55f8e561898a1e))
+* **runner:** isolate structured workflows in one-attempt Kubernetes Pods ([#292](https://github.com/chrisleekr/github-app/issues/292)) ([ddc92d8](https://github.com/chrisleekr/github-app/commit/ddc92d88036e6d2054ff66e2606ff68ae2e84b66))
+* **runner:** move structured workflows onto a leased, durable run rail ([#291](https://github.com/chrisleekr/github-app/issues/291)) ([dcb029a](https://github.com/chrisleekr/github-app/commit/dcb029a3d436a191493810e5c9a5684e10aee8ab))
+
 ## [1.16.1](https://github.com/chrisleekr/github-app/compare/v1.16.0...v1.16.1) (2026-07-18)
 
 
