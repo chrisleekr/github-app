@@ -675,6 +675,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-workflow-execution-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-workflow execution knobs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#conversational-chat-thread-sub-threshold-fallback" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1657,6 +1668,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#per-workflow-execution-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-workflow execution knobs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#conversational-chat-thread-sub-threshold-fallback" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1804,7 +1826,11 @@
 </ul>
 <p>The classifier prompt distinguishes <code>review</code> (proactive, find bugs, post inline findings) from <code>resolve</code> (reactive, fix CI, answer feedback). Tune the threshold per environment with <code>INTENT_CONFIDENCE_THRESHOLD</code>.</p>
 <h2 id="label-path-dispatch">Label-path dispatch<a class="headerlink" href="#label-path-dispatch" title="Permanent link">&para;</a></h2>
-<p>Both the label trigger and the in-registry classifier verdict run the same seven-step sequence in <code>src/workflows/dispatcher.ts</code>: registry lookup → context check → prior-output requirement → label mutex → idempotency insert → job enqueue → return. Prior-output is checked before the mutex, so refusing a workflow that lacks its prerequisite (e.g. <code>bot:implement</code> before any <code>bot:plan</code>) does not strip unrelated <code>bot:*</code> labels. The idempotency insert is the durable in-flight guard: a redelivered or concurrent label event for the same workflow and target is rejected at the database, not just at the best-effort Valkey claim.</p>
+<p>Both the label trigger and the in-registry classifier verdict run the same durable sequence in <code>src/workflows/dispatcher.ts</code>: registry lookup → <a href="../repo-config/">repo-config gate</a> → context check → prior-output requirement → label mutex → atomic <code>workflow_runs</code> plus <code>executions</code> insert → outbox publication → return. The repo-config gate runs second, immediately after the registry lookup, so a workflow disabled in <code>.github-app.yaml</code> leaves no run row, no label mutation, and no queue job. Prior-output is checked before the mutex, so refusing a workflow that lacks its prerequisite (e.g. <code>bot:implement</code> before any <code>bot:plan</code>) does not strip unrelated <code>bot:*</code> labels. The partial unique index is the durable in-flight guard: a redelivered or concurrent trigger for the same workflow and target is rejected by PostgreSQL, not just by the best-effort Valkey delivery claim. Queue publication happens only after the transaction commits. The reaper repairs both a null receipt from a failed publish and a stale receipt whose acknowledged Valkey item was later lost, while an atomic membership check keeps at most one stable copy across the queue and current processing list.</p>
+<h2 id="per-workflow-execution-knobs">Per-workflow execution knobs<a class="headerlink" href="#per-workflow-execution-knobs" title="Permanent link">&para;</a></h2>
+<p>The dispatch gate above only decides whether a workflow runs. The per-workflow <code>model</code>, <code>max_turns</code>, <code>timeout</code>, <code>extra_allowed_tools</code>, and (for <code>review</code>) <code>path_filters</code> / <code>instructions</code> knobs are a second gate. Structured workflows resolve it during controller-owned runner-payload preparation in <code>src/orchestrator/workflow-runner-payload.ts</code>; legacy direct jobs resolve it at shared-daemon accept in <code>src/orchestrator/connection-handler.ts</code>. Both clamp against the server-side env ceilings, so a repo can narrow the defaults but never exceed them.</p>
+<p>Six workflows honour those knobs: <code>review</code>, <code>resolve</code>, <code>implement</code>, <code>remember</code>, <code>plan</code>, and <code>triage</code>. The first four apply them through <code>runPipeline</code>; <code>plan</code> and <code>triage</code> own their prompts and bypass the pipeline, so they apply the same resolved values through the shared helper <code>src/core/agent-policy.ts</code> instead. <code>path_filters</code> / <code>instructions</code> remain pipeline-only, since both need fetched PR data and the prompt builder.</p>
+<p><code>workflows.ship</code> accepts only <code>enabled</code>. Its handler is a composite orchestrator that enqueues the child workflows and never invokes an agent, so agent knobs there would be a permanent no-op; the children run under their own workflow names and resolve <code>workflows.&lt;child&gt;.*</code> over <code>defaults:</code>. See <a href="../repo-config/">Per-repo configuration</a> for the full schema and clamping rules.</p>
 <h2 id="conversational-chat-thread-sub-threshold-fallback">Conversational <code>chat-thread</code> (sub-threshold fallback)<a class="headerlink" href="#conversational-chat-thread-sub-threshold-fallback" title="Permanent link">&para;</a></h2>
 <p>When the intent classifier verdict is below <code>INTENT_CONFIDENCE_THRESHOLD</code> AND the conversational backend (<code>DATABASE_URL</code>) is configured, the dispatcher routes the comment to <code>src/workflows/ship/scoped/chat-thread.ts</code> instead of refusing: a freeform exchange entry point for review threads, PR replies, and issue comments. Output modes the executor can return are validated by Zod (<code>answer</code>, <code>decline</code>, <code>execute-workflow</code>, <code>propose-workflow</code>, <code>propose-action</code>, <code>approve-pending</code>, <code>decline-pending</code>, <code>replace-proposal</code>).</p>
 <h3 id="tool-surface-pr-conversations-only">Tool surface (PR conversations only)<a class="headerlink" href="#tool-surface-pr-conversations-only" title="Permanent link">&para;</a></h3>

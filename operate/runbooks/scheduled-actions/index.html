@@ -1666,6 +1666,13 @@ look for one of these lines at startup:</p>
 </span></code></pre></div>
 <p>To disable a single action without touching the bot, set <code>enabled: false</code> on
 that action in the repo's <code>.github-app.yaml</code>.</p>
+<p>To silence every action in one repo, set the <strong>document-level</strong> <code>enabled: false</code>
+(top level, not inside an action). It short-circuits both the cron scan and the
+manual endpoint, so a repo that opted out of the bot does not keep running
+unattended cron work. The manual endpoint reports it as
+<code>the bot is disabled for this repository</code>, distinct from the per-action
+<code>action "&lt;name&gt;" is disabled</code>. See
+<a href="../../../use/repo-config/">Per-repo configuration</a>.</p>
 <h2 id="force-a-run">Force a run<a class="headerlink" href="#force-a-run" title="Permanent link">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;bot-host&gt;/api/scheduler/run<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$DAEMON_AUTH_TOKEN</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
@@ -1674,8 +1681,13 @@ that action in the repo's <code>.github-app.yaml</code>.</p>
 <p><code>409</code> means a run is already in-flight (see below). A manual run is recorded
 against <code>last_run_at</code> at the current instant, so if it fires within the grace
 window before a cron slot, that cron slot is treated as already done and
-skipped: the manual run stands in for it. The endpoint also honours
-<code>enabled: false</code> (returns a non-enqueued reason); enable the action to run it.</p>
+skipped: the manual run stands in for it.</p>
+<p>The endpoint honours both disablement levels and returns a non-enqueued reason
+naming which one applies. <code>the bot is disabled for this repository</code> means the
+<strong>document-level</strong> <code>enabled: false</code> above, and clearing it is the only way to
+force a run: enabling the action alone does not lift it. <code>action "&lt;name&gt;" is
+disabled</code> means the per-action flag, which the action's own <code>enabled: true</code>
+clears.</p>
 <h2 id="diagnose">Diagnose<a class="headerlink" href="#diagnose" title="Permanent link">&para;</a></h2>
 <p>Key log events (component <code>scheduler</code>):</p>
 <table>
@@ -1708,7 +1720,7 @@ skipped: the manual run stands in for it. The endpoint also honours
 (<code>last_run_at</code>, <code>last_content_sha</code>, <code>in_flight_job_id</code>, <code>in_flight_started_at</code>).</p>
 <h2 id="stuck-in_flight_job_id">Stuck <code>in_flight_job_id</code><a class="headerlink" href="#stuck-in_flight_job_id" title="Permanent link">&para;</a></h2>
 <p>The single-flight lock is taken when a run is claimed. It is normally cleared
-the moment the run completes (the scoped-job-completion handler), so a healthy
+the moment the run completes (the <code>scoped-job-completion</code> handler), so a healthy
 run releases it immediately. As a backstop it is also <strong>self-healing</strong>: the
 claim treats a lock older than <code>2 × AGENT_TIMEOUT_MS</code> (always longer than the
 longest possible run) as released, so a daemon that died mid-run does not

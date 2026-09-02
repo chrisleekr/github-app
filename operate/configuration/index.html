@@ -1151,6 +1151,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#isolated-workflow-runners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Isolated workflow runners
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#triage" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1195,10 +1206,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#scheduled-actions" class="md-nav__link">
+  <a href="#per-repo-config-file" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scheduled actions
+        Per-repo config file
       
     </span>
   </a>
@@ -1206,10 +1217,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#per-repo-config-file" class="md-nav__link">
+  <a href="#auto-review" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Per-repo config file
+        Auto review
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduled-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled actions
       
     </span>
   </a>
@@ -1814,6 +1836,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#isolated-workflow-runners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Isolated workflow runners
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#triage" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1858,10 +1891,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#scheduled-actions" class="md-nav__link">
+  <a href="#per-repo-config-file" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scheduled actions
+        Per-repo config file
       
     </span>
   </a>
@@ -1869,10 +1902,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#per-repo-config-file" class="md-nav__link">
+  <a href="#auto-review" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Per-repo config file
+        Auto review
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scheduled-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduled actions
       
     </span>
   </a>
@@ -2041,7 +2085,7 @@
 </tr>
 <tr>
 <td><code>CLAUDE_MODEL</code></td>
-<td><code>claude-opus-4-7</code> (anthropic); <em>none</em> (bedrock)</td>
+<td><code>claude-opus-5</code> (anthropic); <em>none</em> (bedrock)</td>
 <td>Bedrock</td>
 <td>Bedrock requires an explicit Bedrock model ID.</td>
 </tr>
@@ -2073,7 +2117,7 @@
 <td><code>AWS_ACCESS_KEY_ID</code></td>
 <td><em>none</em></td>
 <td>Optional (bedrock)</td>
-<td>Long-lived credential pair. Prefer profile or OIDC.</td>
+<td>IAM access key. Isolated runners require temporary credentials for a dedicated Bedrock-only principal.</td>
 </tr>
 <tr>
 <td><code>AWS_SECRET_ACCESS_KEY</code></td>
@@ -2085,19 +2129,19 @@
 <td><code>AWS_SESSION_TOKEN</code></td>
 <td><em>none</em></td>
 <td>Optional (bedrock)</td>
-<td>Temporary credentials.</td>
+<td>Required when the access-key pair is temporary session authority.</td>
 </tr>
 <tr>
 <td><code>AWS_BEARER_TOKEN_BEDROCK</code></td>
 <td><em>none</em></td>
-<td>Optional (bedrock, CI)</td>
-<td>Set automatically by <code>aws-actions/configure-aws-credentials</code> OIDC.</td>
+<td>Optional (bedrock)</td>
+<td>Amazon Bedrock API key, distinct from IAM credentials exported by <code>aws-actions/configure-aws-credentials</code>.</td>
 </tr>
 <tr>
 <td><code>ANTHROPIC_BEDROCK_BASE_URL</code></td>
 <td><em>none</em></td>
 <td>Optional (bedrock)</td>
-<td>Override Bedrock runtime endpoint (VPC endpoint / proxy).</td>
+<td>HTTPS Bedrock runtime endpoint or proxy, without URL credentials, query, or fragment.</td>
 </tr>
 <tr>
 <td><code>ALLOWED_OWNERS</code></td>
@@ -2180,7 +2224,7 @@
 <tr>
 <td><code>DEFAULT_MAXTURNS</code></td>
 <td>unset</td>
-<td>Process-wide turn cap. Set only if ops needs a hard ceiling.</td>
+<td>Process-wide turn cap. Set only if ops needs a hard ceiling. It reaches the agent as the job payload's <code>maxTurns</code>, which the workflow rail previously ignored, so before the Gate-2 wiring this value only took effect on the direct-pipeline rail. It now reaches the <code>review</code>, <code>resolve</code>, <code>implement</code>, and <code>remember</code> handlers too. <code>AGENT_MAX_TURNS</code> is unchanged: the executor still falls back to it when a job carries no cap (<code>src/core/executor.ts:366#resolvedMaxTurns</code>).</td>
 </tr>
 <tr>
 <td><code>CLAUDE_CODE_PATH</code></td>
@@ -2273,17 +2317,27 @@
 <tr>
 <td><code>ORCHESTRATOR_PUBLIC_URL</code></td>
 <td><em>none</em></td>
-<td>Public WebSocket URL the spawner injects into ephemeral Pods.</td>
+<td>WebSocket URL injected into Kubernetes-spawned workers. Must be credential-free. Isolated workflow runners require <code>wss://</code>, or <code>ws://</code> to a cluster-local <code>&lt;service&gt;.&lt;namespace&gt;.svc[.cluster.local]:&lt;port&gt;</code> name so an in-cluster runner can dial the orchestrator directly.</td>
 </tr>
 <tr>
 <td><code>DAEMON_AUTH_TOKEN</code></td>
 <td><em>none</em></td>
-<td>Shared secret for the daemon ⇄ orchestrator handshake. Required on both sides. Compared in constant time.</td>
+<td>Shared-daemon handshake secret. Required on the controller and shared daemons. It is not used for isolated-runner capabilities.</td>
 </tr>
 <tr>
 <td><code>DAEMON_AUTH_TOKEN_PREVIOUS</code></td>
 <td><em>none</em></td>
-<td>Optional rotation overlap. Orchestrator accepts either the primary or this previous token; daemons always send the primary. See <a href="../runbooks/daemon-fleet/#rotating-daemon_auth_token"><code>runbooks/daemon-fleet.md</code></a>.</td>
+<td>Optional shared-daemon rotation overlap. The controller accepts daemon handshakes from either slot; daemons send only the primary. See <a href="../runbooks/daemon-fleet/#rotating-daemon_auth_token"><code>runbooks/daemon-fleet.md</code></a>.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code></td>
+<td><em>none</em></td>
+<td>Controller-only HMAC root for deadline-bound, per-attempt runner capabilities. Minimum 32 characters. Optional until the capability signer ships, then required on the controller. It must differ from both daemon-auth slots, and setting it on a worker is rejected at boot.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS</code></td>
+<td><em>none</em></td>
+<td>Optional controller-only rotation predecessor. Accepted only for capabilities whose signed expiry has not elapsed; it must also differ from both daemon-auth slots.</td>
 </tr>
 <tr>
 <td><code>HEARTBEAT_INTERVAL_MS</code></td>
@@ -2328,7 +2382,7 @@
 <tr>
 <td><code>STALE_EXECUTION_THRESHOLD_MS</code></td>
 <td><code>3600000</code></td>
-<td>How long a <code>running</code> execution may sit before the watcher fails it. Set <code>≥ AGENT_TIMEOUT_MS</code>.</td>
+<td>Startup-recovery age threshold for unfenced legacy <code>offered</code> or <code>running</code> execution receipts whose <code>offer_id</code> is null.</td>
 </tr>
 <tr>
 <td><code>DAEMON_DRAIN_TIMEOUT_MS</code></td>
@@ -2338,7 +2392,12 @@
 <tr>
 <td><code>JOB_MAX_RETRIES</code></td>
 <td><code>3</code></td>
-<td>Retries for transient daemon dispatch failures.</td>
+<td>Retries for transient shared-daemon dispatch and structured-workflow publication failures.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_DISPATCH_TIMEOUT_MS</code></td>
+<td><code>4200000</code></td>
+<td>Maximum age of an unclaimed structured-workflow dispatch. Retry-budget or age expiry fails the workflow, releases its in-flight lock, fails its execution receipt, and queues a public failure projection.</td>
 </tr>
 <tr>
 <td><code>OFFER_TIMEOUT_MS</code></td>
@@ -2353,7 +2412,7 @@
 <tr>
 <td><code>LIVENESS_REAPER_INTERVAL_MS</code></td>
 <td><code>30000</code> (min <code>20000</code>)</td>
-<td>Cadence of the heartbeat-based reaper.</td>
+<td>Cadence of lease/deadline expiry, workflow-runner result/resource reconciliation, outbox publication, orphan processing-list recovery, and shared-daemon receipt/heartbeat reaping.</td>
 </tr>
 <tr>
 <td><code>DAEMON_UPDATE_STRATEGY</code></td>
@@ -2414,9 +2473,14 @@
 <td>Kubernetes namespace for spawned ephemeral Pods.</td>
 </tr>
 <tr>
+<td><code>EPHEMERAL_DAEMON_SECRET_NAME</code></td>
+<td><code>daemon-secrets</code></td>
+<td>Existing Secret in <code>EPHEMERAL_DAEMON_NAMESPACE</code> that spawned Pods mount via <code>envFrom</code>. Point it at an existing daemon Secret to avoid a second copy of the same credentials.</td>
+</tr>
+<tr>
 <td><code>DAEMON_IMAGE</code></td>
 <td>auto-detected</td>
-<td>K8s image URI override.</td>
+<td>K8s image URI. Isolated workflow runners reject values that do not end in <code>@sha256:&lt;64 lowercase hex&gt;</code>. Shared ephemeral daemons retain their existing image handling.</td>
 </tr>
 <tr>
 <td><code>KUBECONFIG</code></td>
@@ -2425,7 +2489,73 @@
 </tr>
 </tbody>
 </table>
-<p>The orchestrator also expects a pre-existing <code>daemon-secrets</code> Kubernetes Secret in <code>EPHEMERAL_DAEMON_NAMESPACE</code>, mounted into the spawned Pod via <code>envFrom: secretRef: daemon-secrets</code>. See <a href="../deployment/#ephemeral-daemon-kubernetes-requirements"><code>deployment.md</code></a>.</p>
+<p>The orchestrator also expects a pre-existing Kubernetes Secret in <code>EPHEMERAL_DAEMON_NAMESPACE</code>, named by <code>EPHEMERAL_DAEMON_SECRET_NAME</code> and mounted into the spawned Pod via <code>envFrom</code>. Every key in it becomes an env var on a Pod that runs agent-authored code, so its scope is the deployment's blast-radius decision. See <a href="../deployment/#kubernetes-worker-requirements"><code>deployment.md</code></a>.</p>
+<h2 id="isolated-workflow-runners">Isolated workflow runners<a class="headerlink" href="#isolated-workflow-runners" title="Permanent link">&para;</a></h2>
+<p>Structured <code>workflow-run</code> jobs use one bare Kubernetes Pod per exact attempt.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WORKFLOW_RUNNER_NAMESPACE</code></td>
+<td><code>github-app-runners</code></td>
+<td>Dedicated namespace for runner Pods, per-attempt Secrets, Pod Security Admission, and the runner ValidatingAdmissionPolicy. It must differ from <code>EPHEMERAL_DAEMON_NAMESPACE</code>.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_NODE_LABEL</code></td>
+<td><code>github-app.node-restriction.kubernetes.io/workflow-runner</code></td>
+<td>Node label key the runner Pod's <code>nodeSelector</code> and its <code>NoSchedule</code> toleration are both built from, so one setting targets a node pool the cluster already labels and taints. The default prefix is reserved by the NodeRestriction admission plugin, which stops a kubelet assigning it to itself; an unprefixed key gives that protection up. Must match <code>runnerNodeLabel</code> in the runner boundary ConfigMap.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_NODE_VALUE</code></td>
+<td><code>true</code></td>
+<td>Value paired with <code>WORKFLOW_RUNNER_NODE_LABEL</code>. Must match <code>runnerNodeValue</code> in the runner boundary ConfigMap.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_IMAGE_PULL_SECRET</code></td>
+<td><em>(empty)</em></td>
+<td>Name of an existing <code>kubernetes.io/dockerconfigjson</code> Secret in <code>WORKFLOW_RUNNER_NAMESPACE</code> that runner Pods may reference. Must match <code>runnerImagePullSecret</code> in the runner boundary ConfigMap. Empty emits no <code>imagePullSecrets</code>, which only works against a registry allowing anonymous pull.</td>
+</tr>
+</tbody>
+</table>
+<p>The following variables are internal to the Pod and are injected by <code>src/k8s/workflow-runner-spawner.ts</code>; operators must not set them on the controller or shared daemon Deployment.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WORKFLOW_RUNNER</code></td>
+<td><code>false</code></td>
+<td>Spawner sets <code>true</code>; selects runner startup validation and removes controller/data-layer requirements.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_RUN_ID</code></td>
+<td><em>none</em></td>
+<td>Spawner-injected UUID for the workflow row.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_ATTEMPT_ID</code></td>
+<td><em>none</em></td>
+<td>Spawner-injected UUID for the exact dispatch generation and Pod/Secret identity.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_TOKEN</code></td>
+<td><em>none</em></td>
+<td>Attempt-bound HMAC capability, read from the per-attempt Secret. It is not the fleet-wide <code>DAEMON_AUTH_TOKEN</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>The Pod also receives <code>ORCHESTRATOR_URL</code>, derived from <code>ORCHESTRATOR_PUBLIC_URL</code>, and <code>LD_PRELOAD</code> for the native process-boundary guard. It obtains the target-repository GitHub installation token and its expiry only after its first registration over WSS. That credential payload is recorded and sent at most once; reconnects restore controller access without resending it. The database claim fixes an immutable deadline 4,200 seconds after admission. Heartbeats cannot extend the lease past it, and execution stops at the earlier of that deadline or five minutes before the token expires. The Pod uses <code>restartPolicy: Never</code>, so a process failure becomes terminal rather than restarting after the one-time credential delivery. Each Pod has a 10 GiB <code>emptyDir</code> workspace and exact ephemeral-storage request/limit values of 2 GiB/10 GiB.</p>
 <h2 id="triage">Triage<a class="headerlink" href="#triage" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2580,6 +2710,145 @@ cap, so there is nothing else to tune.</p>
 </tr>
 </tbody>
 </table>
+<h2 id="per-repo-config-file">Per-repo config file<a class="headerlink" href="#per-repo-config-file" title="Permanent link">&para;</a></h2>
+<p>Every installed repository may ship a config file at its <strong>default branch</strong>
+root. Only that copy is ever applied: a change to the file inside a pull request
+does not affect that pull request. Such a pull request does get a read-only
+validation comment (see <a href="../../use/repo-config/#checking-a-file-before-pushing">Checking a file before pushing</a>),
+which never feeds the applied policy. The file carries the repo-wide master switch,
+per-workflow toggles and agent knobs, pre-dispatch trigger filters, scheduled
+actions, and the review-learnings block. See
+<a href="../../use/repo-config/">Per-repo configuration</a> for the schema and the field
+reference. Every block is applied today, including the agent knobs on
+<code>workflows.plan.*</code> and <code>workflows.triage.*</code>.</p>
+<div class="admonition note">
+<p class="admonition-title"><code>workflows.ship</code> takes only <code>enabled</code></p>
+<p><code>workflows.ship.model</code>, <code>.max_turns</code>, <code>.timeout</code>, and
+<code>.extra_allowed_tools</code> are rejected by the schema. They were always a
+no-op, ship's handler only enqueues child workflows and never runs an
+agent, but they used to parse. Validation is whole-document, so one
+rejected key fails the entire file and it falls back to
+<code>DEFAULT_REPO_POLICY</code>. Put those knobs on <code>defaults:</code> or on the per-child
+entries (<code>triage</code>, <code>plan</code>, <code>implement</code>, <code>review</code>, <code>resolve</code>), which is
+what ship's steps actually resolve against.</p>
+</div>
+<p>The env vars below are the operator's half of that surface, and the
+<code>ALLOWED_OWNERS</code> allowlist gates every repo before any of the file is
+consulted, so nothing in a repo's YAML can readmit a repo the server rejected.
+Two of the rows are cross-references, not settings of their own: they are the
+numeric ceilings a repo's <code>max_turns</code> and <code>timeout</code> are clamped against, and a
+repo can only lower them, never raise them.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>REPO_CONFIG_FILE</code></td>
+<td><code>.github-app.yaml</code></td>
+<td>Filename read from each installed repo's default-branch root. Trimmed at load: a stray space would 404 on every repo and silence the whole surface with nothing logged.</td>
+</tr>
+<tr>
+<td><code>SCHEDULER_CONFIG_FILE</code></td>
+<td>unset</td>
+<td><strong>Deprecated</strong> former name for <code>REPO_CONFIG_FILE</code>. Still honoured as a fallback so an upgrade does not silently change which file is read; logs a one-shot boot warning.</td>
+</tr>
+<tr>
+<td><code>AGENT_MAX_TURNS</code> / <code>DEFAULT_MAXTURNS</code></td>
+<td>unset</td>
+<td>Ceiling for a repo's <code>max_turns</code>, resolved as <code>AGENT_MAX_TURNS ?? DEFAULT_MAXTURNS</code>, so with the first unset the second is the ceiling. Documented under <a href="#http-server">HTTP server</a>.</td>
+</tr>
+<tr>
+<td><code>AGENT_TIMEOUT_MS</code></td>
+<td><code>3600000</code></td>
+<td>Ceiling for a repo's <code>timeout</code>, and an independent outer bound on the run. Documented under <a href="#http-server">HTTP server</a>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="auto-review">Auto review<a class="headerlink" href="#auto-review" title="Permanent link">&para;</a></h2>
+<p>Runs the <code>review</code> workflow automatically when an allowlisted user pushes commits
+to an open pull request (<code>pull_request.synchronize</code>), with no label and no
+mention. Server mode only.</p>
+<p><strong>Two keys must agree.</strong> <code>AUTO_REVIEW_USERS</code> is the operator's half and says
+<em>which logins may trigger it</em>; <code>workflows.review.auto</code> in a repo's
+<code>.github-app.yaml</code> is the maintainer's half and says <em>whether this repo wants
+it</em>. Neither alone enables anything. The split exists because <code>AUTO_REVIEW_USERS</code>
+is server-wide across every repo of the owner, so without the per-repo key,
+setting it would switch auto-review on everywhere at once.</p>
+<p>The repo key defaults to <code>false</code>, unlike every other toggle in that file,
+because <code>loadRepoPolicy</code> fails open: a missing, unreachable, or invalid config
+yields the built-in defaults. Defaulting it on would let a GitHub outage start
+spending tokens on every push. This mirrors <code>SCHEDULER_ALLOW_AUTO_MERGE</code> +
+<code>auto_merge</code>, the other env-AND-repo automatic action.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AUTO_REVIEW_USERS</code></td>
+<td>unset</td>
+<td>Comma-separated GitHub logins whose pushes may trigger an automatic review, matched case-insensitively. Unset or empty disables the feature outright. Requires a non-empty <code>ALLOWED_OWNERS</code> and <code>workflows.review.auto: true</code> on the repo.</td>
+</tr>
+</tbody>
+</table>
+<p>Four things narrow it further, all silent:</p>
+<ul>
+<li>The <strong>pusher</strong>, not the commit author, is what is matched. The commit author is
+  derived from the commit's author email, which anyone can set; the pusher is
+  authenticated by GitHub.</li>
+<li><strong>Our own pushes are skipped.</strong> <code>resolve</code> pushes a commit per fix, and that
+  push would otherwise trigger another review.</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Under <code>GITHUB_PERSONAL_ACCESS_TOKEN</code>, do not list the PAT owner</p>
+<p>The bot's writes are attributed to the PAT owner, so that login's pushes are
+indistinguishable from the bot's own. Auto-review therefore skips <strong>every</strong>
+push by the PAT owner, logging <code>auto_review.skipped_self_push</code>. Listing only
+the PAT owner in <code>AUTO_REVIEW_USERS</code> makes the feature look configured while
+doing nothing. List a different collaborator, or run on App auth, where the
+bot's identity is its own account.</p>
+</div>
+<ul>
+<li><strong>Content-free pushes are skipped.</strong> A rebase that leaves the pull request's own
+  diff unchanged does not trigger a review.</li>
+<li><strong>A review already in flight wins.</strong> A push landing mid-review is dropped, not
+  queued, and nothing is posted to the pull request about it.</li>
+<li><strong>Fork pull requests are skipped.</strong> Checkout resolves the head <em>branch name</em>
+  against the base repository, so a fork's ref either fails to clone or silently
+  resolves to a same-named base branch and reviews the wrong tree.</li>
+<li><strong>Pull requests <code>ship</code> is driving are skipped.</strong> Ship runs its own
+  review → resolve iteration, so a second review would duplicate the spend.</li>
+</ul>
+<p><strong><code>ALLOWED_OWNERS</code> is required.</strong> Setting <code>AUTO_REVIEW_USERS</code> without it fails at
+startup. Every other allowlist here narrows; this one widens, because it starts
+an unattended agent run with no per-event human action, and <code>isOwnerAllowed</code>
+permits every owner when <code>ALLOWED_OWNERS</code> is unset. Unlike
+<code>CLAUDE_CODE_OAUTH_TOKEN</code> and <code>GITHUB_PERSONAL_ACCESS_TOKEN</code>, which demand
+exactly one owner, auto-review only needs the list to be non-empty: it carries no
+personal identity and no shared rate-limit bucket.</p>
+<div class="admonition warning">
+<p class="admonition-title">Auto-review removes the human-in-the-loop step</p>
+<p>Every other way to start a <code>review</code> requires a deliberate act: a <code>bot:review</code>
+label or an <code>@chrisleekr-bot</code> mention. Auto-review starts the same agent
+session (Bash tool, on a clone) from an ordinary push, and the reviewer's
+prompt includes the pull request's comment thread, which on a public
+repository anyone can write to. The spotlighting, input sanitisation, output
+secret-strip, and destructive-Bash denylist all still apply, but the attacker
+no longer needs a maintainer to <em>choose</em> to run the agent, only to push.
+Enable <code>auto: true</code> only on repositories where you accept that trade-off.</p>
+</div>
+<p>Gate 1 still applies, so <code>enabled: false</code>, <code>workflows.review.enabled: false</code>, and
+every <code>triggers.*</code> filter keep their veto. Refusals are logged but never
+commented, since nobody asked for the run.</p>
 <h2 id="scheduled-actions">Scheduled actions<a class="headerlink" href="#scheduled-actions" title="Permanent link">&para;</a></h2>
 <p>Controls the internal scheduler that runs prompt-based actions declared in a
 repo's <code>.github-app.yaml</code>. See <a href="../../use/scheduled-actions/">Scheduled actions</a>
@@ -2607,33 +2876,6 @@ for the file schema. Server mode only; a daemon process ignores these.</p>
 <td><code>SCHEDULER_ALLOW_AUTO_MERGE</code></td>
 <td><code>false</code></td>
 <td>Hard kill-switch for unattended auto-merge. Effective auto-merge requires BOTH this AND a per-action <code>auto_merge: true</code>; otherwise no merge tool runs.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="per-repo-config-file">Per-repo config file<a class="headerlink" href="#per-repo-config-file" title="Permanent link">&para;</a></h2>
-<p>Selects the file each installed repo is read from. Unlike the scheduler
-variables above this is <strong>not</strong> server-mode only: the same document carries
-feature toggles, agent overrides, and trigger filters, so any process that
-resolves repo policy reads it. Only the default branch's copy is ever applied.
-See <a href="../../use/repo-config/">Per-repo configuration</a> for the file schema.</p>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Default</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>REPO_CONFIG_FILE</code></td>
-<td><code>.github-app.yaml</code></td>
-<td>Filename read from each installed repo's default-branch root. Trimmed at load: a stray space would 404 on every repo and silence the whole surface with nothing logged.</td>
-</tr>
-<tr>
-<td><code>SCHEDULER_CONFIG_FILE</code></td>
-<td>(unset)</td>
-<td><strong>Deprecated</strong> former name for <code>REPO_CONFIG_FILE</code>. Still honoured as a fallback so an upgrade does not silently change which file is read; logs a one-shot boot warning.</td>
 </tr>
 </tbody>
 </table>
@@ -2681,7 +2923,7 @@ before committing:</p>
    no schema change needed.</li>
 </ol>
 <h2 id="prompt-cache-layout">Prompt cache layout<a class="headerlink" href="#prompt-cache-layout" title="Permanent link">&para;</a></h2>
-<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:604#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:208</code> for the runtime guard.</p>
+<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:675#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:231#useCacheableLayout</code> for the runtime guard.</p>
 <table>
 <thead>
 <tr>
@@ -2719,19 +2961,24 @@ before committing:</p>
 </thead>
 <tbody>
 <tr>
-<td>Orchestrator (webhook server)</td>
-<td>GitHub App credentials, one AI provider credential, <code>VALKEY_URL</code>, <code>DATABASE_URL</code>, <code>DAEMON_AUTH_TOKEN</code>.</td>
+<td>Controller (webhook server)</td>
+<td>GitHub App credentials, one AI provider credential, <code>VALKEY_URL</code>, <code>DATABASE_URL</code>, and <code>DAEMON_AUTH_TOKEN</code> (plus <code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code> once the signer ships); K8s API access, <code>DAEMON_IMAGE</code>, and a WSS <code>ORCHESTRATOR_PUBLIC_URL</code> for structured workflows.</td>
 </tr>
 <tr>
-<td>Ephemeral-daemon scale-up</td>
-<td>K8s API access + RBAC on <code>pods</code> in <code>EPHEMERAL_DAEMON_NAMESPACE</code>, <code>daemon-secrets</code> Secret.</td>
+<td>Ephemeral shared-daemon scale-up</td>
+<td>RBAC on <code>pods</code> in <code>EPHEMERAL_DAEMON_NAMESPACE</code> and the <code>EPHEMERAL_DAEMON_SECRET_NAME</code> Secret.</td>
 </tr>
 <tr>
-<td>Daemon process (<code>ORCHESTRATOR_URL</code> set)</td>
-<td><code>DAEMON_AUTH_TOKEN</code>, one AI provider credential. GitHub App credentials and data-layer URLs are NOT required.</td>
+<td>Shared daemon (<code>ORCHESTRATOR_URL</code> set)</td>
+<td><code>DAEMON_AUTH_TOKEN</code> and one AI provider credential. GitHub App credentials and data-layer URLs are not required.</td>
+</tr>
+<tr>
+<td>Isolated workflow runner (spawner-owned)</td>
+<td>Named provider-key references from <code>workflow-runner-secrets</code>, an injected per-attempt capability, IDs, and WSS URL. It must not receive App, PAT, database, Valkey, Kubernetes, global GitHub, or fleet credentials.</td>
 </tr>
 </tbody>
 </table>
+<p>Only one controller replica is supported. Queue recovery is durable, but workflow-runner admission does not implement a distributed semaphore or controller-session ownership.</p>
 <h2 id="llm-based-output-scanner-defense-layer-4">LLM-based output scanner (defense layer 4)<a class="headerlink" href="#llm-based-output-scanner-defense-layer-4" title="Permanent link">&para;</a></h2>
 <p>Per-call LLM scan of every agent-generated GitHub-bound body, after the deterministic regex pass in <code>redactSecrets()</code>. Catches encoded / obfuscated secrets the regex misses.</p>
 <table>
@@ -2746,17 +2993,17 @@ before committing:</p>
 <tr>
 <td><code>LLM_OUTPUT_SCANNER_ENABLED</code></td>
 <td><code>true</code></td>
-<td>Set <code>false</code> to disable. Skipping the scan saves ~1–2s and ~$0.0002 per agent reply but loses the encoded-secret backstop.</td>
+<td>Set <code>false</code> to disable. General GitHub-bound output keeps the deterministic regex floor and skips the encoded-secret backstop. Structured runner commands are rejected and results become a fixed safe failure while disabled.</td>
 </tr>
 <tr>
 <td><code>LLM_OUTPUT_SCANNER_MODEL</code></td>
-<td><code>haiku-3-5</code></td>
-<td>Operator-friendly alias resolved by <code>src/ai/llm-client.ts MODEL_MAP</code>. Cheapest Haiku that emits the structured JSON schema is sufficient.</td>
+<td><code>haiku-4-5</code></td>
+<td>Operator-friendly alias resolved by <code>src/ai/llm-client.ts MODEL_MAP</code>. A Sonnet alias detects more encoded or obfuscated variants; raise the timeout alongside it, because the isolated-runner boundary treats a slow scan as a rejection.</td>
 </tr>
 <tr>
 <td><code>LLM_OUTPUT_SCANNER_TIMEOUT_MS</code></td>
-<td><code>3000</code></td>
-<td>Per-call wall-clock cap. On timeout, the helper FAILS OPEN, posts the body that survived the regex pass and emits a <code>warn</code> log.</td>
+<td><code>30000</code></td>
+<td>Per-call wall-clock cap. General GitHub-bound output fails open to the deterministic regex result. Structured runner RPC fails closed as described above, so the default is sized for that case rather than for comment latency.</td>
 </tr>
 </tbody>
 </table>
@@ -2767,12 +3014,12 @@ before committing:</p>
 <ul>
 <li><strong>Allowed exact keys</strong>: <code>HOME</code>, <code>PATH</code>, <code>USER</code>, <code>LANG</code>, <code>LC_ALL</code>, <code>TZ</code>, <code>TMPDIR</code>, <code>NODE_OPTIONS</code>, <code>NODE_PATH</code>, <code>NODE_NO_WARNINGS</code>, <code>NODE_EXTRA_CA_CERTS</code>, <code>SSL_CERT_FILE</code>, <code>SSL_CERT_DIR</code>, <code>HTTP_PROXY</code>/<code>HTTPS_PROXY</code>/<code>NO_PROXY</code> (uppercase + lowercase), <code>NO_COLOR</code>, <code>FORCE_COLOR</code>, <code>TERM</code>, <code>COLORTERM</code>, <code>CI</code>, <code>GH_TOKEN</code>, <code>GITHUB_TOKEN</code>.</li>
 <li><strong>Allowed prefixes</strong> (forward-compatible for vendor knobs): <code>CLAUDE_CODE_*</code>, <code>ANTHROPIC_*</code>, <code>AWS_*</code>, <code>GIT_*</code>, <code>GH_*</code>.</li>
-<li><strong>Denied exact keys</strong> (override allow): <code>GITHUB_APP_ID</code>, <code>GITHUB_APP_PRIVATE_KEY</code>, <code>GITHUB_WEBHOOK_SECRET</code>, <code>GITHUB_PERSONAL_ACCESS_TOKEN</code>, <code>DAEMON_AUTH_TOKEN</code>, <code>DAEMON_AUTH_TOKEN_PREVIOUS</code>, <code>DATABASE_URL</code>, <code>VALKEY_URL</code>, <code>REDIS_URL</code>, <code>CONTEXT7_API_KEY</code>.</li>
+<li><strong>Denied exact keys</strong> (override allow): <code>GITHUB_APP_ID</code>, <code>GITHUB_APP_PRIVATE_KEY</code>, <code>GITHUB_WEBHOOK_SECRET</code>, <code>GITHUB_PERSONAL_ACCESS_TOKEN</code>, <code>DAEMON_AUTH_TOKEN</code>, <code>DAEMON_AUTH_TOKEN_PREVIOUS</code>, <code>WORKFLOW_RUNNER_CAPABILITY_SECRET</code>, <code>WORKFLOW_RUNNER_CAPABILITY_SECRET_PREVIOUS</code>, <code>DATABASE_URL</code>, <code>VALKEY_URL</code>, <code>REDIS_URL</code>, <code>CONTEXT7_API_KEY</code>, <code>GH_ENTERPRISE_TOKEN</code>, <code>GITHUB_ENTERPRISE_TOKEN</code>, <code>LD_PRELOAD</code>, <code>LD_LIBRARY_PATH</code>.</li>
 <li><strong>Denied prefixes</strong>: <code>GITHUB_APP_*</code>, <code>GITHUB_WEBHOOK_*</code>.</li>
 </ul>
 <p>If you add a new env var the agent CLI needs, extend the allowlist in <code>buildProviderEnv()</code>. Anything outside the allowlist is silently dropped, verify by running <code>bun test test/core/build-provider-env.test.ts</code> after the change.</p>
 <h2 id="k8s-secret-split-defense-layer-1b-issue-102">K8s Secret split (defense layer 1b, issue #102)<a class="headerlink" href="#k8s-secret-split-defense-layer-1b-issue-102" title="Permanent link">&para;</a></h2>
-<p>The Helm chart MUST split secrets into two K8s Secret objects so the daemon Pod's filesystem/environment never carries orchestrator-only credentials, even if the env allowlist above develops a future bug:</p>
+<p>The deployment must keep controller authority out of every worker. The runtime expects these Secret boundaries:</p>
 <table>
 <thead>
 <tr>
@@ -2784,18 +3031,28 @@ before committing:</p>
 <tbody>
 <tr>
 <td><code>orchestrator-secrets</code></td>
-<td>Orchestrator Pod ONLY</td>
-<td><code>GITHUB_APP_ID</code>, <code>GITHUB_APP_PRIVATE_KEY</code>, <code>GITHUB_WEBHOOK_SECRET</code>, <code>DATABASE_URL</code>, <code>VALKEY_URL</code>, <code>CONTEXT7_API_KEY</code>, <code>DAEMON_AUTH_TOKEN[_PREVIOUS]</code> (issuance side).</td>
+<td>Controller Pod only</td>
+<td><code>GITHUB_APP_ID</code>, <code>GITHUB_APP_PRIVATE_KEY</code>, <code>GITHUB_WEBHOOK_SECRET</code>, <code>DATABASE_URL</code>, <code>VALKEY_URL</code>, <code>CONTEXT7_API_KEY</code>, <code>DAEMON_AUTH_TOKEN[_PREVIOUS]</code>, <code>WORKFLOW_RUNNER_CAPABILITY_SECRET[_PREVIOUS]</code>, and the selected provider credential.</td>
 </tr>
 <tr>
 <td><code>daemon-secrets</code></td>
-<td>Daemon Pod (incl. ephemeral)</td>
-<td><code>ANTHROPIC_API_KEY</code> or <code>CLAUDE_CODE_OAUTH_TOKEN</code>, <code>AWS_*</code> chain (Bedrock provider), <code>DAEMON_AUTH_TOKEN[_PREVIOUS]</code> (handshake side), <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> (PAT mode only).</td>
+<td>Shared daemon Pods</td>
+<td>Provider configuration/credential, primary <code>DAEMON_AUTH_TOKEN</code>, and <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> only for legacy PAT deployments. Renameable via <code>EPHEMERAL_DAEMON_SECRET_NAME</code>; the name is a reference, the contents are what this row constrains.</td>
+</tr>
+<tr>
+<td><code>workflow-runner-secrets</code></td>
+<td>Isolated workflow runner Pods</td>
+<td>The spawner references only the named provider keys listed in <a href="../deployment/#workflow-runner-secrets-secret"><code>deployment.md</code></a>. Unexpected keys are not imported. Never place App, PAT, database, Valkey, Kubernetes, Context7, GitHub, or daemon-auth credentials here.</td>
+</tr>
+<tr>
+<td><code>workflow-runner-&lt;attempt UUID&gt;</code></td>
+<td>One isolated workflow runner Pod</td>
+<td>One deadline-bound <code>capability</code> derived for that run and attempt. The controller creates the Pod first, then makes this Secret a Kubernetes-owned dependent of that exact Pod UID.</td>
 </tr>
 </tbody>
 </table>
-<p>The orchestrator mints short-lived GitHub installation tokens and forwards them via the WebSocket, daemons never see the App private key or webhook secret.</p>
-<p>A startup warning fires if a daemon process detects orchestrator-only env vars at boot: it does NOT crash (a downed daemon is worse than a degraded posture), but the warning surfaces the misconfiguration in operator logs.</p>
+<p>The controller mints a short-lived token restricted to the target repository and forwards it after runner registration. Shared daemons retain the legacy credential path. Structured workflows refuse PAT mode because the controller cannot mint a repository-bound App token from a PAT.</p>
+<p>A shared daemon logs a startup warning if it sees controller-only secrets. An isolated workflow runner fails startup when any controller, fleet, PAT, global GitHub, Kubernetes, or Context7 credential is present, or when a cloud metadata endpoint answers. Kubernetes Secrets still require encryption at rest and least-privilege RBAC; base64 storage alone is not encryption.</p>
 <h2 id="output-secret-stripping-behavior-defense-layer-2">Output secret-stripping behavior (defense layer 2)<a class="headerlink" href="#output-secret-stripping-behavior-defense-layer-2" title="Permanent link">&para;</a></h2>
 <p>Every body posted to GitHub is scanned by <code>redactSecrets()</code>, see <code>src/utils/sanitize.ts</code> for the patterns. Detections are SILENTLY STRIPPED (no marker, no footer, no count surfaced in the body) so attackers get no probing feedback. Operator-side info is logged via Pino <code>warn</code> with <code>event: "secret_redacted"</code> carrying <code>kinds</code>, <code>matchCount</code>, <code>callsite</code>, <code>deliveryId</code>, but never the matched bytes.</p>
 <p>If redaction empties the body entirely, the GitHub call is skipped and <code>event: "secret_redaction_emptied_body"</code> is logged at <code>error</code>.</p>

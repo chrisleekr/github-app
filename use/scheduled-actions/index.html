@@ -1732,8 +1732,16 @@ is due. The daemon fleet runs each action as a single agent session.</p>
 <li>a non-empty <code>ALLOWED_OWNERS</code> (the action prompt is owner-trusted config, so
   the feature refuses to start without an owner allowlist)</li>
 </ul>
+<p>Repo-side, the file's <code>enabled</code> key is a master switch: <code>enabled: false</code> stops
+scheduled actions along with every other trigger, regardless of a per-action
+<code>enabled: true</code>. An unattended cron run writes to the repo with nobody watching,
+so turning the bot off has to silence it too.</p>
 <p>See <a href="../../operate/configuration/#scheduled-actions">Configuration</a>.</p>
 <h2 id="github-appyaml"><code>.github-app.yaml</code><a class="headerlink" href="#github-appyaml" title="Permanent link">&para;</a></h2>
+<p>Scheduled actions are one block in a larger per-repo config file. See
+<a href="../repo-config/">Repo configuration</a> for the whole file, including the feature
+toggles and trigger filters; the filename comes from <code>REPO_CONFIG_FILE</code>
+(deprecated alias: <code>SCHEDULER_CONFIG_FILE</code>).</p>
 <p>Place the file at your repo's <strong>default-branch root</strong>.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
