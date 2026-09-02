@@ -74,9 +74,9 @@ The shared definition lives in `src/workflows/handlers/checks.ts` so the prologu
 `incomplete` is a fourth `HandlerResult` variant ("agent ran cleanly but work remains") distinct from `succeeded` / `failed` / `handed-off`:
 
 - The DB `workflow_runs.status` column accepts `incomplete` (migration `009_workflow_runs_incomplete.sql`).
-- `runs-store.markIncomplete(runId, reason, state)` mirrors `markFailed`, persisting `state.incompleteReason`.
-- The daemon executor (`src/daemon/workflow-executor.ts`) reacts `confused` on the trigger comment, mirrors the handler's `humanMessage`, sends `job:result` with `success: false` and an `incomplete:`-prefixed `errorMessage`.
-- The orchestrator cascade keeps its binary `succeeded | failed` contract: the executor maps `incomplete` → `failed` for cascade purposes, but the parent's tracking-comment headline reads "ship halted at step N (... → resolve), resolve returned incomplete; see PR tracking comment for outstanding items." instead of the generic failure message.
+- The attempt-fenced terminal write persists `status='incomplete'` and `state.incompleteReason` only while the exact run, attempt, owner, lease, and immutable deadline remain current.
+- The controller stores the runner's terminal result and marks both durable rows before any GitHub projection. Result reconciliation then reacts `confused` on the trigger comment and mirrors the handler's `humanMessage`.
+- The orchestrator cascade keeps its binary `succeeded | failed` contract: `completion-reconciler.ts` maps `incomplete` to a failed completion with an internal `incomplete:` marker, but the parent's tracking-comment headline reads "ship halted at step N (... → resolve), resolve returned incomplete; see PR tracking comment for outstanding items." instead of the generic failure message.
 
 ## Stop conditions
 
@@ -89,7 +89,7 @@ The shared definition lives in `src/workflows/handlers/checks.ts` so the prologu
 Public-comment and operator surfaces are separated so a raw SDK or octokit error never reaches the public PR thread. Both the `runPipeline` failure path and the outer handler `catch` apply the same separation:
 
 - **Public tracking comment**: a safe constant: `"resolve pipeline execution failed, see server logs for details."` The actual error string remains internal because octokit error stacks include `https://x-access-token:GHS_xxx@…` in the request URL.
-- **Operator surfaces**: `state.failedReason` on the `workflow_runs` row, `pino` log lines on the daemon, and `ExecutionResult.errorMessage` returned to the orchestrator. The orchestrator's transient-quota detector reads `state.failedReason` and auto-defers the ship loop's next iteration when the SDK reports `"You've hit your limit · resets … UTC"`.
+- **Operator surfaces**: `state.failedReason` on the `workflow_runs` row plus runner and controller `pino` lines. The controller applies the credential-output boundary before persisting the runner's SDK reason. The transient-quota detector reads `state.failedReason` and auto-defers the ship loop's next iteration when the SDK reports `"You've hit your limit · resets … UTC"`.
 
 ## Review learnings
 

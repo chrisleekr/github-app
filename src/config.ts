@@ -939,10 +939,16 @@ function validateDataLayerConfig(
 
   if ((data.orchestratorUrl?.trim().length ?? 0) > 0) return;
 
-  // Not required yet: no code on this branch signs or verifies a capability, so
-  // demanding the root here would only crashloop a controller that rolls this
-  // image before the secret is provisioned. The slice that ships the signer
-  // makes it mandatory. The cross-check below still applies when it is set.
+  // Required from here on: `workflow-runner-dispatch.ts` derives every runner
+  // capability from this root, so without it structured workflows fail one
+  // dispatch at a time. Failing the boot instead surfaces it on deploy.
+  if ((data.workflowRunnerCapabilitySecret?.trim().length ?? 0) === 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: "WORKFLOW_RUNNER_CAPABILITY_SECRET is required on the controller",
+      path: ["workflowRunnerCapabilitySecret"],
+    });
+  }
   const daemonSecrets = [data.daemonAuthToken, data.daemonAuthTokenPrevious];
   const capabilitySecrets = [
     data.workflowRunnerCapabilitySecret,

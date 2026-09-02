@@ -9,6 +9,7 @@
 
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
+import { deriveWorkflowRunnerCapability } from "../../src/orchestrator/workflow-runner-capability";
 import type { DaemonMessage } from "../../src/shared/ws-messages";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -17,8 +18,12 @@ import type { DaemonMessage } from "../../src/shared/ws-messages";
 const mockHandleDaemonMessage = mock((_ws: unknown, _msg: DaemonMessage) => {});
 const mockHandleWsClose = mock(() => {});
 const mockHandleWsOpen = mock(() => {});
+const mockBeginDaemonConnectionShutdown = mock(() => {});
+const mockDrainDisconnectCleanups = mock(() => Promise.resolve());
 
 void mock.module("../../src/orchestrator/connection-handler", () => ({
+  beginDaemonConnectionShutdown: mockBeginDaemonConnectionShutdown,
+  drainDisconnectCleanups: mockDrainDisconnectCleanups,
   handleDaemonMessage: mockHandleDaemonMessage,
   handleWsClose: mockHandleWsClose,
   handleWsOpen: mockHandleWsOpen,
@@ -40,13 +45,14 @@ void mock.module("../../src/orchestrator/daemon-registry", () => ({
 
 // history
 void mock.module("../../src/orchestrator/history", () => ({
+  createExecution: mock(() => Promise.resolve("exec-id")),
   markExecutionOffered: mock(() => Promise.resolve()),
   markExecutionFailed: mock(() => Promise.resolve()),
   markExecutionRunning: mock(() => Promise.resolve()),
   markExecutionCompleted: mock(() => Promise.resolve()),
   getExecutionState: mock(() => Promise.resolve(null)),
   getOrphanedExecutions: mock(() => Promise.resolve([])),
-  requeueExecution: mock(() => Promise.resolve()),
+  requeueExecution: mock(() => Promise.resolve("released")),
 }));
 
 // job-dispatcher
@@ -55,6 +61,7 @@ void mock.module("../../src/orchestrator/job-dispatcher", () => ({
   removePendingOffer: mock(() => {}),
   handleJobAccept: mock(() => {}),
   handleJobReject: mock(() => Promise.resolve()),
+  releaseOfferQueueLease: mock(() => Promise.resolve()),
   inferRequiredTools: mock(() => []),
   selectDaemon: mock(() => Promise.resolve(null)),
   dispatchJob: mock(() => Promise.resolve(false)),
@@ -116,6 +123,8 @@ beforeEach(() => {
   mockHandleDaemonMessage.mockClear();
   mockHandleWsClose.mockClear();
   mockHandleWsOpen.mockClear();
+  mockBeginDaemonConnectionShutdown.mockClear();
+  mockDrainDisconnectCleanups.mockClear();
 });
 
 describe("sendError", () => {
@@ -296,12 +305,20 @@ describe("WebSocket auth (constant-time bearer comparator, #76)", () => {
     const { config } = await import("../../src/config");
     const originalToken = config.daemonAuthToken;
     const originalPrevious = config.daemonAuthTokenPrevious;
+    const originalRunnerSecret = config.workflowRunnerCapabilitySecret;
+    const originalRunnerPrevious = config.workflowRunnerCapabilitySecretPrevious;
     const originalPort = config.wsPort;
 
     try {
       (config as { daemonAuthToken: string | undefined }).daemonAuthToken = primary;
       (config as { daemonAuthTokenPrevious: string | undefined }).daemonAuthTokenPrevious =
         previous;
+      (
+        config as { workflowRunnerCapabilitySecret: string | undefined }
+      ).workflowRunnerCapabilitySecret = primary;
+      (
+        config as { workflowRunnerCapabilitySecretPrevious: string | undefined }
+      ).workflowRunnerCapabilitySecretPrevious = previous;
       (config as { wsPort: number }).wsPort = 0;
 
       const { stopWebSocketServer, startWebSocketServer } =
@@ -318,6 +335,12 @@ describe("WebSocket auth (constant-time bearer comparator, #76)", () => {
       (config as { daemonAuthToken: string | undefined }).daemonAuthToken = originalToken;
       (config as { daemonAuthTokenPrevious: string | undefined }).daemonAuthTokenPrevious =
         originalPrevious;
+      (
+        config as { workflowRunnerCapabilitySecret: string | undefined }
+      ).workflowRunnerCapabilitySecret = originalRunnerSecret;
+      (
+        config as { workflowRunnerCapabilitySecretPrevious: string | undefined }
+      ).workflowRunnerCapabilitySecretPrevious = originalRunnerPrevious;
       (config as { wsPort: number }).wsPort = originalPort;
     }
   }
@@ -404,6 +427,50 @@ describe("WebSocket auth (constant-time bearer comparator, #76)", () => {
       },
     );
   });
+
+  it("accepts only an exact attempt capability on the workflow-runner path", async () => {
+    const runId = crypto.randomUUID();
+    const attemptId = crypto.randomUUID();
+    const path = `/ws/workflow-runner/${runId}/${attemptId}`;
+    await withServer("runner-root-secret", "old-runner-root", async (port) => {
+      const expiresAtMs = Date.now() + 60_000;
+      const current = deriveWorkflowRunnerCapability(
+        "runner-root-secret",
+        runId,
+        attemptId,
+        expiresAtMs,
+      );
+      const previous = deriveWorkflowRunnerCapability(
+        "old-runner-root",
+        runId,
+        attemptId,
+        expiresAtMs,
+      );
+      const wrongAttempt = deriveWorkflowRunnerCapability(
+        "runner-root-secret",
+        runId,
+        crypto.randomUUID(),
+        expiresAtMs,
+      );
+      for (const token of [current, previous]) {
+        const accepted = await fetch(`http://localhost:${String(port)}${path}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(accepted.status).toBe(500);
+      }
+      for (const token of ["runner-root-secret", wrongAttempt]) {
+        const rejected = await fetch(`http://localhost:${String(port)}${path}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        expect(rejected.status).toBe(401);
+      }
+      const encodedSlash = await fetch(
+        `http://localhost:${String(port)}/ws/workflow-runner/%2F/${attemptId}`,
+        { headers: { Authorization: `Bearer ${current}` } },
+      );
+      expect(encodedSlash.status).toBe(401);
+    });
+  });
 });
 
 describe("stopWebSocketServer", () => {
@@ -412,6 +479,25 @@ describe("stopWebSocketServer", () => {
     // Should resolve cleanly even when called multiple times
     await stopWebSocketServer();
     await stopWebSocketServer();
+  });
+
+  it("drains daemon disconnect fencing before shutdown completes", async () => {
+    const { config } = await import("../../src/config");
+    const originalToken = config.daemonAuthToken;
+    const originalPort = config.wsPort;
+    try {
+      (config as { daemonAuthToken: string | undefined }).daemonAuthToken = "shutdown-test-token";
+      (config as { wsPort: number }).wsPort = 0;
+      const { startWebSocketServer, stopWebSocketServer } =
+        await import("../../src/orchestrator/ws-server");
+      startWebSocketServer();
+      await stopWebSocketServer();
+      expect(mockBeginDaemonConnectionShutdown).toHaveBeenCalledTimes(1);
+      expect(mockDrainDisconnectCleanups).toHaveBeenCalledTimes(1);
+    } finally {
+      (config as { daemonAuthToken: string | undefined }).daemonAuthToken = originalToken;
+      (config as { wsPort: number }).wsPort = originalPort;
+    }
   });
 });
 

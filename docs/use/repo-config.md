@@ -41,40 +41,25 @@ falls back to defaults. Nearly every block now also changes behaviour.
     run under their own workflow names (`triage`, `plan`, `implement`,
     `review`, `resolve`) and resolve `workflows.<child>.*` over `defaults:`.
 
-| Block                                             | Status                                                                                                                         |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `enabled`                                         | **Parsed and validated. Not yet enforced.** Enforcement is Gate 1, wired with the isolated workflow runner.                    |
-| `workflows.<name>.enabled`                        | **Parsed and validated. Not yet enforced.** Same Gate 1 path.                                                                  |
-| `triggers.*`                                      | **Parsed and validated. Not yet enforced.** Same Gate 1 path.                                                                  |
-| `review_learnings`, `scheduled_actions`, `config` | **Applied.** Pre-existing blocks, unchanged by this change.                                                                    |
-| `defaults` + `workflows.<name>` agent knobs       | **Resolved and clamped. Not yet on the wire.** The `policy` key exists on the job payload; its producer lands with the runner. |
-| `workflows.review.path_filters` / `.instructions` | **Consumer ready. Not yet reachable**, since no producer sets `policy` yet.                                                    |
-| `workflows.review.auto`                           | **Not yet applied.** Dispatch-time knob; lands with the auto-review guard.                                                     |
-
-!!! warning "Status of this page"
-
-    Only `review_learnings`, `scheduled_actions` and `config` take effect today.
-    Everything else on this page is parsed, schema-validated, resolved and
-    clamped, but has no production call site yet: `checkRepoGate`,
-    `loadRepoPolicy` and `runPrConfigCheck` are reachable only from tests. The
-    dispatch chokepoints and the `pull_request` config-check handler that call
-    them depend on database columns from a later migration, so they ship in the
-    isolated-workflow-runner change rather than here. Authoring a config file
-    now is safe and its schema is stable, but do not expect a repo-level
-    `enabled: false` to stop the bot until that lands.
+| Block                                             | Status                                                                                                                     |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`                                         | **Applied.** Blocks every trigger for the repo.                                                                            |
+| `workflows.<name>.enabled`                        | **Applied.** Blocks that workflow's triggers.                                                                              |
+| `triggers.*`                                      | **Applied.** Four everywhere, `base_branches` on label and review-comment triggers only (see the caveat under `triggers`). |
+| `review_learnings`, `scheduled_actions`, `config` | **Applied.** Pre-existing blocks, unchanged.                                                                               |
+| `defaults` + `workflows.<name>` agent knobs       | **Applied.** `model`, `max_turns`, `timeout`, and `extra_allowed_tools` reach the agent run. `workflows.ship` takes none.  |
+| `workflows.review.path_filters` / `.instructions` | **Applied.** Filtered files are hidden from the prompt; instructions are injected as review policy.                        |
+| `workflows.review.auto`                           | **Applied.** Runs `review` on a push by an `AUTO_REVIEW_USERS` login. Defaults to `false`; both keys are required.         |
 
 ### How the agent knobs behave
 
-Resolution is owned by the controller: it merges the workflow block over
-`defaults`, clamps the result against the server ceilings, and ships it on the
-job payload as a `policy` object. `AgentPolicySchema` in
-`src/shared/ws-messages.ts` defines that wire shape, and
-`src/core/agent-policy.ts` is the consumer that applies it to an agent run.
-
-The producing side is not in place yet, so no `policy` key is sent today and
-the table below describes intended behaviour rather than current behaviour. A
-repo with no config file produces no `policy` key at all and runs exactly as it
-did before this file existed.
+Resolved once during controller-owned payload preparation for an isolated
+workflow runner (`src/orchestrator/workflow-runner-payload.ts`), or when a
+shared daemon accepts a legacy direct job (`src/orchestrator/connection-handler.ts`).
+The controller merges the workflow block over `defaults`, clamps it against the
+server ceilings, and ships it on the job payload as a `policy` object. A repo
+with no config file produces no `policy` key at all and runs exactly as it did
+before this file existed.
 
 | Knob                  | Effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -242,15 +227,8 @@ only declares `version: 1` and `scheduled_actions:` stays valid.
 | `review_learnings`  | object | on      | See [Review learnings](review-learnings.md).             |
 | `scheduled_actions` | array  | `[]`    | See [Scheduled actions](scheduled-actions.md).           |
 
-!!! warning "Not enforced yet"
-
-    Gate 1 has no production call site on this change, so `enabled: false` does
-    not stop label or mention triggers today. It already silences the scheduler,
-    which reads the document directly. The rest of this section describes the
-    behaviour once Gate 1 is wired.
-
-`enabled: false` will stop the bot doing any work in the repo: no workflow run,
-no queue job, no scheduled action. It is not a vow of silence. A deliberate `bot:*`
+`enabled: false` stops the bot doing any work in the repo: no workflow run, no
+queue job, no scheduled action. It is not a vow of silence. A deliberate `bot:*`
 label or `@chrisleekr-bot` mention still gets one short reply saying the bot is
 disabled here, so a teammate who tries is told why instead of being ignored.
 Passive triggers stay silent. If you need the bot to make no writes at all,
@@ -560,13 +538,6 @@ appended:
 - **not valid**: the failing paths, capped at ten with a count of the remainder;
 - **too large to validate**: files over 64 KB are never decoded, and none of the
   file's contents are echoed back.
-
-!!! warning "Not wired yet"
-
-    `runPrConfigCheck` has no production caller on this change, so no verdict
-    comment is posted on a pull request today. The handler that invokes it
-    ships with the isolated workflow runner. This section describes the
-    behaviour once that lands.
 
 Every verdict restates that only the default-branch copy is applied, so the
 change takes effect on merge. Reading the branch copy here is strictly

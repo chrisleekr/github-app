@@ -106,4 +106,24 @@ if (!processBoundarySmokeResult.success) {
   process.exit(1);
 }
 
+// Build 5: one-attempt workflow runner. It ships in the daemon image because
+// it needs the same agent CLI/toolchain, but has a separate process boundary.
+const runnerResult = await Bun.build({
+  entrypoints: ["./src/runner/main.ts"],
+  outdir: "./dist/runner",
+  target: "bun",
+  minify: isProduction,
+  sourcemap: isProduction ? "external" : "inline",
+  splitting: false,
+  naming: "main.js",
+});
+
+if (!runnerResult.success) {
+  console.error("Build failed (workflow runner):");
+  for (const log of runnerResult.logs) {
+    console.error(log);
+  }
+  process.exit(1);
+}
+
 console.log("Build completed successfully");
