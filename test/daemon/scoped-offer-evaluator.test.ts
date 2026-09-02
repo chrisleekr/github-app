@@ -1,9 +1,9 @@
 /**
- * C1: the daemon's `scoped-job:offer` handler must accept supported jobKinds
+ * C1: the daemon's `scoped-job-offer` handler must accept supported jobKinds
  * and reject unknown ones with `WS_REJECT_REASONS.SCOPED_KIND_UNSUPPORTED`
  * so the orchestrator can re-offer to a capable daemon (FR-021). The
  * evaluator is exercised via `evaluateScopedOffer` which the daemon's
- * `handleMessage` switch invokes for `scoped-job:offer`.
+ * `handleMessage` switch invokes for `scoped-job-offer`.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -29,7 +29,7 @@ const baselineCapabilities: DaemonCapabilities = {
 
 function rebaseOffer(): ScopedJobOfferMessage {
   return {
-    type: "scoped-job:offer",
+    type: "scoped-job-offer",
     id: "offer-id",
     timestamp: Date.now(),
     payload: {

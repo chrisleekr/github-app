@@ -57,7 +57,7 @@ The per-action state lives in the `scheduled_action_state` table
 ## Stuck `in_flight_job_id`
 
 The single-flight lock is taken when a run is claimed. It is normally cleared
-the moment the run completes (the `scoped-job:completion` handler), so a healthy
+the moment the run completes (the `scoped-job-completion` handler), so a healthy
 run releases it immediately. As a backstop it is also **self-healing**: the
 claim treats a lock older than `2 × AGENT_TIMEOUT_MS` (always longer than the
 longest possible run) as released, so a daemon that died mid-run does not

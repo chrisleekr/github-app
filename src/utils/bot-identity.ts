@@ -28,20 +28,24 @@ let selfLogin: Promise<string | null> | null = null;
 export function resolveSelfLogin(): Promise<string | null> {
   const pat = config.githubPersonalAccessToken;
   if (pat === undefined) return Promise.resolve(config.botAppLogin);
-  // Memoising the promise rather than the resolved value also collapses
-  // concurrent callers onto one request, and keeps the assignment out of an
-  // async body (where it would read-then-await-then-write the same variable).
-  selfLogin ??= new Octokit({ auth: pat }).rest.users.getAuthenticated().then(
-    (r) => r.data.login,
-    () => {
-      // Not cached: a transient failure degrades one call, it does not disable
-      // the check for the lifetime of the process. Null is the fail-open
-      // direction for every caller (a redundant review, a duplicate comment).
-      selfLogin = null;
-      return null;
-    },
-  );
+  // Memoise the promise, not the resolved value: that collapses concurrent
+  // callers onto one request. The assignment stays in this sync body on
+  // purpose, so there is no read-then-await-then-write window on `selfLogin`.
+  selfLogin ??= fetchSelfLogin(pat);
   return selfLogin;
+}
+
+async function fetchSelfLogin(pat: string): Promise<string | null> {
+  try {
+    const r = await new Octokit({ auth: pat }).rest.users.getAuthenticated();
+    return r.data.login;
+  } catch {
+    // Not cached: a transient failure degrades one call, it does not disable
+    // the check for the lifetime of the process. Null is the fail-open
+    // direction for every caller (a redundant review, a duplicate comment).
+    selfLogin = null;
+    return null;
+  }
 }
 
 /** Test-only: drop the memoised login so cases can vary the auth mode. */

@@ -43,7 +43,7 @@ export interface ScopedRebaseExecutorInput {
 /**
  * Run the scoped-rebase pipeline end-to-end. Returns the policy-layer
  * `RebaseOutcome` so the orchestrator-side completion handler can map it
- * onto the `scoped-job:completion` payload without re-deriving the result.
+ * onto the `scoped-job-completion` payload without re-deriving the result.
  *
  * @throws when the temp-dir cannot be created or the policy callback
  *         surfaces an unrecoverable git error other than a conflict.

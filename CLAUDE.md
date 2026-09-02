@@ -102,7 +102,7 @@ GitHub-side auth defaults to the App installation token minted on demand from `G
 - Strict TypeScript: `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `useUnknownInCatchVariables`, etc.
 - Pre-commit hooks via Husky + lint-staged (auto-format + lint on staged files).
 - Conventional commits enforced via commitlint.
-- Test files live under `test/<mirror>/foo.test.ts` or colocated as `src/.../foo.test.ts`; both are CI-gated. The runner (`scripts/test-isolated.sh`) globs `test/**/*.test.ts src/**/*.test.ts`, and `bun run check:test-globs` (`scripts/check-test-globs.ts`) fails CI if any `*.test.ts` is not reachable by that glob set, so a colocated test cannot go dark while CI stays green (issue #201).
+- Test files live under `test/<mirror>/foo.test.ts` only. The runner (`scripts/test-isolated.sh`) globs `test/**/*.test.ts` and runs each match in its own Bun process, because `mock.module()` is process-global and bleeds across files. `bun run check:test-globs` (`scripts/check-test-globs.ts`) derives the glob set from the runner script itself and fails CI if any `*.test.ts` in the repo is unreachable by it, so a test colocated under `src/` trips the guard instead of silently going dark (issue #201).
 
 ## CI/CD Pipeline
 

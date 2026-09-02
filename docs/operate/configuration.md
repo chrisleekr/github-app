@@ -223,7 +223,8 @@ repo can only lower them, never raise them.
 
 | Variable                               | Default            | Notes                                                                                                                                                                                 |
 | -------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `REPO_CONFIG_FILE`                     | `.github-app.yaml` | Filename read from each installed repo's default-branch root. Deprecated alias `SCHEDULER_CONFIG_FILE` is still honoured, with a boot warning.                                        |
+| `REPO_CONFIG_FILE`                     | `.github-app.yaml` | Filename read from each installed repo's default-branch root. Trimmed at load: a stray space would 404 on every repo and silence the whole surface with nothing logged.               |
+| `SCHEDULER_CONFIG_FILE`                | unset              | **Deprecated** former name for `REPO_CONFIG_FILE`. Still honoured as a fallback so an upgrade does not silently change which file is read; logs a one-shot boot warning.              |
 | `AGENT_MAX_TURNS` / `DEFAULT_MAXTURNS` | unset              | Ceiling for a repo's `max_turns`, resolved as `AGENT_MAX_TURNS ?? DEFAULT_MAXTURNS`, so with the first unset the second is the ceiling. Documented under [HTTP server](#http-server). |
 | `AGENT_TIMEOUT_MS`                     | `3600000`          | Ceiling for a repo's `timeout`, and an independent outer bound on the run. Documented under [HTTP server](#http-server).                                                              |
 
@@ -311,19 +312,6 @@ for the file schema. Server mode only; a daemon process ignores these.
 | `SCHEDULER_ENABLED`          | `false`          | Master kill-switch. When false the scheduler never starts. It also will not start without `DATABASE_URL` and a non-empty `ALLOWED_OWNERS`.                               |
 | `SCHEDULER_SCAN_INTERVAL_MS` | `300000` (5 min) | Cadence of the scan that enumerates installations, fetches each `.github-app.yaml`, and enqueues due actions. A value outside `[60000, 3600000]` is rejected at startup. |
 | `SCHEDULER_ALLOW_AUTO_MERGE` | `false`          | Hard kill-switch for unattended auto-merge. Effective auto-merge requires BOTH this AND a per-action `auto_merge: true`; otherwise no merge tool runs.                   |
-
-## Per-repo config file
-
-Selects the file each installed repo is read from. Unlike the scheduler
-variables above this is **not** server-mode only: the same document carries
-feature toggles, agent overrides, and trigger filters, so any process that
-resolves repo policy reads it. Only the default branch's copy is ever applied.
-See [Per-repo configuration](../use/repo-config.md) for the file schema.
-
-| Variable                | Default            | Notes                                                                                                                                                                    |
-| ----------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `REPO_CONFIG_FILE`      | `.github-app.yaml` | Filename read from each installed repo's default-branch root. Trimmed at load: a stray space would 404 on every repo and silence the whole surface with nothing logged.  |
-| `SCHEDULER_CONFIG_FILE` | (unset)            | **Deprecated** former name for `REPO_CONFIG_FILE`. Still honoured as a fallback so an upgrade does not silently change which file is read; logs a one-shot boot warning. |
 
 ## Review learnings
 
