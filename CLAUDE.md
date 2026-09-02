@@ -82,7 +82,7 @@ The runtime bot in `src/` supports three authentication modes (see `src/config.t
 2. **`CLAUDE_CODE_OAUTH_TOKEN`**, Max/Pro subscription OAuth token (`sk-ant-oat...`, generated via `claude setup-token`). **Requires `ALLOWED_OWNERS`** to be set to a single-tenant value, because the [Agent SDK Note](https://code.claude.com/docs/en/agent-sdk/overview) prohibits serving other users' repos from a personal subscription quota. The token is forwarded to the Claude CLI subprocess via `buildProviderEnv()` in `src/core/executor.ts`; the CLI's own [auth precedence chain](https://code.claude.com/docs/en/authentication#authentication-precedence) picks between credentials if multiple are set.
 3. **AWS Bedrock**, full credential chain via `CLAUDE_PROVIDER=bedrock` + `AWS_REGION` + `CLAUDE_MODEL` (Bedrock model ID format). Credential resolution handled by the AWS SDK inside the subprocess.
 
-Default agent execution model when `CLAUDE_MODEL` is unset and `CLAUDE_PROVIDER=anthropic`: `claude-opus-4-7` (Opus 4.7). The Bedrock path still requires an explicit `CLAUDE_MODEL` (Bedrock model IDs differ from Anthropic's).
+Default agent execution model when `CLAUDE_MODEL` is unset and `CLAUDE_PROVIDER=anthropic`: `claude-opus-5` (Opus 5). The Bedrock path still requires an explicit `CLAUDE_MODEL` (Bedrock model IDs differ from Anthropic's).
 
 The scheduled research workflow in `.github/workflows/research.yml` also uses `CLAUDE_CODE_OAUTH_TOKEN`, but via `anthropics/claude-code-action@v1`: that path is separately sanctioned for CI and is not subject to the `ALLOWED_OWNERS` requirement.
 

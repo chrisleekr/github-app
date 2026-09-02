@@ -37,8 +37,14 @@ curl -X POST https://<bot-host>/api/scheduler/run \
 `409` means a run is already in-flight (see below). A manual run is recorded
 against `last_run_at` at the current instant, so if it fires within the grace
 window before a cron slot, that cron slot is treated as already done and
-skipped: the manual run stands in for it. The endpoint also honours
-`enabled: false` (returns a non-enqueued reason); enable the action to run it.
+skipped: the manual run stands in for it.
+
+The endpoint honours both disablement levels and returns a non-enqueued reason
+naming which one applies. `the bot is disabled for this repository` means the
+**document-level** `enabled: false` above, and clearing it is the only way to
+force a run: enabling the action alone does not lift it. `action "<name>" is
+disabled` means the per-action flag, which the action's own `enabled: true`
+clears.
 
 ## Diagnose
 
