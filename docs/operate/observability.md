@@ -160,7 +160,7 @@ Alerts worth having: `queue_depth` rising while `persistent_free_slots > 0` for 
 
 ## Dispatcher log fields
 
-The job dispatcher (`src/orchestrator/job-dispatcher.ts`) and the accept handler in `src/orchestrator/connection-handler.ts` emit the offer lifecycle as structured events. The four `dispatcher.offer.*` keys are pinned per-event by a `z.discriminatedUnion` (`src/orchestrator/log-fields.ts:77#DispatcherOfferLogSchema`), so each event carries exactly its own fields; `dispatcher.no_eligible_daemon` has its own shape. Event-key constants live in `src/orchestrator/log-fields.ts:28#DISPATCHER_LOG_EVENTS`, and the co-located test rejects field drift.
+The job dispatcher (`src/orchestrator/job-dispatcher.ts`) and the accept handler in `src/orchestrator/connection-handler.ts` emit the offer lifecycle as structured events. The four `dispatcher.offer.*` keys are pinned per-event by a `z.discriminatedUnion` (`src/orchestrator/log-fields.ts:82#DispatcherOfferLogSchema`), so each event carries exactly its own fields; `dispatcher.no_eligible_daemon` has its own shape. Event-key constants live in `src/orchestrator/log-fields.ts:28#DISPATCHER_LOG_EVENTS`, and the co-located test rejects field drift.
 
 | `event`                         | Level | Meaning                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -176,7 +176,7 @@ The job dispatcher (`src/orchestrator/job-dispatcher.ts`) and the accept handler
 
 ## Daemon heartbeat fields
 
-The orchestrator pings each connected daemon every `HEARTBEAT_INTERVAL_MS` (default 30s) and evicts one that misses pongs past `HEARTBEAT_TIMEOUT_MS` (default 90s). The heartbeat lifecycle in `src/orchestrator/connection-handler.ts` emits three structured events pinned per-event by a `z.discriminatedUnion` (`src/orchestrator/log-fields.ts:144#DaemonHeartbeatLogSchema`), so `missedPongs` is pinned to `pong_missed` and `ttl_refresh_failed` carries its `err`; constants live in `src/orchestrator/log-fields.ts:36#DAEMON_HEARTBEAT_LOG_EVENTS`.
+The orchestrator pings each connected daemon every `HEARTBEAT_INTERVAL_MS` (default 30s) and evicts one that misses pongs past `HEARTBEAT_TIMEOUT_MS` (default 90s). The heartbeat lifecycle in `src/orchestrator/connection-handler.ts` emits three structured events pinned per-event by a `z.discriminatedUnion` (`src/orchestrator/log-fields.ts:149#DaemonHeartbeatLogSchema`), so `missedPongs` is pinned to `pong_missed` and `ttl_refresh_failed` carries its `err`; constants live in `src/orchestrator/log-fields.ts:36#DAEMON_HEARTBEAT_LOG_EVENTS`.
 
 | `event`                               | Level | Meaning                                                                                              |
 | ------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------- |
@@ -234,14 +234,15 @@ event:"ship.intent.transition" to_status:"human_took_over" terminal_blocker_cate
 
 ## Dispatch reasons
 
-Canonical source: `src/shared/dispatch-types.ts`. Four values; all land on `dispatch_target=daemon`.
+Canonical source: `src/shared/dispatch-types.ts`. Five values across two targets: the four daemon-fleet reasons land on `dispatch_target=daemon`, and `workflow-runner` lands on `dispatch_target=workflow-runner`.
 
-| Reason                      | When the router sets it                                                                                                                                     |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `persistent-daemon`         | Routed to an existing persistent daemon. The default, hot path. Also used during cooldown when a scale-up was warranted but blocked by the cooldown window. |
-| `ephemeral-daemon-triage`   | Triage returned `heavy=true` and an ephemeral daemon Pod was spawned.                                                                                       |
-| `ephemeral-daemon-overflow` | Queue length ≥ `EPHEMERAL_DAEMON_SPAWN_QUEUE_THRESHOLD` **and** the persistent pool has zero free slots; a spawn drains the overflow.                       |
-| `ephemeral-spawn-failed`    | A spawn was required but the K8s API call failed. The job is rejected with a tracking-comment infra error.                                                  |
+| Reason                      | When the router sets it                                                                                                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `persistent-daemon`         | Routed to an existing persistent daemon. The default, hot path. Also used during cooldown when a scale-up was warranted but blocked by the cooldown window.                 |
+| `ephemeral-daemon-triage`   | Triage returned `heavy=true` and an ephemeral daemon Pod was spawned.                                                                                                       |
+| `ephemeral-daemon-overflow` | Queue length ≥ `EPHEMERAL_DAEMON_SPAWN_QUEUE_THRESHOLD` **and** the persistent pool has zero free slots; a spawn drains the overflow.                                       |
+| `ephemeral-spawn-failed`    | A spawn was required but the K8s API call failed. The job is rejected with a tracking-comment infra error.                                                                  |
+| `workflow-runner`           | A structured workflow (`triage`, `plan`, `implement`, `review`, `resolve`) claimed by the controller and run in a one-attempt isolated Pod, not on the shared daemon fleet. |
 
 ## Scheduled action log fields
 
@@ -315,7 +316,7 @@ The orchestrator mints App installation tokens at six call sites, all routed thr
 | `github.app.token.mint.succeeded` | info  | `installation_id`, `via`, `cache_hit`, `duration_ms` | A token was returned (cache when `cache_hit:true`, else fresh mint).                   |
 | `github.app.token.mint.failed`    | warn  | `installation_id`, `via`, `duration_ms`, `err`       | The mint threw; `duration_ms` distinguishes a fast failure from a GitHub-edge timeout. |
 
-`via` is one of `handleAccept`, `handleScopedAccept`, `postOrphanNotification`, `shipTickleResume`, `proposalPoller`, `schedulerRunAction`. The token, App JWT, and private key are never logged (security invariant 2); `err` is serialized through the secret-scrubbing pino error serializer.
+`via` is one of `handleAccept`, `handleScopedAccept`, `shipTickleResume`, `proposalPoller`, `schedulerRunAction`, `notifyExpiredWorkflowAttempts`, `notifyExpiredWorkflowDispatches`, `notifyRunnerStartFailures`, `notifyDisconnectedDaemonWorkflows`, `notifyMigrationInterruptedWorkflows`, `reconcileWorkflowCascade`, `workflowRunnerPayload`, `workflowRunnerResult` (canonical source: `TOKEN_MINT_VIA` in `src/orchestrator/log-fields.ts`). The token, App JWT, and private key are never logged (security invariant 2); `err` is serialized through the secret-scrubbing pino error serializer.
 
 ## Inbound HTTP boundary
 

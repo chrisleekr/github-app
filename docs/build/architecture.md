@@ -60,7 +60,7 @@ Dispatch collapsed to a single target, `daemon`, in migration `004_collapse_disp
 
 Canonical source: `src/shared/dispatch-types.ts`.
 
-- `DispatchTarget` = `"daemon"` (singleton: kept as a field for DB/log stability).
+- `DispatchTarget` is `"daemon"` (the shared fleet) or `"workflow-runner"` (a one-attempt isolated Pod per structured-workflow attempt).
 - `DispatchReason` is one of:
 
 | Reason                      | When the router sets it                                                                                        |
@@ -69,6 +69,7 @@ Canonical source: `src/shared/dispatch-types.ts`.
 | `ephemeral-daemon-triage`   | Triage flagged the job heavy → orchestrator spawned an ephemeral daemon Pod.                                   |
 | `ephemeral-daemon-overflow` | Queue length ≥ `EPHEMERAL_DAEMON_SPAWN_QUEUE_THRESHOLD` and persistent pool saturated → spawn drains overflow. |
 | `ephemeral-spawn-failed`    | Spawn was required but the K8s API call failed. Job rejected with a tracking-comment infra error.              |
+| `workflow-runner`           | A structured workflow claimed by the controller, run in its own one-attempt Pod rather than on the fleet.      |
 
 ### Scale-up model
 

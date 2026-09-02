@@ -1,6 +1,7 @@
 import type { SQL } from "bun";
 
 import { requireDb } from "../db";
+import { logger } from "../logger";
 import { sanitizeRepoMemoryContent } from "../utils/sanitize";
 
 // Types
@@ -122,27 +123,40 @@ export async function saveRepoLearnings(
     // collapsed to nothing after sanitization.
     const safeContent = sanitizeRepoMemoryContent(learning.content);
     if (safeContent === "") continue;
-    // eslint-disable-next-line no-await-in-loop -- bounded action list preserves result order
-    const result: { id: string }[] = await db`
-      INSERT INTO repo_memory (repo_owner, repo_name, category, content, pinned)
-      VALUES (${owner}, ${repo}, ${learning.category}, ${safeContent}, false)
-      ON CONFLICT (
-        repo_owner,
-        repo_name,
-        category,
-        content_sha256
-      ) WHERE category <> 'env_var' DO NOTHING
-      RETURNING id
-    `;
-    if (result.length > 0) {
-      saved++;
-    } else {
+    // Per-item guard: the conflict target below covers only
+    // `idx_repo_memory_learning_unique`, so it cannot absorb a violation of
+    // `idx_repo_memory_env_unique` (002_repo_knowledge.sql:37). `category` is a
+    // bare string on the wire, so a re-sent `env_var` learning raises
+    // `unique_violation`, and an unguarded throw here would discard every
+    // remaining learning AND the deletions, since the caller only logs.
+    try {
       // eslint-disable-next-line no-await-in-loop -- bounded action list preserves result order
-      await db`
-        UPDATE repo_memory SET updated_at = now()
-        WHERE repo_owner = ${owner} AND repo_name = ${repo}
-          AND category = ${learning.category} AND content = ${safeContent}
+      const result: { id: string }[] = await db`
+        INSERT INTO repo_memory (repo_owner, repo_name, category, content, pinned)
+        VALUES (${owner}, ${repo}, ${learning.category}, ${safeContent}, false)
+        ON CONFLICT (
+          repo_owner,
+          repo_name,
+          category,
+          content_sha256
+        ) WHERE category <> 'env_var' DO NOTHING
+        RETURNING id
       `;
+      if (result.length > 0) {
+        saved++;
+      } else {
+        // eslint-disable-next-line no-await-in-loop -- bounded action list preserves result order
+        await db`
+          UPDATE repo_memory SET updated_at = now()
+          WHERE repo_owner = ${owner} AND repo_name = ${repo}
+            AND category = ${learning.category} AND content = ${safeContent}
+        `;
+      }
+    } catch (err) {
+      logger.warn(
+        { err, repoOwner: owner, repoName: repo, category: learning.category },
+        "Skipped one repo learning that could not be persisted",
+      );
     }
   }
 

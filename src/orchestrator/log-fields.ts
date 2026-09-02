@@ -55,6 +55,11 @@ export const TOKEN_MINT_VIA = [
   "proposalPoller",
   "schedulerRunAction",
   "notifyExpiredWorkflowAttempts",
+  "notifyExpiredWorkflowDispatches",
+  "notifyRunnerStartFailures",
+  "notifyDisconnectedDaemonWorkflows",
+  "notifyMigrationInterruptedWorkflows",
+  "reconcileWorkflowCascade",
   "workflowRunnerPayload",
   "workflowRunnerResult",
 ] as const;

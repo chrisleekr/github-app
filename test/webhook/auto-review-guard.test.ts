@@ -1,7 +1,7 @@
 /**
  * Unit tests for the auto-review guards (work item #1).
  *
- * These four helpers decide whether the bot spends a full agent run on a push.
+ * These five helpers decide whether the bot spends a full agent run on a push.
  * The handler suite (`pull-request-auto-review.test.ts`) replaces this whole
  * module with `mock.module`, so without this file the real branches never
  * execute. Each one is advisory and MUST fail open: a missing review is a worse
@@ -26,8 +26,23 @@ void mock.module("../../src/utils/bot-identity", () => ({
   resolveSelfLogin: () => Promise.resolve(resolvedSelfLogin),
 }));
 
-const { computeDiffFingerprint, isSelfPush, matchesLastReviewed, recordReviewedFingerprint } =
-  await import("../../src/webhook/auto-review-guard");
+let dbHandle: unknown = {};
+void mock.module("../../src/db", () => ({
+  getDb: () => dbHandle,
+}));
+
+let activeIntent: (() => Promise<unknown>) | null = null;
+void mock.module("../../src/db/queries/ship", () => ({
+  findActiveIntent: () => (activeIntent === null ? Promise.resolve(null) : activeIntent()),
+}));
+
+const {
+  computeDiffFingerprint,
+  hasActiveShipIntent,
+  isSelfPush,
+  matchesLastReviewed,
+  recordReviewedFingerprint,
+} = await import("../../src/webhook/auto-review-guard");
 
 const log = {
   info: () => undefined,
@@ -224,5 +239,34 @@ describe("recordReviewedFingerprint", () => {
     valkeyClient = { send: mock(() => Promise.reject(new Error("OOM"))) };
     await recordReviewedFingerprint("acme", "widgets", 7, "fp", log);
     expect(true).toBe(true);
+  });
+});
+
+describe("hasActiveShipIntent", () => {
+  beforeEach(() => {
+    dbHandle = {};
+    activeIntent = null;
+  });
+
+  it("suppresses the auto-review while ship owns the PR", async () => {
+    activeIntent = () => Promise.resolve({ id: "intent-1" });
+    expect(await hasActiveShipIntent("acme", "widgets", 7, log)).toBe(true);
+  });
+
+  it("allows the auto-review when no intent is active", async () => {
+    activeIntent = () => Promise.resolve(null);
+    expect(await hasActiveShipIntent("acme", "widgets", 7, log)).toBe(false);
+  });
+
+  it("allows the auto-review with no database configured", async () => {
+    dbHandle = null;
+    // Would throw if the lookup ran: there are no intents to collide with.
+    activeIntent = () => Promise.reject(new Error("must not query"));
+    expect(await hasActiveShipIntent("acme", "widgets", 7, log)).toBe(false);
+  });
+
+  it("fails open when the intent lookup errors", async () => {
+    activeIntent = () => Promise.reject(new Error("connection reset"));
+    expect(await hasActiveShipIntent("acme", "widgets", 7, log)).toBe(false);
   });
 });

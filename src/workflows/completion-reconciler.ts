@@ -56,6 +56,12 @@ export async function ensureWorkflowCascadeForOffer(
   return "complete";
 }
 
+/**
+ * Dormant on this branch: no scheduler calls this yet. The isolated-runner
+ * slice wires it into `liveness-reaper.ts` `reapOnce()`, which is the interval
+ * `src/app.ts` already starts. Until both land together, a crash between the
+ * row commit and the Valkey publish is not swept up.
+ */
 /** Retry terminal cascades left pending by a daemon or orchestrator crash. */
 export async function reconcilePendingWorkflowCascades(
   sql: SQL = requireDb(),
@@ -73,12 +79,39 @@ export async function reconcilePendingWorkflowCascades(
      ORDER BY wr.attempt_completed_at
      LIMIT ${limit}
   `;
+  // Dynamic import: the notifier statically imports `runs-store` from this
+  // directory, so a static import here would close an orchestrator <-> workflows
+  // cycle.
+  const { getNotificationOctokit, releaseNotificationOctokit } =
+    await import("../orchestrator/workflow-expiry-notifier");
+  const { findByAttemptId: findRow } = await import("./runs-store");
+
   let completed = 0;
   for (const row of rows) {
     try {
+      // A recovered cascade must still post what the in-line path would have.
+      // `markAttemptCascadeCompleted` writes the receipt on success, so without
+      // an Octokit here the user-visible outcome comment is lost permanently,
+      // not deferred.
       // eslint-disable-next-line no-await-in-loop -- cascades are ordered and bounded
-      if ((await ensureWorkflowCascadeForOffer(row.attempt_id, logger, sql)) === "complete") {
-        completed++;
+      const runRow = await findRow(row.attempt_id, sql);
+
+      const auth =
+        runRow === null ? null : await getNotificationOctokit(runRow, "reconcileWorkflowCascade");
+      try {
+        // eslint-disable-next-line no-await-in-loop -- cascades are ordered and bounded
+        const outcome = await ensureWorkflowCascadeForOffer(
+          row.attempt_id,
+          logger,
+          sql,
+          auth?.octokit ?? null,
+        );
+        if (outcome === "complete") completed++;
+      } finally {
+        if (auth !== null) {
+          // eslint-disable-next-line no-await-in-loop -- release each owned token before the next row
+          await releaseNotificationOctokit(auth, row.attempt_id, "cascade-reconciliation");
+        }
       }
     } catch (err) {
       logger.warn(

@@ -333,6 +333,12 @@ export async function commitAttemptHandOffChild(
   return normalizeRow(row);
 }
 
+/**
+ * Dormant on this branch: no scheduler calls this yet. The isolated-runner
+ * slice wires it into `liveness-reaper.ts` `reapOnce()`, which is the interval
+ * `src/app.ts` already starts. Until both land together, a crash between the
+ * row commit and the Valkey publish is not swept up.
+ */
 export async function expireWorkflowAttempts(sql: SQL = requireDb()): Promise<WorkflowRunRow[]> {
   const rows: WorkflowRunRow[] = await sql`
     UPDATE workflow_runs
@@ -360,6 +366,12 @@ export async function expireWorkflowAttempts(sql: SQL = requireDb()): Promise<Wo
   return rows.map(normalizeRow);
 }
 
+/**
+ * Dormant on this branch: no scheduler calls this yet. The isolated-runner
+ * slice wires it into `liveness-reaper.ts` `reapOnce()`, which is the interval
+ * `src/app.ts` already starts. Until both land together, a crash between the
+ * row commit and the Valkey publish is not swept up.
+ */
 /** Fail queued workflow dispatches whose retry or wall-clock budget is exhausted. */
 export async function expireQueuedWorkflowDispatches(
   maxAgeMs: number,
@@ -433,17 +445,26 @@ export async function findPendingWorkflowFailureNotifications(
   }));
 }
 
+/**
+ * Claim the right to post one failure notice for this attempt.
+ *
+ * A compare-and-set, not an upsert: `failure_notified_at IS NULL` is in the
+ * WHERE so exactly one caller gets `true`. Two orchestrator instances, or a
+ * reconciler racing the live path, would otherwise both see success and both
+ * comment on the same PR.
+ */
 export async function markWorkflowFailureNotified(
   receipt: { readonly runId: string; readonly attemptId: string | null },
   sql: SQL = requireDb(),
 ): Promise<boolean> {
   const rows: { id: string }[] = await sql`
     UPDATE workflow_runs
-       SET failure_notified_at = COALESCE(failure_notified_at, now())
+       SET failure_notified_at = now()
      WHERE id = ${receipt.runId}
        AND attempt_id IS NOT DISTINCT FROM ${receipt.attemptId}::uuid
        AND status = 'failed'
        AND attempt_completed_at IS NOT NULL
+       AND failure_notified_at IS NULL
     RETURNING id
   `;
   return rows[0] !== undefined;
@@ -477,6 +498,14 @@ export async function findByAttemptId(
   return row === undefined ? null : normalizeRow(row);
 }
 
+/**
+ * Clearing `owner_kind` / `owner_id` takes the row out of `reapOnce()`'s
+ * heartbeat-based sweep, which is correct once a runner owns the lease. A
+ * published-but-unclaimed row is instead expired by
+ * `expireQueuedWorkflowDispatches`, which is dormant on this branch (see its
+ * note), so until the isolated-runner slice schedules it such a row sits in
+ * `queued` past WORKFLOW_DISPATCH_TIMEOUT_MS with nothing to fail it.
+ */
 /** Close only the queued dispatch generation that was actually published. */
 export async function markDispatchEnqueued(
   runId: string,

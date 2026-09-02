@@ -39,12 +39,27 @@ function fingerprintKey(owner: string, repo: string, prNumber: number): string {
  * `pull_request.synchronize`. Under `GITHUB_PERSONAL_ACCESS_TOKEN` the pusher is
  * the PAT owner, who is exactly the human listed in `AUTO_REVIEW_USERS`, so
  * without this the loop closes: review -> resolve -> push -> review. This is the
- * ONLY thing breaking that loop: `resolve` deliberately does not filter review
+ * only thing breaking that loop: `resolve` deliberately does not filter review
  * comments by author, because our own findings are ship's review -> resolve
  * handoff.
+ *
+ * Degrades rather than fails closed. `resolveSelfLogin` returns null when the
+ * PAT-mode `GET /user` errors, and `isSelfActor(sender, null)` then answers
+ * "not us" (its documented fail-open direction, shared with the inline-comment
+ * MCP server). A GitHub outage during a bot-authored push therefore costs one
+ * redundant review: a standalone `review` does not chain into `resolve`, so the
+ * loop does not close. The `warn` exists so that state is visible rather than
+ * silent, since the docstring above claims an invariant this case relaxes.
  */
-export async function isSelfPush(sender: GithubActorLike): Promise<boolean> {
-  return isSelfActor(sender, await resolveSelfLogin());
+export async function isSelfPush(sender: GithubActorLike, log?: Logger): Promise<boolean> {
+  const selfLogin = await resolveSelfLogin();
+  if (selfLogin === null) {
+    log?.warn(
+      { event: "auto_review.self_login_unresolved" },
+      "auto-review: could not resolve our own login; self-push check degraded",
+    );
+  }
+  return isSelfActor(sender, selfLogin);
 }
 
 /**

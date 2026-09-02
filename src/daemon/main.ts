@@ -414,6 +414,13 @@ async function main(): Promise<void> {
     // Connect/disconnect transitions are logged as structured
     // daemon.connection.* events by DaemonWsClient (issue #218).
     onMessage: handleMessage,
+    // A protocol-incompatible close disables reconnect for the process
+    // lifetime. Exit non-zero so the supervisor restarts this daemon against
+    // the upgraded orchestrator rather than parking it idle but healthy.
+    onFatal: (reason) => {
+      logger.error({ reason }, "Daemon cannot reach a compatible orchestrator; exiting");
+      process.exit(1);
+    },
   });
 
   wsClient.connect();

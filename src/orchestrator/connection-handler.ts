@@ -192,13 +192,37 @@ function startDisconnectCleanup(daemonId: string): Promise<void> {
 }
 
 /**
+ * Post the stranded-workflow notices for a disconnect, tracked for shutdown but
+ * NOT for re-registration.
+ *
+ * `notifyDisconnectedDaemonWorkflows` walks parent chains and posts a GitHub
+ * comment per stranded run. `handleRegister` awaits the fencing cleanup, so
+ * leaving this in it would hold a flapping daemon out of the pool for as long as
+ * GitHub is slow or rate-limited, with no bound on an Octokit hang. It is safe
+ * to detach: each notice takes a `failure_notified_at` receipt, so
+ * `reconcilePendingWorkflowFailureNotifications` retries anything lost here.
+ */
+function startDisconnectNotifications(daemonId: string, workflowRunIds: readonly string[]): void {
+  if (workflowRunIds.length === 0) return;
+  const notify = notifyDisconnectedDaemonWorkflows(workflowRunIds).catch((err: unknown) => {
+    logger.error({ err, daemonId }, "Failed to post disconnected-daemon workflow notices");
+  });
+  disconnectCleanups.add(notify);
+  void notify.finally(() => disconnectCleanups.delete(notify));
+}
+
+/**
  * Async cleanup after daemon disconnect (FM-1).
  * Deregisters daemon and marks orphaned executions as failed.
+ *
+ * Only the DB-side work is awaited here, because `handleRegister` fences
+ * re-registration on this promise. GitHub notification is detached; see
+ * `startDisconnectNotifications`.
  */
 async function cleanupAfterDisconnect(daemonId: string): Promise<void> {
   try {
     const failed = await failDisconnectedDaemon(daemonId);
-    await notifyDisconnectedDaemonWorkflows(failed.workflowRunIds);
+    startDisconnectNotifications(daemonId, failed.workflowRunIds);
     if (failed.executionDeliveryIds.length > 0 || failed.workflowRunIds.length > 0) {
       logger.warn(
         {
@@ -220,7 +244,15 @@ async function cleanupAfterDisconnect(daemonId: string): Promise<void> {
   }
 }
 
-/** Wait until every registration and close callback has finished its durable work. */
+/**
+ * Wait until every registration and close callback has finished its durable work.
+ *
+ * Dormant on this branch: `src/app.ts` still shuts down via `stopQueueWorker()
+ * -> stopWebSocketServer() -> closeValkey() -> closeDb()`. The isolated-runner
+ * slice calls this and `beginDaemonConnectionShutdown` from `ws-server.ts`, so
+ * until both land together a restart during active daemon connections can race
+ * cleanup writes against `closeDb()`.
+ */
 export async function drainDisconnectCleanups(): Promise<void> {
   while (registrationTransitionsByDaemon.size > 0 || disconnectCleanups.size > 0) {
     // eslint-disable-next-line no-await-in-loop -- connection transitions can enqueue cleanup while settling
@@ -228,7 +260,11 @@ export async function drainDisconnectCleanups(): Promise<void> {
   }
 }
 
-/** Start exact-incarnation cleanup before the WebSocket server drain timer. */
+/**
+ * Start exact-incarnation cleanup before the WebSocket server drain timer.
+ *
+ * Dormant on this branch; see `drainDisconnectCleanups`.
+ */
 export function beginDaemonConnectionShutdown(): void {
   for (const ws of [...connections.values()]) {
     handleWsClose(ws, 1001, "orchestrator shutting down");

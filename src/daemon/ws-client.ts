@@ -39,6 +39,13 @@ export interface WsClientOptions {
   daemonId: string;
   capabilities: DaemonCapabilities;
   onMessage: (msg: ServerMessage) => void;
+  /**
+   * Called when the connection is closed on a condition reconnect cannot clear.
+   * Reconnect is already disabled by the time this fires, so a daemon without a
+   * handler stays up, healthy-looking and idle. The owner is expected to
+   * terminate so a supervisor restarts against the upgraded orchestrator.
+   */
+  onFatal?: ((reason: string) => void) | undefined;
 }
 
 /**
@@ -155,7 +162,20 @@ export class DaemonWsClient {
         "Disconnected from orchestrator",
       );
       if (event.code === WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.code) {
+        // Terminal for this process: reconnecting cannot make an incompatible
+        // peer compatible. Logged at error, not info, and handed to `onFatal`,
+        // because a silently parked daemon looks healthy to every probe while
+        // accepting no work, including after the orchestrator is upgraded.
         this.closed = true;
+        logger.error(
+          {
+            event: DAEMON_CONNECTION_LOG_EVENTS.disconnected,
+            code: event.code,
+            reason: event.reason,
+          },
+          "Orchestrator rejected this daemon as protocol-incompatible; reconnect disabled",
+        );
+        this.opts.onFatal?.(event.reason || WS_CLOSE_CODES.INCOMPATIBLE_PROTOCOL.reason);
       } else if (!this.closed) {
         this.scheduleReconnect();
       }

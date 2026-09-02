@@ -10,6 +10,7 @@ import {
   type WorkflowRunRow,
 } from "../workflows/runs-store";
 import { mintInstallationToken, revokeInstallationToken } from "./installation-token";
+import type { TokenMintVia } from "./log-fields";
 
 let cachedApp: InstanceType<typeof App> | null = null;
 
@@ -34,12 +35,21 @@ function canNotify(): boolean {
   );
 }
 
-interface NotificationOctokit {
+export interface NotificationOctokit {
   readonly octokit: Octokit;
   readonly ownsInstallationToken: boolean;
 }
 
-async function getOctokit(row: WorkflowRunRow): Promise<NotificationOctokit> {
+/**
+ * An Octokit authorised for one run's target repository.
+ *
+ * `ownsInstallationToken` says whether the caller must revoke it via
+ * `releaseNotificationOctokit`; a PAT is process-wide and is not ours to revoke.
+ */
+export async function getNotificationOctokit(
+  row: WorkflowRunRow,
+  via: TokenMintVia,
+): Promise<NotificationOctokit> {
   if (config.githubPersonalAccessToken !== undefined) {
     return {
       octokit: new Octokit({ auth: config.githubPersonalAccessToken }),
@@ -55,13 +65,23 @@ async function getOctokit(row: WorkflowRunRow): Promise<NotificationOctokit> {
     app,
     installationId: installation.id,
     repositoryName: row.target_repo,
-    via: "notifyExpiredWorkflowAttempts",
+    via,
     log: logger,
   });
   return {
     octokit: minted.octokit as unknown as Octokit,
     ownsInstallationToken: true,
   };
+}
+
+/** Revoke a token from `getNotificationOctokit`, if we minted one. */
+export async function releaseNotificationOctokit(
+  auth: NotificationOctokit,
+  runId: string,
+  owner: string,
+): Promise<void> {
+  if (!auth.ownsInstallationToken) return;
+  await revokeInstallationToken(auth.octokit, logger, { runId, owner });
 }
 
 async function findTopAncestor(row: WorkflowRunRow): Promise<WorkflowRunRow | null> {
@@ -83,10 +103,17 @@ async function findTopAncestor(row: WorkflowRunRow): Promise<WorkflowRunRow | nu
 interface WorkflowFailureNotice {
   readonly phase: string | ((row: WorkflowRunRow) => string);
   readonly humanMessage: (row: WorkflowRunRow) => string;
+  /**
+   * Notice kind, recorded as the token-mint `via`. These five paths are what an
+   * operator greps when a user reports a silently-failed workflow, so a dispatch
+   * expiry must not look like a daemon disconnect in the audit trail.
+   */
+  readonly via: TokenMintVia;
 }
 
 const disconnectedDaemonNotice: WorkflowFailureNotice = {
   phase: "orphaned",
+  via: "notifyDisconnectedDaemonWorkflows",
   humanMessage: () =>
     [
       "❌ **Daemon disconnected during execution**",
@@ -99,6 +126,7 @@ const disconnectedDaemonNotice: WorkflowFailureNotice = {
 
 const migrationInterruptedNotice: WorkflowFailureNotice = {
   phase: "migration-interrupted",
+  via: "notifyMigrationInterruptedWorkflows",
   humanMessage: (row) => {
     const dispatchIncomplete =
       row.state["failedReason"] === "workflow dispatch incomplete during lease migration";
@@ -127,14 +155,26 @@ export async function notifyWorkflowAttemptFailures(
     try {
       // eslint-disable-next-line no-await-in-loop
       const ancestor = await findTopAncestor(row);
-      if (ancestor === null) continue;
+      if (ancestor === null) {
+        // A missing parent row is permanent, not transient: `findById` returns
+        // null only for a row that is not there, and a DB fault throws instead.
+        // Without a receipt `failure_notified_at IS NULL` re-selects this row on
+        // every pass forever, so record it as terminally un-notifiable.
+        logger.warn(
+          { event: "workflow.failure_notice_unresolvable", runId: row.id },
+          "Workflow failure notice has no reachable ancestor; marking notified",
+        );
+        // eslint-disable-next-line no-await-in-loop -- each row needs its own durable receipt
+        await markWorkflowFailureNotified({ runId: row.id, attemptId: row.attempt_id });
+        continue;
+      }
       if (notifiedAncestors.has(ancestor.id)) {
         // eslint-disable-next-line no-await-in-loop -- each row needs its own durable receipt
         await markWorkflowFailureNotified({ runId: row.id, attemptId: row.attempt_id });
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      const auth = await getOctokit(ancestor);
+      const auth = await getNotificationOctokit(ancestor, notice.via);
       try {
         // eslint-disable-next-line no-await-in-loop -- loaded only for rows that need projection
         const { setState } = await import("../workflows/tracking-mirror");
@@ -166,13 +206,8 @@ export async function notifyWorkflowAttemptFailures(
         await markWorkflowFailureNotified({ runId: row.id, attemptId: row.attempt_id });
         notifiedAncestors.add(ancestor.id);
       } finally {
-        if (auth.ownsInstallationToken) {
-          // eslint-disable-next-line no-await-in-loop -- release each owned token before the next row
-          await revokeInstallationToken(auth.octokit, logger, {
-            runId: row.id,
-            owner: "failure-notification",
-          });
-        }
+        // eslint-disable-next-line no-await-in-loop -- release each owned token before the next row
+        await releaseNotificationOctokit(auth, row.id, "failure-notification");
       }
     } catch (err) {
       logger.warn(
@@ -187,6 +222,7 @@ export async function notifyExpiredWorkflowAttempts(
   rows: readonly WorkflowRunRow[],
 ): Promise<void> {
   return notifyWorkflowAttemptFailures(rows, {
+    via: "notifyExpiredWorkflowAttempts",
     phase: (row) =>
       row.state["failedReason"] === "workflow execution deadline expired"
         ? "deadline-expired"
@@ -212,6 +248,7 @@ export async function notifyExpiredWorkflowDispatches(
   rows: readonly WorkflowRunRow[],
 ): Promise<void> {
   return notifyWorkflowAttemptFailures(rows, {
+    via: "notifyExpiredWorkflowDispatches",
     phase: "dispatch-expired",
     humanMessage: (row) => {
       const retriesExhausted = row.state["failedReason"] === "workflow dispatch retries exhausted";
@@ -232,6 +269,7 @@ export async function notifyExpiredWorkflowDispatches(
 
 export async function notifyRunnerStartFailures(rows: readonly WorkflowRunRow[]): Promise<void> {
   return notifyWorkflowAttemptFailures(rows, {
+    via: "notifyRunnerStartFailures",
     phase: "runner-start-failed",
     humanMessage: (row) => {
       const reason = row.state["failedReason"];
@@ -255,6 +293,11 @@ export async function notifyDisconnectedDaemonWorkflows(runIds: readonly string[
   return notifyWorkflowAttemptFailures(rows, disconnectedDaemonNotice);
 }
 
+/**
+ * Dormant on this branch: no scheduler calls this yet. The isolated-runner slice
+ * wires it into `workflow-runner-reconciler.ts`. Until both land together, a
+ * notice lost to a crash is not retried.
+ */
 export async function reconcilePendingWorkflowFailureNotifications(limit = 100): Promise<void> {
   const pending = await findPendingWorkflowFailureNotifications(undefined, limit);
   const expired = pending

@@ -78,7 +78,18 @@ export async function publishWorkflowRunById(
   sql: SQL = requireDb(),
 ): Promise<boolean> {
   const row = await loadPendingDispatch(runId, sql);
-  if (row?.execution_delivery_id === null || row?.execution_delivery_id === undefined) return false;
+  if (row?.execution_delivery_id === null || row?.execution_delivery_id === undefined) {
+    // `false` here covers a benign no-op (already published, still inside the
+    // reconcile grace window) and a genuinely stranded run (row gone, past
+    // WORKFLOW_DISPATCH_TIMEOUT_MS, retries exhausted). Callers cannot tell
+    // them apart from the boolean, so say so in the log rather than returning
+    // silently: a run that will never dispatch is the case worth finding.
+    logger.warn(
+      { event: "workflow.dispatch_publish_skipped", runId },
+      "Workflow run was not eligible for publish; already dispatched, expired, or gone",
+    );
+    return false;
+  }
   try {
     await ensureWorkflowJobQueued(queuedJob(row), getInstanceId());
   } catch (err) {
@@ -98,6 +109,12 @@ export async function publishWorkflowRunById(
   return markDispatchEnqueued(row.id, row.dispatch_generation_id, row.dispatch_enqueued_at, sql);
 }
 
+/**
+ * Dormant on this branch: no scheduler calls this yet. The isolated-runner
+ * slice wires it into `liveness-reaper.ts` `reapOnce()`, which is the interval
+ * `src/app.ts` already starts. Until both land together, a crash between the
+ * row commit and the Valkey publish is not swept up.
+ */
 /** Retry workflow rows committed before their Valkey publish completed. */
 export async function publishPendingWorkflowRuns(
   sql: SQL = requireDb(),

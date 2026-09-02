@@ -298,10 +298,18 @@ async function maybeAutoReview(
   }
 
   try {
-    // Ordered cheapest-first. The self-push check costs nothing under App auth,
-    // the policy read is an ETag-cached conditional request, and only then do we
-    // pay for a paginated listFiles.
-    if (await isSelfPush(payload.sender)) {
+    // Claim first, per the idempotency contract in CLAUDE.md: a redelivery must
+    // short-circuit before any GitHub pagination, and two concurrent deliveries
+    // must not both pay for `computeDiffFingerprint`'s paginated listFiles.
+    // Suffixed key: `claimDelivery` is one-shot per key and the config-check
+    // branch already claims one on this same delivery. See the note above
+    // `handlePullRequestConfigCheck`.
+    if (!(await claimDelivery(`${deliveryId}:auto-review`, log))) return;
+
+    // Remaining gates are ordered cheapest-first. The self-push check costs
+    // nothing under App auth, the policy read is an ETag-cached conditional
+    // request, and only then do we pay for a paginated listFiles.
+    if (await isSelfPush(payload.sender, log)) {
       log.info({ event: "auto_review.skipped_self_push" }, "auto-review: our own push");
       return;
     }
@@ -336,11 +344,6 @@ async function maybeAutoReview(
       log.info({ event: "auto_review.skipped_unchanged_diff" }, "auto-review: diff unchanged");
       return;
     }
-
-    // Suffixed key: `claimDelivery` is one-shot per key and the config-check
-    // branch already claims one on this same delivery. See the note above
-    // `handlePullRequestConfigCheck`.
-    if (!(await claimDelivery(`${deliveryId}:auto-review`, log))) return;
 
     // `auto: true` => never comments, never touches labels. An in-flight review
     // for this PR makes `insertQueued` return a silent `refused`, which is the
