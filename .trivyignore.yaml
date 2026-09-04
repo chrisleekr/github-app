@@ -15,6 +15,8 @@
 # future occurrences of the same CVE in a different location (e.g. if the
 # Claude Code CLI later ships its own vulnerable copy).
 
+# When the last entry is removed, write `vulnerabilities: []`. A bare
+# `vulnerabilities:` parses as null, not an empty list.
 vulnerabilities:
   - id: GHSA-f88m-g3jw-g9cj
     paths:
@@ -35,6 +37,13 @@ vulnerabilities:
       Forcing 0.35.x would break the declared range for an unreachable CVE.
       Delete this entry once @huggingface/transformers ships a release that
       depends on sharp >= 0.35.0.
+
+      No mirrored entry in scripts/audit-ci.ts: `bun run audit:ci` on this
+      branch reports total=0, so bun's advisory source does not surface this
+      GHSA today. The asymmetry is deliberate, not an oversight. If a future
+      advisory-DB sync turns audit:ci red on it, mirror this entry there with
+      the same expiry, and note that that allowlist matches by GHSA id alone
+      with no `paths` scoping, so it suppresses more broadly than this does.
     expired_at: 2026-12-04
   #
   # Retired 2026-06-30 (all expired AND fixed upstream, per each entry's own
