@@ -1,26 +1,14 @@
 # Container CVE scanning for the published Docker Hub images.
 #
-# Deliberately NOT part of docker-build.yml. That workflow's `scan` job ran
-# `needs: merge`, i.e. after the manifest lists were already pushed, so a
-# non-zero Trivy exit could not stop a vulnerable image from shipping. All it
-# actually did was fold a CVE verdict into the reusable workflow's conclusion,
-# which then skipped `notify-helm-charts` in release-please.yml and silently
-# withheld the chart-sync PR for an image that was already live. Splitting the
-# scan out restores the intended meaning of each signal:
+# Separate from docker-build.yml so a CVE verdict never gates publishing or the
+# release automation downstream of it: these images are already on Docker Hub
+# by the time anything here runs.
 #
-#   docker-build.yml conclusion -> "the images built and published"
-#   this workflow's conclusion  -> "the published images are CVE-clean"
-#
-# Running on a schedule rather than only at release time is the other half of
-# the fix. Trivy verdicts move when advisories are published, not when this
-# repo changes: v1.17.0 went red on a util-linux DSA that landed days after the
-# code was written. A daily re-scan of the `latest-*` tags surfaces that within
-# a day instead of at whatever moment the next release happens to run.
-#
-# There is deliberately no `release: published` trigger. release-please creates
-# the GitHub release before docker-build.yml has pushed the manifest lists, so
-# such a run would race the build and fail on `manifest unknown`. Scan a
-# specific release on demand via workflow_dispatch once the build is green.
+# Scheduled rather than release-triggered because Trivy verdicts move when
+# advisories are published, not when this repo changes. No `release: published`
+# trigger either: release-please creates the release before the manifest lists
+# are pushed, so such a run races the build and fails on `manifest unknown`.
+# Use workflow_dispatch to scan a specific release once its build is green.
 name: Trivy Scan
 
 on:
@@ -34,8 +22,7 @@ on:
         required: false
         type: string
 
-# Only the SARIF upload needs a write scope. No `contents: write`, no registry
-# push, no attestation scopes: this workflow reads images and reports.
+# Only the SARIF upload needs a write scope.
 permissions:
   contents: read
   security-events: write
@@ -89,10 +76,8 @@ jobs:
           echo "tag=${BASE}-${VARIANT}" >> "$GITHUB_OUTPUT"
 
       # Regression gate: fail the workflow if the published image is missing
-      # its Sigstore-signed SLSA provenance + SBOM attestations. Catches silent
-      # drops from future refactors of docker-build.yml's build / merge jobs.
-      # Moved here with the scan job it belonged to; re-enabling it also needs
-      # `attestations: read` added to this workflow's permissions block.
+      # its Sigstore-signed SLSA provenance + SBOM attestations. Re-enabling
+      # also needs `attestations: read` in the permissions block above.
       # Note: As SBOM file size is over 16MB, temporary disable SBOM attestations.
       # - name: Verify image attestations
       #   env:
