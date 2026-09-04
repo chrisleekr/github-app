@@ -51,7 +51,12 @@ const MAX_ATTEMPTS = 3;
 const ATTEMPT_TIMEOUT_MS = 60_000;
 const BACKOFF_MS = 5_000;
 
-type Attempt = { stdout: string; stderr: string; exitCode: number | null; signalled: boolean };
+interface Attempt {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  signalled: boolean;
+}
 
 function runAudit(): Attempt {
   const proc = Bun.spawnSync({
