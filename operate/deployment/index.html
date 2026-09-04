@@ -2340,7 +2340,7 @@
 </tr>
 </tbody>
 </table>
-<p>Tool versions are parameterised by <code>ARG</code> (<code>KUBECTL_VERSION</code>, <code>HELM_VERSION</code>, etc.) and bumped together by Renovate/Dependabot. The Trivy scan in CI gates CVE regressions.</p>
+<p>Tool versions are parameterised by <code>ARG</code> (<code>KUBECTL_VERSION</code>, <code>HELM_VERSION</code>, etc.) and bumped together by Renovate/Dependabot. <code>trivy-scan.yml</code> re-scans the published images daily for CVE regressions.</p>
 <h2 id="build">Build<a class="headerlink" href="#build" title="Permanent link">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>bun<span class="w"> </span>run<span class="w"> </span>docker:build:orchestrator<span class="w">   </span><span class="c1"># → chrisleekr/github-app:local-orchestrator</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>bun<span class="w"> </span>run<span class="w"> </span>docker:build:daemon<span class="w">         </span><span class="c1"># → chrisleekr/github-app:local-daemon</span>
@@ -2442,7 +2442,7 @@
 </span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span>--repo<span class="w"> </span>chrisleekr/github-app<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span>--predicate-type<span class="w"> </span>https://cyclonedx.org/bom
 </span></code></pre></div>
-<p>The same commands apply to the <code>-daemon</code> tags. The <code>scan</code> job in <code>docker-build.yml</code> runs both calls before Trivy on every release, so any future regression that drops an attestation fails the workflow at the verify step.</p>
+<p>The same commands apply to the <code>-daemon</code> tags. <strong>No workflow runs these calls today</strong>: the <code>Verify image attestations</code> step is commented out in the <code>scan</code> job of <code>.github/workflows/trivy-scan.yml</code>, alongside the disabled attestation publishing in <code>docker-build.yml</code>. Once both are restored, that step re-becomes the regression gate that fails the workflow if a future refactor drops an attestation.</p>
 <p>You can also pull the BuildKit-emitted SPDX SBOM and SLSA provenance attached to each per-arch leaf manifest directly via the registry, useful for offline supply-chain audits and the only source for arm64 package coverage (the Sigstore CycloneDX flavour above is amd64-only):</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Provenance JSON (per platform)</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>docker<span class="w"> </span>buildx<span class="w"> </span>imagetools<span class="w"> </span>inspect<span class="w"> </span>chrisleekr/github-app:&lt;version&gt;-orchestrator<span class="w"> </span><span class="se">\</span>

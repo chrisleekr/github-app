@@ -4008,7 +4008,7 @@ daemon executor.</p>
 </tbody>
 </table>
 <p>Docker Hub renders a "Build attestations" badge on the tag page once the Sigstore-signed flavour is detected. The full source/predicate of every signature is replayable via the <a href="https://search.sigstore.dev/">Sigstore transparency log (Rekor)</a> using the digest from <code>gh attestation verify</code>.</p>
-<p>The <code>scan</code> job in <code>.github/workflows/docker-build.yml</code> calls <code>gh attestation verify</code> for both predicate types before running Trivy: a regression-gate against silent attestation drops in any future refactor of the build / merge jobs. Consumer-side verification commands live in <a href="../deployment/#verifying-image-attestations"><code>deployment.md</code></a>.</p>
+<p>The <code>scan</code> job in <code>.github/workflows/trivy-scan.yml</code> carries a commented-out <code>gh attestation verify</code> step for both predicate types, intended as a regression-gate against silent attestation drops in any future refactor of the build / merge jobs. It is <strong>currently disabled</strong> along with the attestation publishing itself, so nothing verifies attestations today. Consumer-side verification commands live in <a href="../deployment/#verifying-image-attestations"><code>deployment.md</code></a>.</p>
 
 
 
