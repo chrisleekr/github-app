@@ -40,23 +40,63 @@ const IGNORED: AllowEntry[] = [
   // { ghsa: "GHSA-xxxx-xxxx-xxxx", reason: "...", expires: "2026-06-01" },
 ];
 
-const proc = Bun.spawnSync({
-  cmd: ["bun", "audit", "--json"],
-  stdout: "pipe",
-  stderr: "pipe",
-});
+// `bun audit` reaches the registry's advisory endpoint, which fails often
+// enough to block merges on its own: repeated `ConnectionClosed: audit request
+// failed` runs, each burning ~4.5 min before giving up. Retry the produce-no-
+// JSON case only, so a real report is never re-rolled.
+// A healthy audit answers in ~2s, so 60s only ever bites on a hung attempt.
+// Worst case is 3 x 60s + 2 x 5s backoff = ~3.2 min, which has to fit inside
+// ci.yml's `timeout-minutes: 10` alongside lint, typecheck, tests and build.
+const MAX_ATTEMPTS = 3;
+const ATTEMPT_TIMEOUT_MS = 60_000;
+const BACKOFF_MS = 5_000;
 
-const stdout = new TextDecoder().decode(proc.stdout).trim();
-const stderr = new TextDecoder().decode(proc.stderr).trim();
+type Attempt = { stdout: string; stderr: string; exitCode: number | null; signalled: boolean };
+
+function runAudit(): Attempt {
+  const proc = Bun.spawnSync({
+    cmd: ["bun", "audit", "--json"],
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: ATTEMPT_TIMEOUT_MS,
+  });
+  return {
+    stdout: new TextDecoder().decode(proc.stdout).trim(),
+    stderr: new TextDecoder().decode(proc.stderr).trim(),
+    exitCode: proc.exitCode,
+    // A timeout kill arrives as SIGTERM, which leaves exitCode null. That is a
+    // failure to run, NOT a clean "no advisories" result: the previous
+    // `exitCode !== null` guard let a signalled process fall through to
+    // exit(0) and silently disable this gate.
+    signalled: proc.exitCode === null,
+  };
+}
+
+let attempt = runAudit();
+for (let i = 2; i <= MAX_ATTEMPTS && !attempt.stdout && failedToRun(attempt); i++) {
+  console.warn(`::warning::bun audit attempt ${i - 1}/${MAX_ATTEMPTS} produced no JSON, retrying.`);
+  if (attempt.stderr) console.error(attempt.stderr);
+  Bun.sleepSync(BACKOFF_MS);
+  attempt = runAudit();
+}
+
+function failedToRun(a: Attempt): boolean {
+  return a.signalled || (a.exitCode !== null && a.exitCode !== 0);
+}
+
+const { stdout, stderr } = attempt;
 
 if (!stdout) {
-  // Empty stdout + non-zero exit = bun audit failed to run (network error,
-  // registry outage, Bun bug). Treating this as "no advisories" would
-  // silently disable the audit gate; fail closed instead.
-  if (proc.exitCode !== 0 && proc.exitCode !== null) {
-    console.error(`::error::bun audit exited with code ${proc.exitCode} and produced no JSON.`);
+  // Empty stdout + non-zero exit (or a signal) = bun audit failed to run
+  // (network error, registry outage, Bun bug). Treating this as "no
+  // advisories" would silently disable the audit gate; fail closed instead.
+  if (failedToRun(attempt)) {
+    const how = attempt.signalled
+      ? "was killed by a signal"
+      : `exited with code ${attempt.exitCode}`;
+    console.error(`::error::bun audit ${how} and produced no JSON after ${MAX_ATTEMPTS} attempts.`);
     if (stderr) console.error(stderr);
-    process.exit(proc.exitCode);
+    process.exit(attempt.exitCode ?? 1);
   }
   console.log("bun audit produced no JSON output (no advisories).");
   if (stderr) console.error(stderr);
