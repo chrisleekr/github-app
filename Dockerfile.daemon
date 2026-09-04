@@ -35,18 +35,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # by the Trivy gate. This block lives in the shared base so both images carry
 # the patched versions. Targeted --only-upgrade (not a blanket apt-get upgrade)
 # keeps the build reproducible and avoids hadolint DL3005.
+#
+# The util-linux family (2.41-5 -> 2.41.5-0+deb13u1) covers CVE-2026-53612,
+# CVE-2026-53613 and CVE-2026-53614. All nine binary packages are built from
+# the same source, so upgrading only some of them leaves apt unable to satisfy
+# the tight inter-package version constraints. `login` is in the list because
+# Debian ships it from the util-linux source with a `+really` epoch.
 RUN apt-get update && \
   apt-get install --only-upgrade -y --no-install-recommends \
   openssl libssl3 \
   python3.13 python3.13-minimal libpython3.13-stdlib libpython3.13-minimal \
   libsystemd0 libudev1 libnghttp2-14 libcap2 \
-  libgssapi-krb5-2 libk5crypto3 libkrb5-3 libkrb5support0 && \
+  libgssapi-krb5-2 libk5crypto3 libkrb5-3 libkrb5support0 \
+  util-linux mount login bsdutils libblkid1 liblastlog2-2 libmount1 \
+  libsmartcols1 libuuid1 && \
   rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI required by @anthropic-ai/claude-agent-sdk. Declared as an
+# ARG so renovate.json's custom regex manager keeps it current: the previous
+# inline `@2.1.114` pin was invisible to every manager and drifted far enough
+# behind to ship CVE-2026-55607 (arbitrary code execution via git directory
+# confusion, fixed in 2.1.163).
+# renovate: datasource=npm depName=@anthropic-ai/claude-code
+ARG CLAUDE_CODE_VERSION=2.1.260
 
 # Tracks 11.x major (unlike the exact pins elsewhere).
 RUN npm install -g npm@11 && \
-  # Claude Code CLI required by @anthropic-ai/claude-agent-sdk.
-  npm install -g @anthropic-ai/claude-code@2.1.114
+  npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
 # Stage: Build: install all deps and bundle the main app.
 FROM base AS development
