@@ -35,18 +35,50 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # by the Trivy gate. This block lives in the shared base so both images carry
 # the patched versions. Targeted --only-upgrade (not a blanket apt-get upgrade)
 # keeps the build reproducible and avoids hadolint DL3005.
+#
+# The util-linux family (2.41-5 -> 2.41.5-0+deb13u1) covers CVE-2026-53612,
+# CVE-2026-53613 and CVE-2026-53614. These nine are every util-linux binary
+# package present in a debian:trixie rootfs, which oven/bun is built FROM (the
+# source builds 33, the rest are not installed here). Keep the list complete:
+# --only-upgrade silently IGNORES a name that is not installed and does not
+# error on a name that is omitted, so dropping one leaves that package at the
+# vulnerable version with no build-time signal and only Trivy notices later.
+# `login` is here because trixie builds it from the util-linux source under a
+# `+really` version suffix, keeping shadow's epoch so it still sorts above the
+# old shadow-built package (1:4.16.0-2+really2.41.5-0+deb13u1).
 RUN apt-get update && \
   apt-get install --only-upgrade -y --no-install-recommends \
   openssl libssl3 \
   python3.13 python3.13-minimal libpython3.13-stdlib libpython3.13-minimal \
   libsystemd0 libudev1 libnghttp2-14 libcap2 \
-  libgssapi-krb5-2 libk5crypto3 libkrb5-3 libkrb5support0 && \
+  libgssapi-krb5-2 libk5crypto3 libkrb5-3 libkrb5support0 \
+  util-linux mount login bsdutils libblkid1 liblastlog2-2 libmount1 \
+  libsmartcols1 libuuid1 && \
   rm -rf /var/lib/apt/lists/*
 
+# Claude Code CLI required by @anthropic-ai/claude-agent-sdk. Declared as an
+# ARG so renovate.json's custom regex manager keeps it current: the previous
+# inline `@2.1.114` pin was invisible to every manager and drifted far enough
+# behind to ship CVE-2026-55607 (arbitrary code execution via git directory
+# confusion, fixed in 2.1.163).
+#
+# Value tracks the vendor's `stable` dist-tag, not `latest`/`next`. This CLI
+# runs under bypassPermissions holding a GitHub installation token, so it takes
+# the conservative channel. A hand-picked version must also clear the 7-day
+# soak renovate.json enforces via minimumReleaseAge (that setting only governs
+# Renovate-raised PRs, not a manual edit), and must be >= 2.1.163.
+# renovate: datasource=npm depName=@anthropic-ai/claude-code
+ARG CLAUDE_CODE_VERSION=2.1.236
+
 # Tracks 11.x major (unlike the exact pins elsewhere).
+# The version is validated before it reaches npm: `--build-arg
+# CLAUDE_CODE_VERSION=` would otherwise expand to `...@`, which npm-package-arg
+# resolves to the `*` range and silently installs whatever is newest, dropping
+# the pin with no build failure.
 RUN npm install -g npm@11 && \
-  # Claude Code CLI required by @anthropic-ai/claude-agent-sdk.
-  npm install -g @anthropic-ai/claude-code@2.1.114
+  printf '%s' "${CLAUDE_CODE_VERSION:?CLAUDE_CODE_VERSION must not be empty}" \
+  | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' && \
+  npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
 # Stage: Build: install all deps and bundle the main app.
 FROM base AS development
