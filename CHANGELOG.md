@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.17.1](https://github.com/chrisleekr/github-app/compare/v1.17.0...v1.17.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **ci:** retry bun audit, close the signal fail-open, and skip on outage ([#296](https://github.com/chrisleekr/github-app/issues/296)) ([54899f7](https://github.com/chrisleekr/github-app/commit/54899f7b7faae1a64ed93ededfd392de72d44a6e))
+* **deps:** clear the orchestrator image's HIGH CVE findings ([#295](https://github.com/chrisleekr/github-app/issues/295)) ([f4b8f03](https://github.com/chrisleekr/github-app/commit/f4b8f03c0ebe186a7b1b9331e8aaee0a994b37e6))
+
 ## [1.17.0](https://github.com/chrisleekr/github-app/compare/v1.16.1...v1.17.0) (2026-09-02)
 
 
