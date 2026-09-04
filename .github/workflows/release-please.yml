@@ -60,13 +60,12 @@ jobs:
     name: Docker
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
-    # Ceiling for the reusable docker-build.yml: it needs security-events:write
-    # (Trivy SARIF upload) and id-token:write (Sigstore/attestations). Matches
-    # the grant the retired release.yml gave this path; the release-please job's
-    # PR/issues write scopes are deliberately NOT granted here.
+    # Ceiling for the reusable docker-build.yml: it needs contents:read to
+    # check out the tag and id-token:write for Sigstore/attestations. The
+    # release-please job's PR/issues write scopes are deliberately NOT granted
+    # here.
     permissions:
       contents: read
-      security-events: write
       id-token: write
     uses: ./.github/workflows/docker-build.yml
     with:

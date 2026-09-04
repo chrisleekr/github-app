@@ -34,7 +34,7 @@ The two images intentionally diverge after the shared base because their cost an
 | `daemon-tools` | `base`         | Installs the full toolchain, kubectl, helm, terraform, kustomize, k9s, stern, argocd, flux, tflint, yq, aws-cli, gcloud, docker CLI, go, rust, poetry, gh, azure-cli, and bakes `daemon-capabilities.static.json` for fast startup. |
 | `production`   | `daemon-tools` | Copies `dist/` and production `node_modules/`. Runs as `bun`.                                                                                                                                                                       |
 
-Tool versions are parameterised by `ARG` (`KUBECTL_VERSION`, `HELM_VERSION`, etc.) and bumped together by Renovate/Dependabot. The Trivy scan in CI gates CVE regressions.
+Tool versions are parameterised by `ARG` (`KUBECTL_VERSION`, `HELM_VERSION`, etc.) and bumped together by Renovate/Dependabot. `trivy-scan.yml` re-scans the published images daily for CVE regressions.
 
 ## Build
 
@@ -98,7 +98,7 @@ gh attestation verify \
   --predicate-type https://cyclonedx.org/bom
 ```
 
-The same commands apply to the `-daemon` tags. The `scan` job in `docker-build.yml` runs both calls before Trivy on every release, so any future regression that drops an attestation fails the workflow at the verify step.
+The same commands apply to the `-daemon` tags. **No workflow runs these calls today**: the `Verify image attestations` step is commented out in the `scan` job of `.github/workflows/trivy-scan.yml`, alongside the disabled attestation publishing in `docker-build.yml`. Once both are restored, that step re-becomes the regression gate that fails the workflow if a future refactor drops an attestation.
 
 You can also pull the BuildKit-emitted SPDX SBOM and SLSA provenance attached to each per-arch leaf manifest directly via the registry, useful for offline supply-chain audits and the only source for arm64 package coverage (the Sigstore CycloneDX flavour above is amd64-only):
 
