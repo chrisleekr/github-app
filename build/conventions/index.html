@@ -1881,6 +1881,7 @@
 <li>Blocks on <code>high</code> and <code>critical</code> advisories.</li>
 <li>Warns on <code>moderate</code> and <code>low</code>.</li>
 <li>Inline GHSA allowlist in <code>IGNORED</code> array; each entry has <code>ghsa</code>, <code>reason</code>, and <code>expires</code> (ISO date). Expired entries become warnings on next run.</li>
+<li>Retries up to 3 times when <code>bun audit</code> produces no JSON, then emits a <code>::warning::</code> and passes. An unreachable advisory service yields no verdict either way, so it degrades to a loud skip rather than blocking every merge for the length of an upstream outage. Unparseable JSON still hard-fails, and <code>trivy-scan.yml</code> scans the published images daily as the independent control.</li>
 </ul>
 <h2 id="ci-pipeline">CI pipeline<a class="headerlink" href="#ci-pipeline" title="Permanent link">&para;</a></h2>
 <p>Six pipeline files; each owns one responsibility.</p>
