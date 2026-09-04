@@ -1147,6 +1147,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#dependency-overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependency overrides
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#verifying-image-attestations" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1956,6 +1967,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#dependency-overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependency overrides
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#verifying-image-attestations" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2287,7 +2309,7 @@
 <tr>
 <td><code>base</code></td>
 <td><code>oven/bun:1.3.14</code></td>
-<td>Installs Node.js 20 (for the Claude Code CLI), npm 11, <code>curl</code>, <code>git</code>, <code>@anthropic-ai/claude-code</code> globally, plus targeted openssl CVE upgrades.</td>
+<td>Installs Node.js from NodeSource (major pinned in the Dockerfile, currently 25) for the Claude Code CLI, npm 11, <code>curl</code>, <code>git</code>, <code>@anthropic-ai/claude-code</code> globally (pinned via the <code>CLAUDE_CODE_VERSION</code> ARG), plus targeted OS CVE upgrades.</td>
 </tr>
 <tr>
 <td><code>development</code></td>
@@ -2368,6 +2390,11 @@
 <td><code>unspecified</code></td>
 <td>Stored as Docker label <code>com.chrisleekr.bot.git-hash</code>.</td>
 </tr>
+<tr>
+<td><code>CLAUDE_CODE_VERSION</code></td>
+<td>pinned in the Dockerfile, never passed by CI</td>
+<td>Global <code>@anthropic-ai/claude-code</code> CLI pin, tracking the vendor <code>stable</code> dist-tag. Carries a <code># renovate:</code> marker so <code>renovate.json</code>'s custom regex manager bumps it. Deliberately not restated as a literal here: Renovate moves it and no CI gate compares this page against the Dockerfile.</td>
+</tr>
 </tbody>
 </table>
 <p>Daemon-only:</p>
@@ -2403,6 +2430,33 @@
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>-t<span class="w"> </span>chrisleekr/github-app:<span class="k">$(</span>git<span class="w"> </span>rev-parse<span class="w"> </span>--short<span class="w"> </span>HEAD<span class="k">)</span>-orchestrator<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>.
 </span></code></pre></div>
+<h3 id="dependency-overrides">Dependency overrides<a class="headerlink" href="#dependency-overrides" title="Permanent link">&para;</a></h3>
+<p><code>package.json</code>'s <code>overrides</code> block force-pins transitive dependencies past what their parent declared, almost always to clear a CVE the parent has not yet picked up. JSON carries no comments, so each pin's reason and its removal condition live here. Drop an entry once its condition is met, otherwise it silently holds a package back after the reason expires.</p>
+<table>
+<thead>
+<tr>
+<th>Override</th>
+<th>Pinned</th>
+<th>Reason</th>
+<th>Remove when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>js-yaml</code></td>
+<td><code>4.3.2</code></td>
+<td>CVE-2026-59869 (fixed 4.3.0), GHSA-5p4m-2wfm-xmqj (fixed 4.3.1), GHSA-2883-xcg3-v3hh (fixed 4.3.2). Reached via <code>@kubernetes/client-node</code> and <code>cosmiconfig</code>, both declaring <code>^4.1.0</code>.</td>
+<td><code>@kubernetes/client-node</code> declares <code>js-yaml &gt;= 4.3.2</code>.</td>
+</tr>
+<tr>
+<td><code>ip-address</code></td>
+<td><code>10.7.0</code></td>
+<td>CVE-2026-69192 SSRF (fixed 10.3.1). Reached via <code>express-rate-limit</code> (<code>^10.2.0</code>) and <code>socks</code> (<code>^10.0.1</code>), which resolved two separate copies before the pin.</td>
+<td>Both parents declare <code>ip-address &gt;= 10.3.1</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>The remaining entries predate this table; add a row when you touch one.</p>
 <h3 id="verifying-image-attestations">Verifying image attestations<a class="headerlink" href="#verifying-image-attestations" title="Permanent link">&para;</a></h3>
 <blockquote>
 <p><strong>Attestations are currently disabled.</strong> The <code>provenance: mode=max</code> / <code>sbom: true</code> inputs, the <code>attestations: write</code> permission, and the <code>gh attestation verify</code> gate in <code>.github/workflows/docker-build.yml</code> are all commented out because the SBOM exceeded GitHub's 16MB attestation limit. The GitLab builds pass <code>--provenance false</code>. <strong>No published tag carries an attestation today</strong>, so the <code>gh attestation verify</code> commands below will fail until the inputs are restored. The section is retained because the workflow code is retained in place for re-enablement.</p>
