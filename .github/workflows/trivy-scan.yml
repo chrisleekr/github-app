@@ -88,6 +88,25 @@ jobs:
           fi
           echo "tag=${BASE}-${VARIANT}" >> "$GITHUB_OUTPUT"
 
+      # Regression gate: fail the workflow if the published image is missing
+      # its Sigstore-signed SLSA provenance + SBOM attestations. Catches silent
+      # drops from future refactors of docker-build.yml's build / merge jobs.
+      # Moved here with the scan job it belonged to; re-enabling it also needs
+      # `attestations: read` added to this workflow's permissions block.
+      # Note: As SBOM file size is over 16MB, temporary disable SBOM attestations.
+      # - name: Verify image attestations
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     IMAGE_REF: oci://${{ env.IMAGE_NAME }}:${{ steps.imgtag.outputs.tag }}
+      #     REPO: ${{ github.repository }}
+      #   run: |
+      #     # Two separate calls: each fails if the requested predicate type is
+      #     # absent, so this catches a regression that drops EITHER attestation.
+      #     gh attestation verify "$IMAGE_REF" --repo "$REPO" \
+      #       --predicate-type https://slsa.dev/provenance/v1
+      #     gh attestation verify "$IMAGE_REF" --repo "$REPO" \
+      #       --predicate-type https://cyclonedx.org/bom
+
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:

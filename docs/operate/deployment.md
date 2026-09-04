@@ -98,7 +98,7 @@ gh attestation verify \
   --predicate-type https://cyclonedx.org/bom
 ```
 
-The same commands apply to the `-daemon` tags. The `scan` job in `trivy-scan.yml` runs both calls before Trivy, so any future regression that drops an attestation fails the workflow at the verify step.
+The same commands apply to the `-daemon` tags. **No workflow runs these calls today**: the `Verify image attestations` step is commented out in the `scan` job of `.github/workflows/trivy-scan.yml`, alongside the disabled attestation publishing in `docker-build.yml`. Once both are restored, that step re-becomes the regression gate that fails the workflow if a future refactor drops an attestation.
 
 You can also pull the BuildKit-emitted SPDX SBOM and SLSA provenance attached to each per-arch leaf manifest directly via the registry, useful for offline supply-chain audits and the only source for arm64 package coverage (the Sigstore CycloneDX flavour above is amd64-only):
 
