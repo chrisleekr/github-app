@@ -40,24 +40,100 @@ const IGNORED: AllowEntry[] = [
   // { ghsa: "GHSA-xxxx-xxxx-xxxx", reason: "...", expires: "2026-06-01" },
 ];
 
-const proc = Bun.spawnSync({
-  cmd: ["bun", "audit", "--json"],
-  stdout: "pipe",
-  stderr: "pipe",
-});
+// `bun audit` reaches the registry's advisory endpoint, which fails often
+// enough to block merges on its own: repeated `ConnectionClosed: audit request
+// failed` runs, each burning ~4.5 min before giving up. Retry the produce-no-
+// JSON case only, so a real report is never re-rolled.
+// A healthy audit answers in ~2s, so 60s only ever bites on a hung attempt.
+// Worst case is 3 x 60s + 2 x 5s backoff = ~3.2 min, which has to fit inside
+// ci.yml's `timeout-minutes: 10` alongside lint, typecheck, tests and build.
+const MAX_ATTEMPTS = 3;
+const ATTEMPT_TIMEOUT_MS = 60_000;
+const BACKOFF_MS = 5_000;
 
-const stdout = new TextDecoder().decode(proc.stdout).trim();
-const stderr = new TextDecoder().decode(proc.stderr).trim();
+interface Attempt {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  signalled: boolean;
+}
+
+function runAudit(): Attempt {
+  const proc = Bun.spawnSync({
+    cmd: ["bun", "audit", "--json"],
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: ATTEMPT_TIMEOUT_MS,
+  });
+  return {
+    stdout: new TextDecoder().decode(proc.stdout).trim(),
+    stderr: new TextDecoder().decode(proc.stderr).trim(),
+    exitCode: proc.exitCode,
+    // `exitCode` is declared `number` but is null at runtime on a signal kill
+    // (verified on bun 1.3.12 and 1.3.14), so it cannot carry this check in
+    // typed code. These two optional fields are the documented way to detect
+    // termination: https://bun.com/reference/bun/SyncSubprocess
+    signalled: proc.signalCode != null || proc.exitedDueToTimeout === true,
+  };
+}
+
+// `bun audit` exits 1 when it FINDS advisories, so a non-zero exit alongside a
+// report is the normal path. Only an empty report marks a run that never
+// happened.
+function failedToRun(a: Attempt): boolean {
+  return a.signalled || (a.exitCode !== null && a.exitCode !== 0);
+}
+
+// A killed process can still have flushed parseable JSON, which would be a
+// partial report. Treat any termination as "no report" so a truncated one is
+// never mistaken for a verdict.
+function producedNoReport(a: Attempt): boolean {
+  return a.signalled || (!a.stdout && failedToRun(a));
+}
+
+// Only a genuine failure to reach the advisory service earns the skip below.
+// Every other failure to run (bun crash, unreadable lockfile, bad credentials)
+// says something about this repo and still hard-fails.
+const SERVICE_UNREACHABLE =
+  /audit request failed|ConnectionClosed|ConnectionRefused|ConnectionTimedOut|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed/i;
+
+function isServiceUnreachable(a: Attempt): boolean {
+  // A killed attempt is one that got 60s to answer and never did, which is
+  // unreachable from this side whatever the cause.
+  return a.signalled || SERVICE_UNREACHABLE.test(a.stderr);
+}
+
+// Reached only when every attempt failed to produce a report. An unreachable
+// advisory service yields no verdict in either direction, and blocking every
+// merge for the length of an upstream outage buys no security, so warn loudly
+// and pass. Anything else exits non-zero.
+function skipOrFail(a: Attempt): never {
+  const how = a.signalled ? "was killed after not responding" : `exited with code ${a.exitCode}`;
+  if (isServiceUnreachable(a)) {
+    console.warn(
+      `::warning::bun audit ${how} and produced no usable JSON after ${MAX_ATTEMPTS} attempts. Dependency audit SKIPPED for this run.`,
+    );
+    if (a.stderr) console.error(a.stderr);
+    process.exit(0);
+  }
+  console.error(`::error::bun audit ${how} without reaching the advisory service.`);
+  if (a.stderr) console.error(a.stderr);
+  process.exit(a.exitCode ?? 1);
+}
+
+let attempt = runAudit();
+for (let i = 2; i <= MAX_ATTEMPTS && producedNoReport(attempt); i++) {
+  console.warn(`::warning::bun audit attempt ${i - 1}/${MAX_ATTEMPTS} produced no JSON, retrying.`);
+  if (attempt.stderr) console.error(attempt.stderr);
+  Bun.sleepSync(BACKOFF_MS);
+  attempt = runAudit();
+}
+
+if (producedNoReport(attempt)) skipOrFail(attempt);
+
+const { stdout, stderr } = attempt;
 
 if (!stdout) {
-  // Empty stdout + non-zero exit = bun audit failed to run (network error,
-  // registry outage, Bun bug). Treating this as "no advisories" would
-  // silently disable the audit gate; fail closed instead.
-  if (proc.exitCode !== 0 && proc.exitCode !== null) {
-    console.error(`::error::bun audit exited with code ${proc.exitCode} and produced no JSON.`);
-    if (stderr) console.error(stderr);
-    process.exit(proc.exitCode);
-  }
   console.log("bun audit produced no JSON output (no advisories).");
   if (stderr) console.error(stderr);
   process.exit(0);

@@ -75,6 +75,7 @@ bun run check
 - Blocks on `high` and `critical` advisories.
 - Warns on `moderate` and `low`.
 - Inline GHSA allowlist in `IGNORED` array; each entry has `ghsa`, `reason`, and `expires` (ISO date). Expired entries become warnings on next run.
+- Retries up to 3 times when `bun audit` produces no JSON, then emits a `::warning::` and passes. An unreachable advisory service yields no verdict either way, so it degrades to a loud skip rather than blocking every merge for the length of an upstream outage. Unparseable JSON still hard-fails, and `trivy-scan.yml` scans the published images daily as the independent control.
 
 ## CI pipeline
 
