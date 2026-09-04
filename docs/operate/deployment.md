@@ -15,11 +15,11 @@ The two images intentionally diverge after the shared base because their cost an
 
 ### Shared base stages
 
-| Stage         | Base              | Purpose                                                                                                                                         |
-| ------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `base`        | `oven/bun:1.3.14` | Installs Node.js 20 (for the Claude Code CLI), npm 11, `curl`, `git`, `@anthropic-ai/claude-code` globally, plus targeted openssl CVE upgrades. |
-| `development` | `base`            | `bun install` (all deps) + `bun run build` → `dist/` (app, daemon, workflow runner, process-boundary probe, MCP stdio servers).                 |
-| `deps`        | `base`            | `bun install --production --ignore-scripts` (runtime deps only).                                                                                |
+| Stage         | Base              | Purpose                                                                                                                                                                                                                                         |
+| ------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base`        | `oven/bun:1.3.14` | Installs Node.js from NodeSource (major pinned in the Dockerfile, currently 25) for the Claude Code CLI, npm 11, `curl`, `git`, `@anthropic-ai/claude-code` globally (pinned via the `CLAUDE_CODE_VERSION` ARG), plus targeted OS CVE upgrades. |
+| `development` | `base`            | `bun install` (all deps) + `bun run build` → `dist/` (app, daemon, workflow runner, process-boundary probe, MCP stdio servers).                                                                                                                 |
+| `deps`        | `base`            | `bun install --production --ignore-scripts` (runtime deps only).                                                                                                                                                                                |
 
 ### Orchestrator-only stage
 
@@ -50,10 +50,11 @@ The daemon image compiles a native preload guard that sets `PR_SET_DUMPABLE=0` b
 
 ### Build arguments
 
-| Argument          | Default       | Purpose                                                      |
-| ----------------- | ------------- | ------------------------------------------------------------ |
-| `PACKAGE_VERSION` | `untagged`    | Stored as Docker label `com.chrisleekr.bot.package-version`. |
-| `GIT_HASH`        | `unspecified` | Stored as Docker label `com.chrisleekr.bot.git-hash`.        |
+| Argument              | Default                                      | Purpose                                                                                                                                                                                                                                                                                        |
+| --------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PACKAGE_VERSION`     | `untagged`                                   | Stored as Docker label `com.chrisleekr.bot.package-version`.                                                                                                                                                                                                                                   |
+| `GIT_HASH`            | `unspecified`                                | Stored as Docker label `com.chrisleekr.bot.git-hash`.                                                                                                                                                                                                                                          |
+| `CLAUDE_CODE_VERSION` | pinned in the Dockerfile, never passed by CI | Global `@anthropic-ai/claude-code` CLI pin, tracking the vendor `stable` dist-tag. Carries a `# renovate:` marker so `renovate.json`'s custom regex manager bumps it. Deliberately not restated as a literal here: Renovate moves it and no CI gate compares this page against the Dockerfile. |
 
 Daemon-only:
 
@@ -70,6 +71,17 @@ docker build -f Dockerfile.orchestrator \
   -t chrisleekr/github-app:$(git rev-parse --short HEAD)-orchestrator \
   .
 ```
+
+### Dependency overrides
+
+`package.json`'s `overrides` block force-pins transitive dependencies past what their parent declared, almost always to clear a CVE the parent has not yet picked up. JSON carries no comments, so each pin's reason and its removal condition live here. Drop an entry once its condition is met, otherwise it silently holds a package back after the reason expires.
+
+| Override     | Pinned   | Reason                                                                                                                                                                                | Remove when                                            |
+| ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `js-yaml`    | `4.3.2`  | CVE-2026-59869 (fixed 4.3.0), GHSA-5p4m-2wfm-xmqj (fixed 4.3.1), GHSA-2883-xcg3-v3hh (fixed 4.3.2). Reached via `@kubernetes/client-node` and `cosmiconfig`, both declaring `^4.1.0`. | `@kubernetes/client-node` declares `js-yaml >= 4.3.2`. |
+| `ip-address` | `10.7.0` | CVE-2026-69192 SSRF (fixed 10.3.1). Reached via `express-rate-limit` (`^10.2.0`) and `socks` (`^10.0.1`), which resolved two separate copies before the pin.                          | Both parents declare `ip-address >= 10.3.1`.           |
+
+The remaining entries predate this table; add a row when you touch one.
 
 ### Verifying image attestations
 
