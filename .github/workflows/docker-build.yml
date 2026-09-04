@@ -23,8 +23,11 @@
 # - GHA cache is scoped per (arch, variant) so the four legs don't trample
 #   each other.
 #
-# Trivy scans each (arch, variant) manifest tag separately with the existing
-# time-boxed .trivyignore.yaml allowlist.
+# CVE scanning is NOT here. It lives in trivy-scan.yml, on its own schedule.
+# A scan that runs after the manifest lists are pushed cannot stop a vulnerable
+# image from shipping, so folding its verdict into this workflow's conclusion
+# only broke downstream release automation (notify-helm-charts) for images that
+# were already live. See the header of trivy-scan.yml.
 #
 # Defense-in-depth: every workflow input that flows into a `run:` block is
 # passed through `env:` first to prevent script-injection at YAML-render time.
@@ -65,11 +68,10 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  # Read-only attestations grant lets the `scan` job verify SLSA / SBOM
-  # attestations via `gh attestation verify` before scanning. The `merge`
-  # job overrides locally to add the `id-token: write` + `attestations: write`
-  # scopes required to publish Sigstore-signed attestations.
+  # No `security-events: write`: CVE scanning and its SARIF upload live in
+  # trivy-scan.yml, not here. The `merge` job overrides locally to add the
+  # `id-token: write` + `attestations: write` scopes required to publish
+  # Sigstore-signed attestations.
   # Note: As SBOM file size is over 16MB, temporary disable SBOM attestations.
   # attestations: read
 
@@ -333,73 +335,3 @@ jobs:
       #     subject-digest: ${{ steps.inspect.outputs.digest }}
       #     sbom-path: "sbom-${{ matrix.variant }}.cyclonedx.json"
       #     push-to-registry: true
-
-  scan:
-    name: Trivy scan (${{ matrix.variant }} / ${{ matrix.arch }})
-    needs: merge
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [amd64, arm64]
-        variant: [orchestrator, daemon]
-    steps:
-      - name: Checkout (for .trivyignore.yaml)
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Compute image tag
-        id: imgtag
-        env:
-          TAG_NAME: ${{ inputs.tag-name }}
-          VARIANT: ${{ matrix.variant }}
-        run: |
-          PACKAGE_VERSION="${TAG_NAME#v}"
-          echo "tag=${PACKAGE_VERSION}-${VARIANT}" >> "$GITHUB_OUTPUT"
-
-      # Regression gate: fail the workflow if the published image is missing
-      # its Sigstore-signed SLSA provenance + SBOM attestations. Catches
-      # silent drops from future refactors of the build / merge jobs.
-      # Note: As SBOM file size is over 16MB, temporary disable SBOM attestations.
-      # - name: Verify image attestations
-      #   env:
-      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     IMAGE_REF: oci://${{ env.IMAGE_NAME }}:${{ steps.imgtag.outputs.tag }}
-      #     REPO: ${{ github.repository }}
-      #   run: |
-      #     # Two separate calls: each fails if the requested predicate type is
-      #     # absent, so this catches a regression that drops EITHER attestation.
-      #     gh attestation verify "$IMAGE_REF" --repo "$REPO" \
-      #       --predicate-type https://slsa.dev/provenance/v1
-      #     gh attestation verify "$IMAGE_REF" --repo "$REPO" \
-      #       --predicate-type https://cyclonedx.org/bom
-
-      - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        env:
-          TRIVY_PLATFORM: "linux/${{ matrix.arch }}"
-        with:
-          image-ref: "${{ env.IMAGE_NAME }}:${{ steps.imgtag.outputs.tag }}"
-          format: sarif
-          output: "trivy-results-${{ matrix.variant }}-${{ matrix.arch }}.sarif"
-          severity: CRITICAL,HIGH
-          limit-severities-for-sarif: true
-          ignore-unfixed: true
-          # Daemon image ships a full toolchain (nvm, Docker CLI, apt, etc.) so
-          # CVEs are a permanent fact of life: scan it for visibility in the
-          # GitHub Security tab but don't block CI. Orchestrator still gates.
-          exit-code: ${{ matrix.variant == 'daemon' && '0' || '1' }}
-          trivyignores: .trivyignore.yaml
-
-      - name: Upload Trivy SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
-        if: always()
-        with:
-          sarif_file: "trivy-results-${{ matrix.variant }}-${{ matrix.arch }}.sarif"
-          category: "trivy-container-scan-${{ matrix.variant }}-${{ matrix.arch }}"

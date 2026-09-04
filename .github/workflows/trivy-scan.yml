@@ -1,0 +1,116 @@
+# Container CVE scanning for the published Docker Hub images.
+#
+# Deliberately NOT part of docker-build.yml. That workflow's `scan` job ran
+# `needs: merge`, i.e. after the manifest lists were already pushed, so a
+# non-zero Trivy exit could not stop a vulnerable image from shipping. All it
+# actually did was fold a CVE verdict into the reusable workflow's conclusion,
+# which then skipped `notify-helm-charts` in release-please.yml and silently
+# withheld the chart-sync PR for an image that was already live. Splitting the
+# scan out restores the intended meaning of each signal:
+#
+#   docker-build.yml conclusion -> "the images built and published"
+#   this workflow's conclusion  -> "the published images are CVE-clean"
+#
+# Running on a schedule rather than only at release time is the other half of
+# the fix. Trivy verdicts move when advisories are published, not when this
+# repo changes: v1.17.0 went red on a util-linux DSA that landed days after the
+# code was written. A daily re-scan of the `latest-*` tags surfaces that within
+# a day instead of at whatever moment the next release happens to run.
+#
+# There is deliberately no `release: published` trigger. release-please creates
+# the GitHub release before docker-build.yml has pushed the manifest lists, so
+# such a run would race the build and fail on `manifest unknown`. Scan a
+# specific release on demand via workflow_dispatch once the build is green.
+name: Trivy Scan
+
+on:
+  schedule:
+    # 14:00 UTC daily, after the Trivy DB's usual refresh window.
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image version to scan (e.g. 1.17.0). Blank scans latest."
+        required: false
+        type: string
+
+# Only the SARIF upload needs a write scope. No `contents: write`, no registry
+# push, no attestation scopes: this workflow reads images and reports.
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: trivy-scan-${{ github.ref }}-${{ inputs.tag || 'latest' }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: chrisleekr/github-app
+
+jobs:
+  scan:
+    name: Trivy scan (${{ matrix.variant }} / ${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      # Every (variant, arch) leg reports independently: one red orchestrator
+      # arch must not hide the other three legs' findings.
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        variant: [orchestrator, daemon]
+    steps:
+      - name: Checkout (for .trivyignore.yaml)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      # Authenticated pulls only: anonymous Docker Hub rate limits are shared
+      # per runner egress IP and would flake this matrix.
+      - name: Login to Docker Hub
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Compute image tag
+        id: imgtag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          # Accept both `1.17.0` and `v1.17.0`; the published tags are unprefixed.
+          BASE="${INPUT_TAG#v}"
+          if [ -z "$BASE" ]; then
+            BASE="latest"
+          elif ! [[ "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z][a-zA-Z0-9.-]*)?$ ]]; then
+            echo "ERROR: tag input does not match the expected version format." >&2
+            exit 1
+          fi
+          echo "tag=${BASE}-${VARIANT}" >> "$GITHUB_OUTPUT"
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_PLATFORM: "linux/${{ matrix.arch }}"
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:${{ steps.imgtag.outputs.tag }}"
+          format: sarif
+          output: "trivy-results-${{ matrix.variant }}-${{ matrix.arch }}.sarif"
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+          # Daemon image ships a full toolchain (nvm, Docker CLI, apt, etc.) so
+          # CVEs are a permanent fact of life: scan it for visibility in the
+          # GitHub Security tab but don't fail the run. Orchestrator is lean
+          # enough that a HIGH there is worth a red run and a fix.
+          exit-code: ${{ matrix.variant == 'daemon' && '0' || '1' }}
+          trivyignores: .trivyignore.yaml
+
+      # `if: always()` so the SARIF still lands when the orchestrator leg exits
+      # non-zero. That upload is the whole point of a red run.
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        if: always()
+        with:
+          sarif_file: "trivy-results-${{ matrix.variant }}-${{ matrix.arch }}.sarif"
+          category: "trivy-container-scan-${{ matrix.variant }}-${{ matrix.arch }}"

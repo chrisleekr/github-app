@@ -60,13 +60,12 @@ jobs:
     name: Docker
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
-    # Ceiling for the reusable docker-build.yml: it needs security-events:write
-    # (Trivy SARIF upload) and id-token:write (Sigstore/attestations). Matches
-    # the grant the retired release.yml gave this path; the release-please job's
-    # PR/issues write scopes are deliberately NOT granted here.
+    # Ceiling for the reusable docker-build.yml: it needs id-token:write
+    # (Sigstore/attestations). No security-events:write, Trivy and its SARIF
+    # upload moved to trivy-scan.yml. The release-please job's PR/issues write
+    # scopes are deliberately NOT granted here.
     permissions:
       contents: read
-      security-events: write
       id-token: write
     uses: ./.github/workflows/docker-build.yml
     with:
@@ -83,6 +82,9 @@ jobs:
     # Also after docker: the chart PR bumps appVersion (the image tag), so the
     # dispatch must not fire until that image is pushed. A failed image build
     # therefore also suppresses the sync (no chart PR for a broken release).
+    # That suppression is now build-only. CVE findings no longer reach this
+    # condition: they used to arrive via docker-build.yml's `scan` job and
+    # withhold the chart PR for an image that was already on Docker Hub.
     needs: [release-please, docker]
     # Stable channel only: beta prereleases do not sync the chart (chart tracks
     # stable v<x.y.z>). Fires only when this push actually cut a release.

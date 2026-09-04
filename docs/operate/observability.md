@@ -593,4 +593,4 @@ Alert rule: any `level=warn msg~"exceeded MAX_FETCHED cap"` occurrence is intere
 
 Docker Hub renders a "Build attestations" badge on the tag page once the Sigstore-signed flavour is detected. The full source/predicate of every signature is replayable via the [Sigstore transparency log (Rekor)](https://search.sigstore.dev/) using the digest from `gh attestation verify`.
 
-The `scan` job in `.github/workflows/docker-build.yml` calls `gh attestation verify` for both predicate types before running Trivy: a regression-gate against silent attestation drops in any future refactor of the build / merge jobs. Consumer-side verification commands live in [`deployment.md`](deployment.md#verifying-image-attestations).
+The `scan` job in `.github/workflows/trivy-scan.yml` calls `gh attestation verify` for both predicate types before running Trivy: a regression-gate against silent attestation drops in any future refactor of the build / merge jobs. Consumer-side verification commands live in [`deployment.md`](deployment.md#verifying-image-attestations).
