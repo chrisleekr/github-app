@@ -146,9 +146,9 @@ jobs:
         run: bun run check:docs-sync
 
       - name: Dependency audit
-        # Wraps `bun audit --json` to gate on severity. `bun audit` itself
-        # exits 1 on ANY advisory regardless of --audit-level, so the
-        # wrapper restores severity-based gating + an inline GHSA allowlist.
+        # Wraps `bun audit --json`. Kept for the expiring GHSA allowlist,
+        # the retry-then-warn-and-pass path when the advisory service is
+        # unreachable, and per-advisory ::error:: / ::warning:: annotations.
         run: bun run audit:ci
 
       - name: Seed test database

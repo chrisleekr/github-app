@@ -3,12 +3,9 @@
  * CI dependency-audit gate.
  *
  * Why this wrapper exists:
- *   `bun audit` exits 1 on ANY advisory regardless of --audit-level
- *   (verified against https://bun.com/docs/install/audit). That blocks
- *   unrelated PRs every time a moderate transitive advisory lands. This
- *   wrapper restores severity-based gating: block on high+critical, warn
- *   on moderate+low, with an inline GHSA allowlist for known-accepted
- *   findings.
+ *   It provides an expiring GHSA allowlist, retries then warns and passes when
+ *   the advisory service is unreachable, and emits per-advisory GitHub Actions
+ *   annotations.
  *
  * Allowlist convention: every entry MUST have an `expires` so it gets
  * re-reviewed. Mirrors the .trivyignore.yaml convention. Expired entries
@@ -16,17 +13,51 @@
  */
 
 interface BunAuditAdvisory {
-  id?: number;
-  module_name?: string;
-  severity?: "low" | "moderate" | "high" | "critical";
-  title?: string;
-  url?: string;
-  github_advisory_id?: string;
-  cves?: string[];
+  id?: number | string | null | undefined;
+  url?: string | null | undefined;
+  title?: string | null | undefined;
+  // Open string, not the four-value enum: one advisory carrying a severity
+  // the registry grew later (npm still documents `info`) would otherwise make
+  // the whole report "unrecognised shape" and block every merge, misreporting
+  // a new value as structural drift. The enum is applied per advisory below.
+  severity: string;
 }
 
-interface BunAuditReport {
-  advisories?: Record<string, BunAuditAdvisory>;
+type BunAuditReport = Record<string, BunAuditAdvisory[]>;
+
+// WHY: registry data must not inject additional GitHub Actions workflow commands.
+function escapeData(s: string): string {
+  return s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+
+// WHY: the Actions runner treats any line that starts with "::" after TrimStart() as a
+// workflow command, on stderr as well as stdout. A fixed prefix keeps registry-derived
+// lines from ever starting with "::". Split on \r too: StreamReader.ReadLine ends a line there.
+function dump(text: string): void {
+  for (const line of text.split(/\r\n|\r|\n/)) console.error(`> ${line}`);
+}
+
+function isAdvisory(value: unknown): value is BunAuditAdvisory {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const advisory = value as Record<string, unknown>;
+  return (
+    typeof advisory.severity === "string" &&
+    (advisory.title === undefined ||
+      advisory.title === null ||
+      typeof advisory.title === "string") &&
+    (advisory.url === undefined || advisory.url === null || typeof advisory.url === "string") &&
+    (advisory.id === undefined ||
+      advisory.id === null ||
+      typeof advisory.id === "number" ||
+      typeof advisory.id === "string")
+  );
+}
+
+function isBunAuditReport(value: unknown): value is BunAuditReport {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value).every(
+    (advisoryArray) => Array.isArray(advisoryArray) && advisoryArray.every(isAdvisory),
+  );
 }
 
 interface AllowEntry {
@@ -39,6 +70,22 @@ const IGNORED: AllowEntry[] = [
   // Example:
   // { ghsa: "GHSA-xxxx-xxxx-xxxx", reason: "...", expires: "2026-06-01" },
 ];
+
+// `AUDIT_CI_ALLOWLIST_JSON` env override exists solely so the test suite can
+// exercise the allowlist paths without editing this file. Production
+// invocations leave it unset and use IGNORED.
+const allowlistOverride = process.env["AUDIT_CI_ALLOWLIST_JSON"];
+const ALLOWLIST: AllowEntry[] =
+  allowlistOverride === undefined ? IGNORED : (JSON.parse(allowlistOverride) as AllowEntry[]);
+
+// The GHSA id is only available inside the advisory url. Registry urls can
+// carry a trailing slash, query string or fragment, and an end-anchored match
+// would drop the id on any of them, silently voiding every allowlist entry
+// rather than failing loudly. Strip those before matching.
+function extractGhsa(url: string | null | undefined): string {
+  const bare = (url ?? "").split(/[?#]/)[0]?.replace(/\/+$/, "") ?? "";
+  return /(?:^|\/)(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})$/i.exec(bare)?.[1] ?? "";
+}
 
 // `bun audit` reaches the registry's advisory endpoint, which fails often
 // enough to block merges on its own: repeated `ConnectionClosed: audit request
@@ -113,18 +160,18 @@ function skipOrFail(a: Attempt): never {
     console.warn(
       `::warning::bun audit ${how} and produced no usable JSON after ${MAX_ATTEMPTS} attempts. Dependency audit SKIPPED for this run.`,
     );
-    if (a.stderr) console.error(a.stderr);
+    if (a.stderr) dump(a.stderr);
     process.exit(0);
   }
   console.error(`::error::bun audit ${how} without reaching the advisory service.`);
-  if (a.stderr) console.error(a.stderr);
+  if (a.stderr) dump(a.stderr);
   process.exit(a.exitCode ?? 1);
 }
 
 let attempt = runAudit();
 for (let i = 2; i <= MAX_ATTEMPTS && producedNoReport(attempt); i++) {
   console.warn(`::warning::bun audit attempt ${i - 1}/${MAX_ATTEMPTS} produced no JSON, retrying.`);
-  if (attempt.stderr) console.error(attempt.stderr);
+  if (attempt.stderr) dump(attempt.stderr);
   Bun.sleepSync(BACKOFF_MS);
   attempt = runAudit();
 }
@@ -135,30 +182,41 @@ const { stdout, stderr } = attempt;
 
 if (!stdout) {
   console.log("bun audit produced no JSON output (no advisories).");
-  if (stderr) console.error(stderr);
+  if (stderr) dump(stderr);
   process.exit(0);
 }
 
-let report: BunAuditReport;
+let report: unknown;
 try {
   report = JSON.parse(stdout);
 } catch (err) {
   console.error("Failed to parse bun audit JSON:");
-  console.error(err);
+  dump(String(err));
   console.error("--- raw stdout ---");
-  console.error(stdout);
+  dump(stdout.slice(0, 2000));
   if (stderr) {
     console.error("--- raw stderr ---");
-    console.error(stderr);
+    dump(stderr);
   }
   process.exit(1);
 }
 
-const advisories = Object.values(report.advisories ?? {});
+if (!isBunAuditReport(report)) {
+  console.error(
+    "::error::unrecognised bun audit JSON shape (expected a map of package name to advisory list)",
+  );
+  dump(stdout.slice(0, 2000));
+  process.exit(1);
+}
+
+const advisories = Object.entries(report).flatMap(([pkgName, advisoryArray]) =>
+  advisoryArray.map((advisory) => ({ advisory, pkgName })),
+);
 const now = new Date();
 
 function lookupAllow(ghsa: string): AllowEntry | null {
-  const entry = IGNORED.find((e) => e.ghsa === ghsa);
+  // GHSA slugs are case-insensitive; an uppercased url must not miss an entry.
+  const entry = ALLOWLIST.find((e) => e.ghsa.toLowerCase() === ghsa.toLowerCase());
   if (!entry) return null;
   // Enforce YYYY-MM-DD so we can append an end-of-day time deterministically.
   // `new Date("2026-04-30")` resolves to 00:00:00Z, so the entry would be
@@ -186,34 +244,48 @@ function lookupAllow(ghsa: string): AllowEntry | null {
   return entry;
 }
 
+// high/critical block; the levels below them warn. `info` is included because
+// npm documents it as an audit level, so it is a known value rather than the
+// drift the else branch reports.
+const BLOCKING_SEVERITIES = new Set(["high", "critical"]);
+const WARNING_SEVERITIES = new Set(["moderate", "low", "info"]);
+
 let blocking = 0;
 let warning = 0;
 let ignored = 0;
 
-for (const a of advisories) {
-  const ghsa = a.github_advisory_id ?? "";
+for (const { advisory: a, pkgName } of advisories) {
+  const ghsa = extractGhsa(a.url);
   const allow = ghsa ? lookupAllow(ghsa) : null;
-  const sev = a.severity ?? "low";
-  const id = ghsa || `id=${a.id ?? "?"}`;
-  const where = a.module_name ?? "(unknown module)";
-  const title = a.title ?? "(no title)";
+  const sev = a.severity;
+  // Severity is registry text now that the enum is applied here rather than in
+  // the shape guard, so it is escaped like every other interpolated field.
+  const sevText = escapeData(sev);
+  const id = ghsa || `id=${escapeData(String(a.id ?? "?"))}`;
+  const pkg = escapeData(pkgName);
+  const title = escapeData(a.title ?? "(no title)");
+  const url = a.url ? ` ${escapeData(a.url)}` : "";
 
   if (allow) {
     console.log(
-      `::notice::Ignored ${id} (${sev}) ${where}: ${title}, ${allow.reason} (expires ${allow.expires})`,
+      `::notice::Ignored ${id} (${sevText}) ${pkg}: ${title}, ${escapeData(allow.reason)} (expires ${escapeData(allow.expires)})`,
     );
     ignored++;
     continue;
   }
 
-  if (sev === "high" || sev === "critical") {
-    console.log(`::error::${sev.toUpperCase()} ${id} ${where}: ${title}`);
-    if (a.url) console.log(`  ${a.url}`);
+  if (BLOCKING_SEVERITIES.has(sev)) {
+    console.log(`::error::${sevText.toUpperCase()} ${id} ${pkg}: ${title}${url}`);
     blocking++;
-  } else {
-    console.log(`::warning::${sev} ${id} ${where}: ${title}`);
-    if (a.url) console.log(`  ${a.url}`);
+  } else if (WARNING_SEVERITIES.has(sev)) {
+    console.log(`::warning::${sevText} ${id} ${pkg}: ${title}${url}`);
     warning++;
+  } else {
+    // Fail closed on a value this script does not know, but say what it was:
+    // the finding still surfaces alongside the real high/critical ones instead
+    // of being reported as a broken report shape.
+    console.log(`::error::UNKNOWN SEVERITY "${sevText}" ${id} ${pkg}: ${title}${url}`);
+    blocking++;
   }
 }
 
