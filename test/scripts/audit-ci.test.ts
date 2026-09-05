@@ -18,6 +18,7 @@ function runAuditFixture(
   json: string,
   exitCode: number,
   stderr = "",
+  extraEnv: Record<string, string> = {},
 ): {
   exitCode: number;
   combined: string;
@@ -48,6 +49,7 @@ exit 99
       ...process.env,
       PATH: `${root}:${process.env["PATH"] ?? ""}`,
       ...(stderr ? { FAKE_BUN_STDERR: stderr } : {}),
+      ...extraEnv,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -169,23 +171,43 @@ describe("scripts/audit-ci.ts", () => {
     expect(combined).toContain("unrecognised bun audit JSON shape");
   });
 
-  it("rejects a recased advisory severity as unrecognised", () => {
+  it("blocks an unknown severity without reporting it as a broken shape", () => {
     const { exitCode, combined } = runAuditFixture(
       JSON.stringify({
         pkg: [
           {
-            id: 42,
-            url: "https://example.test/advisory/42",
-            title: "recased severity",
-            severity: "High",
+            id: 1,
+            url: "https://github.com/advisories/GHSA-aaaa-aaaa-aaaa",
+            title: "t",
+            severity: "HIGH",
           },
         ],
       }),
       1,
     );
     expect(exitCode).toBe(1);
-    expect(combined).toContain("unrecognised bun audit JSON shape");
-    expect(combined).not.toContain("Summary:");
+    expect(combined).not.toContain("unrecognised bun audit JSON shape");
+    expect(combined).toContain('::error::UNKNOWN SEVERITY "HIGH" GHSA-aaaa-aaaa-aaaa pkg:');
+    expect(combined).toContain("Summary: blocking=1 warning=0 ignored=0 total=1");
+  });
+
+  it("warns on an info severity rather than treating it as unknown", () => {
+    const { exitCode, combined } = runAuditFixture(
+      JSON.stringify({
+        pkg: [
+          {
+            id: 1,
+            url: "https://github.com/advisories/GHSA-aaaa-aaaa-aaaa",
+            title: "t",
+            severity: "info",
+          },
+        ],
+      }),
+      0,
+    );
+    expect(exitCode).toBe(0);
+    expect(combined).toContain("::warning::info GHSA-aaaa-aaaa-aaaa pkg:");
+    expect(combined).toContain("Summary: blocking=0 warning=1 ignored=0 total=1");
   });
 
   it("uses the numeric advisory id when the url has no GHSA slug", () => {
@@ -327,5 +349,99 @@ describe("scripts/audit-ci.ts", () => {
     expect(combined).toContain("> warn");
     expect(combined).toContain("> ::add-mask::q");
     expect(combined).not.toMatch(/^\s*::add-mask::/m);
+  });
+  const HIGH_ADVISORY = JSON.stringify({
+    sharp: [
+      {
+        id: 1160001,
+        url: "https://github.com/advisories/GHSA-f88m-g3jw-g9cj",
+        title: "sharp inherited vulnerabilities in libvips",
+        severity: "high",
+      },
+    ],
+  });
+
+  function allowlist(entries: { ghsa: string; reason: string; expires: string }[]): {
+    AUDIT_CI_ALLOWLIST_JSON: string;
+  } {
+    return { AUDIT_CI_ALLOWLIST_JSON: JSON.stringify(entries) };
+  }
+
+  it("suppresses a blocking advisory with a live allowlist entry", () => {
+    const { exitCode, combined } = runAuditFixture(
+      HIGH_ADVISORY,
+      1,
+      "",
+      allowlist([
+        { ghsa: "GHSA-f88m-g3jw-g9cj", reason: "no fixed version yet", expires: "2099-01-01" },
+      ]),
+    );
+    expect(exitCode).toBe(0);
+    expect(combined).toContain("::notice::Ignored GHSA-f88m-g3jw-g9cj (high) sharp:");
+    expect(combined).toContain("no fixed version yet (expires 2099-01-01)");
+    expect(combined).toContain("Summary: blocking=0 warning=0 ignored=1 total=1");
+  });
+
+  it("warns and still blocks when the allowlist entry has expired", () => {
+    const { exitCode, combined } = runAuditFixture(
+      HIGH_ADVISORY,
+      1,
+      "",
+      allowlist([{ ghsa: "GHSA-f88m-g3jw-g9cj", reason: "stale", expires: "2020-01-01" }]),
+    );
+    expect(exitCode).toBe(1);
+    expect(combined).toContain("expired 2020-01-01, must re-review.");
+    expect(combined).toContain("::error::HIGH GHSA-f88m-g3jw-g9cj sharp:");
+    expect(combined).toContain("Summary: blocking=1 warning=0 ignored=0 total=1");
+  });
+
+  it("warns and still blocks when the allowlist expires date is malformed", () => {
+    const { exitCode, combined } = runAuditFixture(
+      HIGH_ADVISORY,
+      1,
+      "",
+      allowlist([{ ghsa: "GHSA-f88m-g3jw-g9cj", reason: "typo", expires: "01-01-2099" }]),
+    );
+    expect(exitCode).toBe(1);
+    expect(combined).toContain("invalid expires date (want YYYY-MM-DD): 01-01-2099");
+    expect(combined).toContain("Summary: blocking=1 warning=0 ignored=0 total=1");
+  });
+
+  it("matches an allowlist entry through a query string and differing slug case", () => {
+    const { exitCode, combined } = runAuditFixture(
+      JSON.stringify({
+        sharp: [
+          {
+            id: 1160001,
+            url: "https://github.com/advisories/GHSA-F88M-G3JW-G9CJ/?utm_source=registry",
+            title: "sharp inherited vulnerabilities in libvips",
+            severity: "high",
+          },
+        ],
+      }),
+      1,
+      "",
+      allowlist([{ ghsa: "GHSA-f88m-g3jw-g9cj", reason: "tracked", expires: "2099-01-01" }]),
+    );
+    expect(exitCode).toBe(0);
+    expect(combined).toContain("Summary: blocking=0 warning=0 ignored=1 total=1");
+  });
+
+  it("escapes newlines in an allowlist reason before annotation output", () => {
+    const { exitCode, combined } = runAuditFixture(
+      HIGH_ADVISORY,
+      1,
+      "",
+      allowlist([
+        {
+          ghsa: "GHSA-f88m-g3jw-g9cj",
+          reason: "line one\n::error::injected",
+          expires: "2099-01-01",
+        },
+      ]),
+    );
+    expect(exitCode).toBe(0);
+    expect(combined).toContain("line one%0A::error::injected");
+    expect(combined).not.toContain("\n::error::injected");
   });
 });

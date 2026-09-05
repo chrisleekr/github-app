@@ -16,7 +16,11 @@ interface BunAuditAdvisory {
   id?: number | string | null | undefined;
   url?: string | null | undefined;
   title?: string | null | undefined;
-  severity: "low" | "moderate" | "high" | "critical";
+  // Open string, not the four-value enum: one advisory carrying a severity
+  // the registry grew later (npm still documents `info`) would otherwise make
+  // the whole report "unrecognised shape" and block every merge, misreporting
+  // a new value as structural drift. The enum is applied per advisory below.
+  severity: string;
 }
 
 type BunAuditReport = Record<string, BunAuditAdvisory[]>;
@@ -36,12 +40,8 @@ function dump(text: string): void {
 function isAdvisory(value: unknown): value is BunAuditAdvisory {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const advisory = value as Record<string, unknown>;
-  const severity = advisory.severity;
   return (
-    (severity === "low" ||
-      severity === "moderate" ||
-      severity === "high" ||
-      severity === "critical") &&
+    typeof advisory.severity === "string" &&
     (advisory.title === undefined ||
       advisory.title === null ||
       typeof advisory.title === "string") &&
@@ -70,6 +70,22 @@ const IGNORED: AllowEntry[] = [
   // Example:
   // { ghsa: "GHSA-xxxx-xxxx-xxxx", reason: "...", expires: "2026-06-01" },
 ];
+
+// `AUDIT_CI_ALLOWLIST_JSON` env override exists solely so the test suite can
+// exercise the allowlist paths without editing this file. Production
+// invocations leave it unset and use IGNORED.
+const allowlistOverride = process.env["AUDIT_CI_ALLOWLIST_JSON"];
+const ALLOWLIST: AllowEntry[] =
+  allowlistOverride === undefined ? IGNORED : (JSON.parse(allowlistOverride) as AllowEntry[]);
+
+// The GHSA id is only available inside the advisory url. Registry urls can
+// carry a trailing slash, query string or fragment, and an end-anchored match
+// would drop the id on any of them, silently voiding every allowlist entry
+// rather than failing loudly. Strip those before matching.
+function extractGhsa(url: string | null | undefined): string {
+  const bare = (url ?? "").split(/[?#]/)[0]?.replace(/\/+$/, "") ?? "";
+  return /(?:^|\/)(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})$/i.exec(bare)?.[1] ?? "";
+}
 
 // `bun audit` reaches the registry's advisory endpoint, which fails often
 // enough to block merges on its own: repeated `ConnectionClosed: audit request
@@ -199,7 +215,8 @@ const advisories = Object.entries(report).flatMap(([pkgName, advisoryArray]) =>
 const now = new Date();
 
 function lookupAllow(ghsa: string): AllowEntry | null {
-  const entry = IGNORED.find((e) => e.ghsa === ghsa);
+  // GHSA slugs are case-insensitive; an uppercased url must not miss an entry.
+  const entry = ALLOWLIST.find((e) => e.ghsa.toLowerCase() === ghsa.toLowerCase());
   if (!entry) return null;
   // Enforce YYYY-MM-DD so we can append an end-of-day time deterministically.
   // `new Date("2026-04-30")` resolves to 00:00:00Z, so the entry would be
@@ -227,14 +244,23 @@ function lookupAllow(ghsa: string): AllowEntry | null {
   return entry;
 }
 
+// high/critical block; the levels below them warn. `info` is included because
+// npm documents it as an audit level, so it is a known value rather than the
+// drift the else branch reports.
+const BLOCKING_SEVERITIES = new Set(["high", "critical"]);
+const WARNING_SEVERITIES = new Set(["moderate", "low", "info"]);
+
 let blocking = 0;
 let warning = 0;
 let ignored = 0;
 
 for (const { advisory: a, pkgName } of advisories) {
-  const ghsa = /(?:^|\/)(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})$/i.exec(a.url ?? "")?.[1] ?? "";
+  const ghsa = extractGhsa(a.url);
   const allow = ghsa ? lookupAllow(ghsa) : null;
   const sev = a.severity;
+  // Severity is registry text now that the enum is applied here rather than in
+  // the shape guard, so it is escaped like every other interpolated field.
+  const sevText = escapeData(sev);
   const id = ghsa || `id=${escapeData(String(a.id ?? "?"))}`;
   const pkg = escapeData(pkgName);
   const title = escapeData(a.title ?? "(no title)");
@@ -242,18 +268,24 @@ for (const { advisory: a, pkgName } of advisories) {
 
   if (allow) {
     console.log(
-      `::notice::Ignored ${id} (${sev}) ${pkg}: ${title}, ${allow.reason} (expires ${allow.expires})`,
+      `::notice::Ignored ${id} (${sevText}) ${pkg}: ${title}, ${escapeData(allow.reason)} (expires ${escapeData(allow.expires)})`,
     );
     ignored++;
     continue;
   }
 
-  if (sev === "high" || sev === "critical") {
-    console.log(`::error::${sev.toUpperCase()} ${id} ${pkg}: ${title}${url}`);
+  if (BLOCKING_SEVERITIES.has(sev)) {
+    console.log(`::error::${sevText.toUpperCase()} ${id} ${pkg}: ${title}${url}`);
     blocking++;
-  } else {
-    console.log(`::warning::${sev} ${id} ${pkg}: ${title}${url}`);
+  } else if (WARNING_SEVERITIES.has(sev)) {
+    console.log(`::warning::${sevText} ${id} ${pkg}: ${title}${url}`);
     warning++;
+  } else {
+    // Fail closed on a value this script does not know, but say what it was:
+    // the finding still surfaces alongside the real high/critical ones instead
+    // of being reported as a broken report shape.
+    console.log(`::error::UNKNOWN SEVERITY "${sevText}" ${id} ${pkg}: ${title}${url}`);
+    blocking++;
   }
 }
 
