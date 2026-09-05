@@ -50,12 +50,19 @@ async function reconcileActiveResources(): Promise<void> {
       });
       if (result.state !== "ready") continue;
 
+      // Startup handling only. Once the payload is issued the runner holds its
+      // credential and may have pushed commits, so a dead Pod is not a start
+      // failure: leave it to lease expiry, whose notice tells the reader to
+      // inspect the repository. Terminalizing here would replace that with
+      // "could not start" and drop the warning after real GitHub writes.
+      if (result.payloadIssuedAt !== null) continue;
+
       // The startup lease is claimed before the Pod exists, so scheduling, image
       // pull and volume setup all burn it. Renewals only begin once the runner
       // registers, which means a cold image pull slower than the lease killed a
       // healthy attempt that had not run a single line. Extend on evidence of
-      // progress instead, and terminalize the waiting reasons kubelet will never
-      // resolve rather than letting them burn the full lease too.
+      // progress instead, bounded by the startup budget so a Pod that never
+      // starts releases its concurrency slot.
       if (result.startup.phase === "stalled") {
         // eslint-disable-next-line no-await-in-loop -- exact attempt failure is ordered
         await failWorkflowRunnerResourceAttempt(
@@ -66,7 +73,20 @@ async function reconcileActiveResources(): Promise<void> {
       }
       if (result.startup.phase === "starting") {
         // eslint-disable-next-line no-await-in-loop -- lease extension is per attempt
-        await extendWorkflowRunnerStartupLease(attempt, WORKFLOW_RUNNER_STARTUP_LEASE_MS);
+        const extended = await extendWorkflowRunnerStartupLease(
+          attempt,
+          WORKFLOW_RUNNER_STARTUP_LEASE_MS,
+        );
+        // The fences reject the update when the payload was issued in the
+        // registration race, when the lease lapsed between listing and here, or
+        // at the attempt deadline. Without this line a dying attempt looks
+        // identical to one being kept alive, since both keep logging `starting`.
+        if (!extended) {
+          logger.info(
+            { runId: attempt.runId, attemptId: attempt.attemptId },
+            "Workflow runner startup lease extension refused",
+          );
+        }
       }
     } catch (err) {
       if (err instanceof WorkflowRunnerResourceError && err.kind === "permanent") {

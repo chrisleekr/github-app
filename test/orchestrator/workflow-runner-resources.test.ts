@@ -14,7 +14,7 @@ const attempt = {
 const ensureWorkflowRunnerResources = mock(() => Promise.resolve({ phase: "running" as const }));
 const deleteWorkflowRunnerResources = mock(() => Promise.resolve(true));
 const getWorkflowRunnerRegistrationState = mock(() =>
-  Promise.resolve({ state: "ready" as const, attempt }),
+  Promise.resolve({ state: "ready" as const, attempt, payloadIssuedAt: null }),
 );
 const markWorkflowRunnerResourcesCleaned = mock(() => Promise.resolve(true));
 
@@ -48,7 +48,11 @@ describe("workflow runner resource operation ordering", () => {
     deleteWorkflowRunnerResources.mockReset();
     deleteWorkflowRunnerResources.mockResolvedValue(true);
     getWorkflowRunnerRegistrationState.mockReset();
-    getWorkflowRunnerRegistrationState.mockResolvedValue({ state: "ready", attempt });
+    getWorkflowRunnerRegistrationState.mockResolvedValue({
+      state: "ready",
+      attempt,
+      payloadIssuedAt: null,
+    });
     markWorkflowRunnerResourcesCleaned.mockClear();
   });
 
@@ -68,7 +72,7 @@ describe("workflow runner resource operation ordering", () => {
     });
     ensureWorkflowRunnerResources.mockImplementationOnce(() => ensureGate);
     getWorkflowRunnerRegistrationState
-      .mockResolvedValueOnce({ state: "ready", attempt })
+      .mockResolvedValueOnce({ state: "ready", attempt, payloadIssuedAt: null })
       .mockResolvedValueOnce({ state: "completed" });
 
     const ensuring = ensureCurrentWorkflowRunnerResources(input);
@@ -90,6 +94,24 @@ describe("workflow runner resource operation ordering", () => {
     expect(await ensureCurrentWorkflowRunnerResources(input)).toEqual({
       state: "ready",
       startup: { phase: "starting" },
+      payloadIssuedAt: null,
+    });
+  });
+
+  it("surfaces the payload timestamp so the reconciler can skip startup handling", async () => {
+    // Once the credential is issued a dead Pod is no longer a start failure.
+    const issued = new Date("2026-08-23T03:30:00Z");
+    ensureWorkflowRunnerResources.mockResolvedValueOnce({ phase: "starting" });
+    getWorkflowRunnerRegistrationState.mockResolvedValue({
+      state: "ready",
+      attempt,
+      payloadIssuedAt: issued,
+    });
+
+    expect(await ensureCurrentWorkflowRunnerResources(input)).toEqual({
+      state: "ready",
+      startup: { phase: "starting" },
+      payloadIssuedAt: issued,
     });
   });
 

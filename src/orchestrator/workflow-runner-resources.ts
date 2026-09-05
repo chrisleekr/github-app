@@ -41,7 +41,16 @@ async function deleteAndRecord(attempt: {
  * still coming up from a runner that will never report in.
  */
 export type EnsureRunnerResourcesResult =
-  | { readonly state: "ready"; readonly startup: RunnerPodStartup }
+  | {
+      readonly state: "ready";
+      readonly startup: RunnerPodStartup;
+      /**
+       * Null until the runner receives its credential. The reconciler's startup
+       * handling is gated on it: once issued, the attempt may have cloned and
+       * pushed, so a dead Pod is no longer a start failure.
+       */
+      readonly payloadIssuedAt: Date | null;
+    }
   | { readonly state: "result-pending" }
   | { readonly state: "terminal" };
 
@@ -63,7 +72,8 @@ export async function ensureCurrentWorkflowRunnerResources(input: {
 
     const startup = await ensureWorkflowRunnerResources(input);
     const after = await getWorkflowRunnerRegistrationState(input.attempt);
-    if (after.state === "ready") return { state: "ready", startup } as const;
+    if (after.state === "ready")
+      return { state: "ready", startup, payloadIssuedAt: after.payloadIssuedAt } as const;
     if (after.state !== "result-pending") await deleteAndRecord(input.attempt);
     return after.state === "result-pending"
       ? ({ state: "result-pending" } as const)

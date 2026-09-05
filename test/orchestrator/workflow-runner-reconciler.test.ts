@@ -34,7 +34,11 @@ const reconcilePendingWorkflowFailureNotifications = mock(() => {
 });
 const ensureCurrentWorkflowRunnerResources = mock((input: { attempt: { attemptId: string } }) => {
   events.push(`ensure:${input.attempt.attemptId}`);
-  return Promise.resolve({ state: "ready", startup: { phase: "running" } } as const);
+  return Promise.resolve({
+    state: "ready",
+    startup: { phase: "running" },
+    payloadIssuedAt: null,
+  } as const);
 });
 const extendWorkflowRunnerStartupLease = mock((input: { attemptId: string }) => {
   events.push(`extend:${input.attemptId}`);
@@ -131,7 +135,11 @@ describe("workflow runner reconciliation", () => {
     ensureCurrentWorkflowRunnerResources.mockReset();
     ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
       events.push(`ensure:${input.attempt.attemptId}`);
-      return Promise.resolve({ state: "ready", startup: { phase: "running" } });
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "running" },
+        payloadIssuedAt: null,
+      });
     });
     extendWorkflowRunnerStartupLease.mockClear();
     failWorkflowRunnerResourceAttempt.mockClear();
@@ -191,7 +199,11 @@ describe("workflow runner reconciliation", () => {
     // attempt that had not run a line.
     ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
       events.push(`ensure:${input.attempt.attemptId}`);
-      return Promise.resolve({ state: "ready", startup: { phase: "starting" } });
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "starting" },
+        payloadIssuedAt: null,
+      });
     });
 
     await reconcileWorkflowRunners();
@@ -211,7 +223,8 @@ describe("workflow runner reconciliation", () => {
       events.push(`ensure:${input.attempt.attemptId}`);
       return Promise.resolve({
         state: "ready",
-        startup: { phase: "stalled", reason: "ImagePullBackOff" },
+        startup: { phase: "stalled", reason: "not ready within 900s (ImagePullBackOff)" },
+        payloadIssuedAt: null,
       });
     });
 
@@ -219,11 +232,30 @@ describe("workflow runner reconciliation", () => {
 
     expect(failWorkflowRunnerResourceAttempt).toHaveBeenCalledWith(
       firstAttempt,
-      "Runner Pod could not start: ImagePullBackOff",
+      "Runner Pod could not start: not ready within 900s (ImagePullBackOff)",
     );
     expect(extendWorkflowRunnerStartupLease).not.toHaveBeenCalledWith(firstAttempt, 360_000);
     // The stalled attempt must not stop the pass.
     expect(events).toContain(`ensure:${secondAttempt.attemptId}`);
+  });
+
+  it("leaves a failed Pod to lease expiry once the payload has been issued", async () => {
+    // A runner that registered, pushed commits and then died is not a start
+    // failure. Terminalizing here would post "could not start" and drop the
+    // inspect-the-repository warning that lease expiry gives after real writes.
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "stalled", reason: "PodFailed" },
+        payloadIssuedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(failWorkflowRunnerResourceAttempt).not.toHaveBeenCalled();
+    expect(extendWorkflowRunnerStartupLease).not.toHaveBeenCalled();
   });
 
   it("skips lease work for an attempt that is no longer ready", async () => {

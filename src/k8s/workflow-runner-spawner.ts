@@ -52,25 +52,62 @@ export type RunnerPodStartup =
   | { readonly phase: "running" }
   | { readonly phase: "stalled"; readonly reason: string };
 
-// Waiting reasons kubelet retries indefinitely. Nothing the controller waits for
-// resolves them, so they terminalize the attempt instead of burning the lease.
-const STALLED_WAITING_REASONS = new Set([
-  "CreateContainerConfigError",
-  "CreateContainerError",
-  "ErrImageNeverPull",
-  "ErrImagePull",
-  "ImagePullBackOff",
-  "InvalidImageName",
-]);
+// Waiting reasons no retry resolves: a malformed image reference, and a
+// NeverPull policy with no local image. Pull failures are deliberately absent,
+// kubelet retries those and a registry 429 or slow digest propagation commonly
+// clears seconds later. CreateContainerConfigError is absent too because it is
+// self-inflicted here: the capability Secret is created after the Pod, since it
+// needs the Pod UID as its owner reference, so kubelet reports that reason in
+// the window before the Secret lands, and on the pass that repairs a Secret a
+// transient error left missing. Everything else is bounded by the startup
+// budget below rather than dying on first sighting.
+const PERMANENT_WAITING_REASONS = new Set(["ErrImageNeverPull", "InvalidImageName"]);
 
-export function classifyPodStartup(pod: V1Pod): RunnerPodStartup {
-  const reason = pod.status?.containerStatuses?.[0]?.state?.waiting?.reason;
-  if (reason !== undefined && STALLED_WAITING_REASONS.has(reason)) {
-    return { phase: "stalled", reason };
-  }
+/**
+ * How long a Pod may take to reach `Running` before the attempt is failed.
+ *
+ * Extension cannot run to the attempt deadline. A Pod that never starts still
+ * holds one of `MAX_CONCURRENT_REQUESTS` for as long as its lease is renewed
+ * (the capacity count filters on `lease_expires_at > now()`), and an
+ * unschedulable Pod is produced by exactly the full-cluster condition where
+ * those slots matter most, so unbounded extension lets attempts that will never
+ * run starve the ones that could. Anchored on the Pod's own
+ * `creationTimestamp`, so it needs no extra controller state, and generous
+ * enough to clear a cold pull of the daemon image.
+ */
+export const WORKFLOW_RUNNER_STARTUP_BUDGET_MS = 900_000;
+
+/** What is holding the Pod back, for the budget-exceeded failure reason. */
+function startupBlocker(pod: V1Pod, waiting: string | undefined): string {
+  if (waiting !== undefined) return waiting;
+  const scheduled = pod.status?.conditions?.find((c) => c.type === "PodScheduled");
+  if (scheduled?.status === "False") return scheduled.reason ?? "NotScheduled";
+  return pod.status?.phase ?? "no status reported";
+}
+
+export function classifyPodStartup(pod: V1Pod, now: number = Date.now()): RunnerPodStartup {
   const phase = pod.status?.phase;
   if (phase === "Running" || phase === "Succeeded") return { phase: "running" };
   if (phase === "Failed") return { phase: "stalled", reason: "PodFailed" };
+
+  const waiting = pod.status?.containerStatuses?.[0]?.state?.waiting?.reason;
+  if (waiting !== undefined && PERMANENT_WAITING_REASONS.has(waiting)) {
+    return { phase: "stalled", reason: waiting };
+  }
+
+  // Unschedulable, ImagePullBackOff and a Pod with no status at all are all
+  // "not up yet" here. They are separated by how long they persist, not by the
+  // reason string: each is routinely transient, and each is fatal if it never
+  // clears.
+  const created = pod.metadata?.creationTimestamp;
+  const ageMs = created === undefined ? 0 : now - new Date(created).getTime();
+  if (ageMs > WORKFLOW_RUNNER_STARTUP_BUDGET_MS) {
+    const seconds = Math.round(WORKFLOW_RUNNER_STARTUP_BUDGET_MS / 1000);
+    return {
+      phase: "stalled",
+      reason: `not ready within ${String(seconds)}s (${startupBlocker(pod, waiting)})`,
+    };
+  }
   // A Pod read back immediately after creation carries no status yet. Absent
   // status is "starting", so the first tick extends rather than assuming a
   // runner that has not reported in is already up.
