@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.17.2](https://github.com/chrisleekr/github-app/compare/v1.17.1...v1.17.2) (2026-09-05)
+
+
+### Bug Fixes
+
+* **ci:** parse bun audit's real JSON shape and escape annotations ([#299](https://github.com/chrisleekr/github-app/issues/299)) ([ab6604d](https://github.com/chrisleekr/github-app/commit/ab6604d005424db13fb7377397c7b20925c2dfef))
+* **deps:** bump Bun to 1.4.1 and pin transitive CVE overrides ([#298](https://github.com/chrisleekr/github-app/issues/298)) ([7660ee1](https://github.com/chrisleekr/github-app/commit/7660ee1911996d04b163dd017d4aa53215a0328b))
+* **orchestrator:** extend runner startup lease while kubelet makes progress ([#300](https://github.com/chrisleekr/github-app/issues/300)) ([40176ac](https://github.com/chrisleekr/github-app/commit/40176ac9ab30f2dcc1d2e702ed1dc41fe479cb81))
+
 ## [1.17.1](https://github.com/chrisleekr/github-app/compare/v1.17.0...v1.17.1) (2026-09-04)
 
 
