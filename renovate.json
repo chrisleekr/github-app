@@ -53,8 +53,8 @@
       "groupName": "dockerfile tool versions"
     },
     {
-      "description": "Group every Bun runtime pin (.tool-versions, packageManager, Dockerfile FROM, .gitlab-ci.yml images and script refs) into one PR. Renovate cannot edit the Markdown prose, and it leaves a still-satisfied semver range in package.json engines.bun untouched after bumping the canonical pin elsewhere, while the checker requires an exact match rather than just a satisfied range, so both still need a hand edit; grouping makes that one PR instead of several.",
-      "matchDepNames": ["bun", "oven/bun"],
+      "description": "Group every Bun pin (.tool-versions, packageManager, Dockerfile FROM, .gitlab-ci.yml images and script refs, plus @types/bun so the types track the runtime) into one PR. Renovate cannot edit the Markdown prose, and it leaves a still-satisfied semver range in package.json engines.bun untouched after bumping the canonical pin elsewhere, while the checker requires an exact match rather than just a satisfied range, so both still need a hand edit; grouping makes that one PR instead of several.",
+      "matchDepNames": ["bun", "oven/bun", "@types/bun"],
       "groupName": "bun runtime"
     },
     {

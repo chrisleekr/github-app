@@ -30,6 +30,13 @@ job:
       oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0
 `;
 const GITLAB_CANONICAL = GITLAB_STALE.replaceAll("1.3.14", "1.4.1");
+// Same tag on both digest-pinned references, second digest left stale. Docker
+// resolves `tag@digest` by digest, so this half-updated pair runs an old image.
+const GITLAB_DIGEST_DRIFT = GITLAB_CANONICAL.replace(
+  "sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0\n",
+  "sha256:0000000000000000000000000000000000000000000000000000000000000000\n",
+);
+const GITLAB_NO_BUN = `image: node:22-alpine\n\nstages:\n  - test\n`;
 
 interface Layout {
   toolVersion: string;
@@ -244,6 +251,42 @@ describe("scripts/check-docs-versions.ts", () => {
     fixtures.push(root);
     const { exitCode } = runScript(root);
     expect(exitCode).toBe(0);
+  });
+
+  it("flags digest-pinned .gitlab-ci.yml references that disagree with each other", () => {
+    const root = makeFixture({
+      toolVersion: "1.4.1",
+      packageJson: JSON.stringify({
+        name: "fixture",
+        engines: { bun: ">=1.4.1" },
+        packageManager: "bun@1.4.1",
+      }),
+      dockerfileOrch: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      dockerfileDaemon: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      gitlabCi: GITLAB_DIGEST_DRIFT,
+    });
+    fixtures.push(root);
+    const { exitCode, stderr } = runScript(root);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("digest disagrees");
+  });
+
+  it("fails when .gitlab-ci.yml exists but has no oven/bun reference to check", () => {
+    const root = makeFixture({
+      toolVersion: "1.4.1",
+      packageJson: JSON.stringify({
+        name: "fixture",
+        engines: { bun: ">=1.4.1" },
+        packageManager: "bun@1.4.1",
+      }),
+      dockerfileOrch: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      dockerfileDaemon: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      gitlabCi: GITLAB_NO_BUN,
+    });
+    fixtures.push(root);
+    const { exitCode, stderr } = runScript(root);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("no `oven/bun:<ver>` reference");
   });
 
   it("does not require .gitlab-ci.yml to exist", () => {
