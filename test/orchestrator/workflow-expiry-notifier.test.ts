@@ -85,6 +85,7 @@ function row(
     owner_id: "sensitive-daemon-id",
     attempt_id: crypto.randomUUID(),
     lease_expires_at: null,
+    runner_payload_issued_at: new Date(),
     attempt_completed_at: new Date(),
     cascade_completed_at: null,
     failure_notified_at: null,
@@ -111,6 +112,36 @@ describe("workflow expiry notifier", () => {
     mintInstallationToken.mockResolvedValue({ octokit: mintedOctokit });
     revokeInstallationToken.mockReset();
     revokeInstallationToken.mockResolvedValue(true);
+  });
+
+  it("tells the reader nothing ran when the runner never received its payload", async () => {
+    // A lease that expires during Pod startup has provably cloned nothing and
+    // written nothing. Sending the reader to inspect the repository for damage
+    // that cannot exist is what made this failure unreadable.
+    testConfig.githubPersonalAccessToken = undefined;
+    const expired = row("solo", null, "workflow execution lease expired");
+    expired["runner_payload_issued_at"] = null;
+    findById.mockImplementation((id: string) => Promise.resolve(id === "solo" ? expired : null));
+
+    await notifyExpiredWorkflowAttempts([expired] as never);
+
+    const call = setState.mock.calls[0] as unknown as [unknown, { humanMessage: string }];
+    expect(call[1].humanMessage).toContain("The runner never started");
+    expect(call[1].humanMessage).toContain("Re-triggering the workflow is safe.");
+    expect(call[1].humanMessage).not.toContain("Inspect the repository");
+  });
+
+  it("keeps the inspect-the-repository warning once the runner held a token", async () => {
+    testConfig.githubPersonalAccessToken = undefined;
+    const expired = row("solo", null, "workflow execution lease expired");
+    expired["runner_payload_issued_at"] = new Date();
+    findById.mockImplementation((id: string) => Promise.resolve(id === "solo" ? expired : null));
+
+    await notifyExpiredWorkflowAttempts([expired] as never);
+
+    const call = setState.mock.calls[0] as unknown as [unknown, { humanMessage: string }];
+    expect(call[1].humanMessage).toContain("Inspect the repository");
+    expect(call[1].humanMessage).not.toContain("The runner never started");
   });
 
   it("notifies one top-level workflow with fixed text for duplicate expired children", async () => {

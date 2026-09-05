@@ -76,6 +76,8 @@ void mock.module("../../src/logger", () => ({
 
 const {
   buildWorkflowRunnerPod,
+  classifyPodStartup,
+  WORKFLOW_RUNNER_STARTUP_BUDGET_MS,
   deleteWorkflowRunnerResources,
   ensureWorkflowRunnerResources,
   WorkflowRunnerResourceError,
@@ -862,5 +864,108 @@ describe("workflow runner Pod drift check against a real client response", () =>
 
     expect(createNamespacedPod).toHaveBeenCalledTimes(1);
     expect(deleteNamespacedPod).not.toHaveBeenCalled();
+  });
+});
+
+describe("workflow runner Pod startup classification", () => {
+  const waiting = (reason: string) => ({
+    status: { phase: "Pending", containerStatuses: [{ state: { waiting: { reason } } }] },
+  });
+
+  it("reads an unstarted Pod as starting so the lease is extended, not expired", () => {
+    // The lease is claimed before the Pod exists, so the very first read can
+    // carry no status at all. Guessing "running" there is what expired a
+    // healthy attempt mid image-pull.
+    expect(classifyPodStartup({})).toEqual({ phase: "starting" });
+    expect(classifyPodStartup({ status: { phase: "Pending" } })).toEqual({ phase: "starting" });
+    expect(classifyPodStartup(waiting("ContainerCreating"))).toEqual({ phase: "starting" });
+    expect(classifyPodStartup(waiting("PodInitializing"))).toEqual({ phase: "starting" });
+  });
+
+  it("reads a started Pod as running", () => {
+    expect(classifyPodStartup({ status: { phase: "Running" } })).toEqual({ phase: "running" });
+    expect(classifyPodStartup({ status: { phase: "Succeeded" } })).toEqual({ phase: "running" });
+  });
+
+  it("reads waiting reasons no retry resolves as stalled", () => {
+    for (const reason of ["InvalidImageName", "ErrImageNeverPull"]) {
+      expect(classifyPodStartup(waiting(reason))).toEqual({ phase: "stalled", reason });
+    }
+    expect(classifyPodStartup({ status: { phase: "Failed" } })).toEqual({
+      phase: "stalled",
+      reason: "PodFailed",
+    });
+  });
+
+  it("keeps retryable pull failures starting while inside the startup budget", () => {
+    // kubelet retries these and a registry 429 or slow digest propagation
+    // commonly clears seconds later, so first sighting must not be fatal.
+    // CreateContainerConfigError is self-inflicted: the capability Secret is
+    // created after the Pod because it needs the Pod UID as owner reference.
+    for (const reason of [
+      "ErrImagePull",
+      "ImagePullBackOff",
+      "CreateContainerConfigError",
+      "CreateContainerError",
+    ]) {
+      expect(classifyPodStartup(waiting(reason))).toEqual({ phase: "starting" });
+    }
+  });
+
+  it("keeps an unschedulable Pod starting while inside the startup budget", () => {
+    // Autoscaling routinely clears Unschedulable within a couple of minutes.
+    expect(
+      classifyPodStartup({
+        status: {
+          phase: "Pending",
+          conditions: [{ type: "PodScheduled", status: "False", reason: "Unschedulable" }],
+        },
+      }),
+    ).toEqual({ phase: "starting" });
+  });
+
+  it("stalls a Pod that outlives the startup budget, naming what held it back", () => {
+    // Without a bound, an unschedulable Pod holds one of MAX_CONCURRENT_REQUESTS
+    // until the attempt deadline, and a full cluster is what produces it.
+    const created = new Date("2026-01-01T00:00:00Z");
+    const now = created.getTime() + WORKFLOW_RUNNER_STARTUP_BUDGET_MS + 1;
+    expect(
+      classifyPodStartup(
+        {
+          metadata: { creationTimestamp: created },
+          status: {
+            phase: "Pending",
+            conditions: [{ type: "PodScheduled", status: "False", reason: "Unschedulable" }],
+          },
+        },
+        now,
+      ),
+    ).toEqual({ phase: "stalled", reason: "not ready within 900s (Unschedulable)" });
+
+    expect(
+      classifyPodStartup(
+        {
+          metadata: { creationTimestamp: created },
+          status: {
+            phase: "Pending",
+            containerStatuses: [{ state: { waiting: { reason: "ImagePullBackOff" } } }],
+          },
+        },
+        now,
+      ),
+    ).toEqual({ phase: "stalled", reason: "not ready within 900s (ImagePullBackOff)" });
+  });
+
+  it("keeps a Pod inside the budget starting even when it has been up a while", () => {
+    const created = new Date("2026-01-01T00:00:00Z");
+    expect(
+      classifyPodStartup(
+        {
+          metadata: { creationTimestamp: created },
+          status: { phase: "Pending" },
+        },
+        created.getTime() + WORKFLOW_RUNNER_STARTUP_BUDGET_MS - 1,
+      ),
+    ).toEqual({ phase: "starting" });
   });
 });

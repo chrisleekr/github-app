@@ -737,6 +737,40 @@ export async function listActiveWorkflowRunnerAttempts(
   }));
 }
 
+/**
+ * Extend a startup lease while kubelet is still bringing the runner Pod up.
+ *
+ * Fenced on `runner_payload_issued_at IS NULL`: until the payload is issued the
+ * attempt has provably done nothing (no clone, no installation token, no GitHub
+ * write), so extending cannot prolong a run that is already touching the repo.
+ * Once the runner registers, `renewWorkflowAttempts` owns the lease and this
+ * refuses. `attempt_deadline_at` stays the hard ceiling, so a Pod that never
+ * starts still terminates on the attempt deadline rather than never at all.
+ */
+export async function extendWorkflowRunnerStartupLease(
+  attempt: WorkflowAttempt,
+  leaseMs: number,
+  sql: SQL = requireDb(),
+): Promise<boolean> {
+  const rows: { attempt_id: string }[] = await sql`
+    UPDATE workflow_runs
+       SET lease_expires_at = LEAST(
+             attempt_deadline_at,
+             now() + ${leaseMs} * interval '1 millisecond'
+           )
+     WHERE id = ${attempt.runId}
+       AND attempt_id = ${attempt.attemptId}
+       AND status = 'running'
+       AND owner_kind = 'daemon'
+       AND owner_id = ${RUNNER_ID_PREFIX} || attempt_id::text
+       AND runner_payload_issued_at IS NULL
+       AND lease_expires_at > now()
+       AND attempt_deadline_at > now()
+    RETURNING attempt_id
+  `;
+  return rows[0] !== undefined;
+}
+
 /** Fail one claimed runner attempt and its execution receipt atomically. */
 export async function failWorkflowRunnerAttempt(
   attempt: WorkflowRunnerAttempt,

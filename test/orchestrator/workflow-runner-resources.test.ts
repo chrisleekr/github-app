@@ -11,10 +11,10 @@ const attempt = {
   workflowName: "review" as const,
   attemptDeadlineAt: new Date("2026-08-23T04:10:00Z"),
 };
-const ensureWorkflowRunnerResources = mock(() => Promise.resolve());
+const ensureWorkflowRunnerResources = mock(() => Promise.resolve({ phase: "running" as const }));
 const deleteWorkflowRunnerResources = mock(() => Promise.resolve(true));
 const getWorkflowRunnerRegistrationState = mock(() =>
-  Promise.resolve({ state: "ready" as const, attempt }),
+  Promise.resolve({ state: "ready" as const, attempt, payloadIssuedAt: null }),
 );
 const markWorkflowRunnerResourcesCleaned = mock(() => Promise.resolve(true));
 
@@ -44,11 +44,15 @@ describe("workflow runner resource operation ordering", () => {
   beforeEach(() => {
     resetWorkflowRunnerResourceChainsForTests();
     ensureWorkflowRunnerResources.mockReset();
-    ensureWorkflowRunnerResources.mockResolvedValue();
+    ensureWorkflowRunnerResources.mockResolvedValue({ phase: "running" });
     deleteWorkflowRunnerResources.mockReset();
     deleteWorkflowRunnerResources.mockResolvedValue(true);
     getWorkflowRunnerRegistrationState.mockReset();
-    getWorkflowRunnerRegistrationState.mockResolvedValue({ state: "ready", attempt });
+    getWorkflowRunnerRegistrationState.mockResolvedValue({
+      state: "ready",
+      attempt,
+      payloadIssuedAt: null,
+    });
     markWorkflowRunnerResourcesCleaned.mockClear();
   });
 
@@ -56,7 +60,7 @@ describe("workflow runner resource operation ordering", () => {
     await cleanupCurrentWorkflowRunnerResources(attempt);
     getWorkflowRunnerRegistrationState.mockResolvedValueOnce({ state: "completed" });
 
-    expect(await ensureCurrentWorkflowRunnerResources(input)).toBe("terminal");
+    expect(await ensureCurrentWorkflowRunnerResources(input)).toEqual({ state: "terminal" });
     expect(ensureWorkflowRunnerResources).not.toHaveBeenCalled();
     expect(deleteWorkflowRunnerResources).toHaveBeenCalledTimes(2);
   });
@@ -68,7 +72,7 @@ describe("workflow runner resource operation ordering", () => {
     });
     ensureWorkflowRunnerResources.mockImplementationOnce(() => ensureGate);
     getWorkflowRunnerRegistrationState
-      .mockResolvedValueOnce({ state: "ready", attempt })
+      .mockResolvedValueOnce({ state: "ready", attempt, payloadIssuedAt: null })
       .mockResolvedValueOnce({ state: "completed" });
 
     const ensuring = ensureCurrentWorkflowRunnerResources(input);
@@ -76,10 +80,39 @@ describe("workflow runner resource operation ordering", () => {
     const cleaning = cleanupCurrentWorkflowRunnerResources(attempt);
     releaseEnsure();
 
-    expect(await ensuring).toBe("terminal");
+    expect(await ensuring).toEqual({ state: "terminal" });
     await cleaning;
     expect(deleteWorkflowRunnerResources).toHaveBeenCalledTimes(2);
     expect(markWorkflowRunnerResourcesCleaned).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces the Pod startup phase alongside a ready attempt", async () => {
+    // The reconciler reads this to tell a Pod that is still pulling its image
+    // from a runner that will never report in.
+    ensureWorkflowRunnerResources.mockResolvedValueOnce({ phase: "starting" });
+
+    expect(await ensureCurrentWorkflowRunnerResources(input)).toEqual({
+      state: "ready",
+      startup: { phase: "starting" },
+      payloadIssuedAt: null,
+    });
+  });
+
+  it("surfaces the payload timestamp so the reconciler can skip startup handling", async () => {
+    // Once the credential is issued a dead Pod is no longer a start failure.
+    const issued = new Date("2026-08-23T03:30:00Z");
+    ensureWorkflowRunnerResources.mockResolvedValueOnce({ phase: "starting" });
+    getWorkflowRunnerRegistrationState.mockResolvedValue({
+      state: "ready",
+      attempt,
+      payloadIssuedAt: issued,
+    });
+
+    expect(await ensureCurrentWorkflowRunnerResources(input)).toEqual({
+      state: "ready",
+      startup: { phase: "starting" },
+      payloadIssuedAt: issued,
+    });
   });
 
   it("leaves resources intact while a durable result awaits projection", async () => {
@@ -89,7 +122,7 @@ describe("workflow runner resource operation ordering", () => {
       payload: {},
     });
 
-    expect(await ensureCurrentWorkflowRunnerResources(input)).toBe("result-pending");
+    expect(await ensureCurrentWorkflowRunnerResources(input)).toEqual({ state: "result-pending" });
     expect(ensureWorkflowRunnerResources).not.toHaveBeenCalled();
     expect(deleteWorkflowRunnerResources).not.toHaveBeenCalled();
   });

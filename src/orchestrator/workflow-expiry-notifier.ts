@@ -229,6 +229,11 @@ export async function notifyExpiredWorkflowAttempts(
         : "lease-expired",
     humanMessage: (row) => {
       const deadlineExpired = row.state["failedReason"] === "workflow execution deadline expired";
+      // The payload is the runner's first credential delivery. Until it is
+      // issued the attempt has provably cloned nothing and written nothing, so
+      // telling the reader to go inspect the repository is false and sends them
+      // hunting for damage that cannot exist.
+      const ranNothing = row.runner_payload_issued_at === null;
       return [
         deadlineExpired
           ? "❌ **Workflow execution deadline expired**"
@@ -238,7 +243,9 @@ export async function notifyExpiredWorkflowAttempts(
           ? "The immutable attempt deadline elapsed before completion was confirmed. The database marked the workflow failed and released its in-flight lock."
           : "The runner stopped renewing this attempt before completion was confirmed. The database marked the workflow failed and released its in-flight lock.",
         "",
-        `External GitHub or git operations may have completed before the ${deadlineExpired ? "deadline" : "lease"} expired. Inspect the repository before re-triggering the workflow.`,
+        ranNothing
+          ? "The runner never started, so no repository or GitHub changes were made. Re-triggering the workflow is safe."
+          : `External GitHub or git operations may have completed before the ${deadlineExpired ? "deadline" : "lease"} expired. Inspect the repository before re-triggering the workflow.`,
       ].join("\n");
     },
   });

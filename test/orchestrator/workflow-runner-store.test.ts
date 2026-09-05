@@ -638,4 +638,88 @@ describe.skipIf(sql === null)("workflow runner admission", () => {
       result_processed_at: expect.any(Date),
     });
   });
+
+  it("extends a startup lease while the runner has not yet been handed its payload", async () => {
+    // Regression: the startup lease is claimed before the Pod exists, so image
+    // pull burns it. The reconciler extends on evidence the Pod is still coming
+    // up, bounded by the immutable attempt deadline.
+    const { claimWorkflowRunnerAttempt, extendWorkflowRunnerStartupLease } =
+      await import("../../src/orchestrator/workflow-runner-store");
+    const job = await queuedWorkflow(41);
+    const claim = await claimWorkflowRunnerAttempt(job, 1_000, 1, requireSql());
+    if (claim.outcome !== "claimed") throw new Error("Expected claim");
+
+    const [before] = await requireSql()`
+      SELECT lease_expires_at FROM workflow_runs WHERE id = ${claim.attempt.runId}
+    `;
+    expect(await extendWorkflowRunnerStartupLease(claim.attempt, 600_000, requireSql())).toBe(true);
+    const [after] = await requireSql()`
+      SELECT lease_expires_at, attempt_deadline_at FROM workflow_runs
+       WHERE id = ${claim.attempt.runId}
+    `;
+    expect(after.lease_expires_at.getTime()).toBeGreaterThan(before.lease_expires_at.getTime());
+    // The attempt deadline is the ceiling an extension can never cross.
+    expect(after.lease_expires_at.getTime()).toBeLessThanOrEqual(
+      after.attempt_deadline_at.getTime(),
+    );
+  });
+
+  it("clamps an extension to the immutable attempt deadline", async () => {
+    const { claimWorkflowRunnerAttempt, extendWorkflowRunnerStartupLease } =
+      await import("../../src/orchestrator/workflow-runner-store");
+    const job = await queuedWorkflow(42);
+    const claim = await claimWorkflowRunnerAttempt(job, 1_000, 1, requireSql());
+    if (claim.outcome !== "claimed") throw new Error("Expected claim");
+
+    expect(await extendWorkflowRunnerStartupLease(claim.attempt, 86_400_000, requireSql())).toBe(
+      true,
+    );
+    const [row] = await requireSql()`
+      SELECT lease_expires_at, attempt_deadline_at FROM workflow_runs
+       WHERE id = ${claim.attempt.runId}
+    `;
+    expect(row.lease_expires_at.getTime()).toBe(row.attempt_deadline_at.getTime());
+  });
+
+  it("refuses to extend once the runner payload has been issued", async () => {
+    // After the payload the runner holds a live installation token and may be
+    // mid-clone. Extension is a startup-only mechanism; heartbeats own the lease
+    // from here, and this fence is what makes extending provably side-effect free.
+    const {
+      claimWorkflowRunnerAttempt,
+      extendWorkflowRunnerStartupLease,
+      recordWorkflowRunnerPayloadIssued,
+    } = await import("../../src/orchestrator/workflow-runner-store");
+    const job = await queuedWorkflow(43);
+    const claim = await claimWorkflowRunnerAttempt(job, 600_000, 1, requireSql());
+    if (claim.outcome !== "claimed") throw new Error("Expected claim");
+
+    expect(
+      await recordWorkflowRunnerPayloadIssued(
+        claim.attempt,
+        new Date(claim.attempt.attemptDeadlineAt.getTime() - 1_000),
+        requireSql(),
+      ),
+    ).toBe(true);
+
+    expect(await extendWorkflowRunnerStartupLease(claim.attempt, 600_000, requireSql())).toBe(
+      false,
+    );
+  });
+
+  it("refuses to extend a lease that has already expired", async () => {
+    const { claimWorkflowRunnerAttempt, extendWorkflowRunnerStartupLease } =
+      await import("../../src/orchestrator/workflow-runner-store");
+    const job = await queuedWorkflow(44);
+    const claim = await claimWorkflowRunnerAttempt(job, 600_000, 1, requireSql());
+    if (claim.outcome !== "claimed") throw new Error("Expected claim");
+    await requireSql()`
+      UPDATE workflow_runs SET lease_expires_at = now() - interval '1 second'
+       WHERE id = ${claim.attempt.runId}
+    `;
+
+    expect(await extendWorkflowRunnerStartupLease(claim.attempt, 600_000, requireSql())).toBe(
+      false,
+    );
+  });
 });
