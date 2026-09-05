@@ -3,12 +3,9 @@
  * CI dependency-audit gate.
  *
  * Why this wrapper exists:
- *   `bun audit` exits 1 on ANY advisory regardless of --audit-level
- *   (verified against https://bun.com/docs/install/audit). That blocks
- *   unrelated PRs every time a moderate transitive advisory lands. This
- *   wrapper restores severity-based gating: block on high+critical, warn
- *   on moderate+low, with an inline GHSA allowlist for known-accepted
- *   findings.
+ *   It provides an expiring GHSA allowlist, retries then warns and passes when
+ *   the advisory service is unreachable, and emits per-advisory GitHub Actions
+ *   annotations.
  *
  * Allowlist convention: every entry MUST have an `expires` so it gets
  * re-reviewed. Mirrors the .trivyignore.yaml convention. Expired entries
@@ -16,17 +13,51 @@
  */
 
 interface BunAuditAdvisory {
-  id?: number;
-  module_name?: string;
-  severity?: "low" | "moderate" | "high" | "critical";
-  title?: string;
-  url?: string;
-  github_advisory_id?: string;
-  cves?: string[];
+  id?: number | string | null | undefined;
+  url?: string | null | undefined;
+  title?: string | null | undefined;
+  severity: "low" | "moderate" | "high" | "critical";
 }
 
-interface BunAuditReport {
-  advisories?: Record<string, BunAuditAdvisory>;
+type BunAuditReport = Record<string, BunAuditAdvisory[]>;
+
+// WHY: registry data must not inject additional GitHub Actions workflow commands.
+function escapeData(s: string): string {
+  return s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+
+// WHY: the Actions runner treats any line that starts with "::" after TrimStart() as a
+// workflow command, on stderr as well as stdout. A fixed prefix keeps registry-derived
+// lines from ever starting with "::". Split on \r too: StreamReader.ReadLine ends a line there.
+function dump(text: string): void {
+  for (const line of text.split(/\r\n|\r|\n/)) console.error(`> ${line}`);
+}
+
+function isAdvisory(value: unknown): value is BunAuditAdvisory {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const advisory = value as Record<string, unknown>;
+  const severity = advisory.severity;
+  return (
+    (severity === "low" ||
+      severity === "moderate" ||
+      severity === "high" ||
+      severity === "critical") &&
+    (advisory.title === undefined ||
+      advisory.title === null ||
+      typeof advisory.title === "string") &&
+    (advisory.url === undefined || advisory.url === null || typeof advisory.url === "string") &&
+    (advisory.id === undefined ||
+      advisory.id === null ||
+      typeof advisory.id === "number" ||
+      typeof advisory.id === "string")
+  );
+}
+
+function isBunAuditReport(value: unknown): value is BunAuditReport {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value).every(
+    (advisoryArray) => Array.isArray(advisoryArray) && advisoryArray.every(isAdvisory),
+  );
 }
 
 interface AllowEntry {
@@ -113,18 +144,18 @@ function skipOrFail(a: Attempt): never {
     console.warn(
       `::warning::bun audit ${how} and produced no usable JSON after ${MAX_ATTEMPTS} attempts. Dependency audit SKIPPED for this run.`,
     );
-    if (a.stderr) console.error(a.stderr);
+    if (a.stderr) dump(a.stderr);
     process.exit(0);
   }
   console.error(`::error::bun audit ${how} without reaching the advisory service.`);
-  if (a.stderr) console.error(a.stderr);
+  if (a.stderr) dump(a.stderr);
   process.exit(a.exitCode ?? 1);
 }
 
 let attempt = runAudit();
 for (let i = 2; i <= MAX_ATTEMPTS && producedNoReport(attempt); i++) {
   console.warn(`::warning::bun audit attempt ${i - 1}/${MAX_ATTEMPTS} produced no JSON, retrying.`);
-  if (attempt.stderr) console.error(attempt.stderr);
+  if (attempt.stderr) dump(attempt.stderr);
   Bun.sleepSync(BACKOFF_MS);
   attempt = runAudit();
 }
@@ -135,26 +166,36 @@ const { stdout, stderr } = attempt;
 
 if (!stdout) {
   console.log("bun audit produced no JSON output (no advisories).");
-  if (stderr) console.error(stderr);
+  if (stderr) dump(stderr);
   process.exit(0);
 }
 
-let report: BunAuditReport;
+let report: unknown;
 try {
   report = JSON.parse(stdout);
 } catch (err) {
   console.error("Failed to parse bun audit JSON:");
-  console.error(err);
+  dump(String(err));
   console.error("--- raw stdout ---");
-  console.error(stdout);
+  dump(stdout.slice(0, 2000));
   if (stderr) {
     console.error("--- raw stderr ---");
-    console.error(stderr);
+    dump(stderr);
   }
   process.exit(1);
 }
 
-const advisories = Object.values(report.advisories ?? {});
+if (!isBunAuditReport(report)) {
+  console.error(
+    "::error::unrecognised bun audit JSON shape (expected a map of package name to advisory list)",
+  );
+  dump(stdout.slice(0, 2000));
+  process.exit(1);
+}
+
+const advisories = Object.entries(report).flatMap(([pkgName, advisoryArray]) =>
+  advisoryArray.map((advisory) => ({ advisory, pkgName })),
+);
 const now = new Date();
 
 function lookupAllow(ghsa: string): AllowEntry | null {
@@ -190,29 +231,28 @@ let blocking = 0;
 let warning = 0;
 let ignored = 0;
 
-for (const a of advisories) {
-  const ghsa = a.github_advisory_id ?? "";
+for (const { advisory: a, pkgName } of advisories) {
+  const ghsa = /(?:^|\/)(GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})$/i.exec(a.url ?? "")?.[1] ?? "";
   const allow = ghsa ? lookupAllow(ghsa) : null;
-  const sev = a.severity ?? "low";
-  const id = ghsa || `id=${a.id ?? "?"}`;
-  const where = a.module_name ?? "(unknown module)";
-  const title = a.title ?? "(no title)";
+  const sev = a.severity;
+  const id = ghsa || `id=${escapeData(String(a.id ?? "?"))}`;
+  const pkg = escapeData(pkgName);
+  const title = escapeData(a.title ?? "(no title)");
+  const url = a.url ? ` ${escapeData(a.url)}` : "";
 
   if (allow) {
     console.log(
-      `::notice::Ignored ${id} (${sev}) ${where}: ${title}, ${allow.reason} (expires ${allow.expires})`,
+      `::notice::Ignored ${id} (${sev}) ${pkg}: ${title}, ${allow.reason} (expires ${allow.expires})`,
     );
     ignored++;
     continue;
   }
 
   if (sev === "high" || sev === "critical") {
-    console.log(`::error::${sev.toUpperCase()} ${id} ${where}: ${title}`);
-    if (a.url) console.log(`  ${a.url}`);
+    console.log(`::error::${sev.toUpperCase()} ${id} ${pkg}: ${title}${url}`);
     blocking++;
   } else {
-    console.log(`::warning::${sev} ${id} ${where}: ${title}`);
-    if (a.url) console.log(`  ${a.url}`);
+    console.log(`::warning::${sev} ${id} ${pkg}: ${title}${url}`);
     warning++;
   }
 }

@@ -76,6 +76,8 @@ bun run check
 - Warns on `moderate` and `low`.
 - Inline GHSA allowlist in `IGNORED` array; each entry has `ghsa`, `reason`, and `expires` (ISO date). Expired entries become warnings on next run.
 - Retries up to 3 times when `bun audit` produces no JSON, then emits a `::warning::` and passes. An unreachable advisory service yields no verdict either way, so it degrades to a loud skip rather than blocking every merge for the length of an upstream outage. Unparseable JSON still hard-fails, and `trivy-scan.yml` scans the published images daily as the independent control.
+- Parses `bun audit --json`'s real shape (a map of package name to advisory list, GHSA id taken from each advisory's `url`) and hard-fails on an unrecognised shape so a format change cannot silently degrade the gate to `total=0`.
+- Never lets registry-supplied text start a GitHub Actions workflow command: advisory fields embedded in `::error::` / `::warning::` / `::notice::` lines are escaped per the `@actions/core` `escapeData` rule (`%` / CR / LF to `%25` / `%0D` / `%0A`), and raw stdout or stderr dumps are printed one line at a time behind a `> ` prefix so no dumped line can begin with `::`.
 
 ## CI pipeline
 
