@@ -5,6 +5,7 @@ import { deriveWorkflowRunnerCapability } from "./workflow-runner-capability";
 import {
   failWorkflowRunnerResourceAttempt,
   requiredRunnerConfig,
+  WORKFLOW_RUNNER_STARTUP_LEASE_MS,
 } from "./workflow-runner-dispatch";
 import { ensureCurrentWorkflowRunnerResources } from "./workflow-runner-resources";
 import {
@@ -12,6 +13,7 @@ import {
   reconcilePendingWorkflowRunnerResults,
 } from "./workflow-runner-result";
 import {
+  extendWorkflowRunnerStartupLease,
   findWorkflowRunnerCleanupCandidates,
   listActiveWorkflowRunnerAttempts,
 } from "./workflow-runner-store";
@@ -40,7 +42,32 @@ async function reconcileActiveResources(): Promise<void> {
         attempt.attemptDeadlineAt,
       );
       // eslint-disable-next-line no-await-in-loop -- Kubernetes reconciliation is bounded
-      await ensureCurrentWorkflowRunnerResources({ attempt, capability, image, orchestratorUrl });
+      const result = await ensureCurrentWorkflowRunnerResources({
+        attempt,
+        capability,
+        image,
+        orchestratorUrl,
+      });
+      if (result.state !== "ready") continue;
+
+      // The startup lease is claimed before the Pod exists, so scheduling, image
+      // pull and volume setup all burn it. Renewals only begin once the runner
+      // registers, which means a cold image pull slower than the lease killed a
+      // healthy attempt that had not run a single line. Extend on evidence of
+      // progress instead, and terminalize the waiting reasons kubelet will never
+      // resolve rather than letting them burn the full lease too.
+      if (result.startup.phase === "stalled") {
+        // eslint-disable-next-line no-await-in-loop -- exact attempt failure is ordered
+        await failWorkflowRunnerResourceAttempt(
+          attempt,
+          `Runner Pod could not start: ${result.startup.reason}`,
+        );
+        continue;
+      }
+      if (result.startup.phase === "starting") {
+        // eslint-disable-next-line no-await-in-loop -- lease extension is per attempt
+        await extendWorkflowRunnerStartupLease(attempt, WORKFLOW_RUNNER_STARTUP_LEASE_MS);
+      }
     } catch (err) {
       if (err instanceof WorkflowRunnerResourceError && err.kind === "permanent") {
         try {

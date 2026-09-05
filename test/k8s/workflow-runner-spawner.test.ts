@@ -76,6 +76,7 @@ void mock.module("../../src/logger", () => ({
 
 const {
   buildWorkflowRunnerPod,
+  classifyPodStartup,
   deleteWorkflowRunnerResources,
   ensureWorkflowRunnerResources,
   WorkflowRunnerResourceError,
@@ -862,5 +863,43 @@ describe("workflow runner Pod drift check against a real client response", () =>
 
     expect(createNamespacedPod).toHaveBeenCalledTimes(1);
     expect(deleteNamespacedPod).not.toHaveBeenCalled();
+  });
+});
+
+describe("workflow runner Pod startup classification", () => {
+  const waiting = (reason: string) => ({
+    status: { phase: "Pending", containerStatuses: [{ state: { waiting: { reason } } }] },
+  });
+
+  it("reads an unstarted Pod as starting so the lease is extended, not expired", () => {
+    // The lease is claimed before the Pod exists, so the very first read can
+    // carry no status at all. Guessing "running" there is what expired a
+    // healthy attempt mid image-pull.
+    expect(classifyPodStartup({})).toEqual({ phase: "starting" });
+    expect(classifyPodStartup({ status: { phase: "Pending" } })).toEqual({ phase: "starting" });
+    expect(classifyPodStartup(waiting("ContainerCreating"))).toEqual({ phase: "starting" });
+    expect(classifyPodStartup(waiting("PodInitializing"))).toEqual({ phase: "starting" });
+  });
+
+  it("reads a started Pod as running", () => {
+    expect(classifyPodStartup({ status: { phase: "Running" } })).toEqual({ phase: "running" });
+    expect(classifyPodStartup({ status: { phase: "Succeeded" } })).toEqual({ phase: "running" });
+  });
+
+  it("reads waiting reasons kubelet never resolves as stalled", () => {
+    for (const reason of [
+      "ErrImagePull",
+      "ImagePullBackOff",
+      "InvalidImageName",
+      "ErrImageNeverPull",
+      "CreateContainerConfigError",
+      "CreateContainerError",
+    ]) {
+      expect(classifyPodStartup(waiting(reason))).toEqual({ phase: "stalled", reason });
+    }
+    expect(classifyPodStartup({ status: { phase: "Failed" } })).toEqual({
+      phase: "stalled",
+      reason: "PodFailed",
+    });
   });
 });

@@ -34,7 +34,11 @@ const reconcilePendingWorkflowFailureNotifications = mock(() => {
 });
 const ensureCurrentWorkflowRunnerResources = mock((input: { attempt: { attemptId: string } }) => {
   events.push(`ensure:${input.attempt.attemptId}`);
-  return Promise.resolve("ready" as const);
+  return Promise.resolve({ state: "ready", startup: { phase: "running" } } as const);
+});
+const extendWorkflowRunnerStartupLease = mock((input: { attemptId: string }) => {
+  events.push(`extend:${input.attemptId}`);
+  return Promise.resolve(true);
 });
 const failWorkflowRunnerResourceAttempt = mock(() => Promise.resolve());
 const cleanupWorkflowRunnerAttempt = mock((input: { attemptId: string }) => {
@@ -97,6 +101,7 @@ const requiredRunnerConfig = mock(() => {
 void mock.module("../../src/orchestrator/workflow-runner-dispatch", () => ({
   failWorkflowRunnerResourceAttempt,
   requiredRunnerConfig,
+  WORKFLOW_RUNNER_STARTUP_LEASE_MS: 360_000,
 }));
 void mock.module("../../src/orchestrator/workflow-runner-resources", () => ({
   ensureCurrentWorkflowRunnerResources,
@@ -106,6 +111,7 @@ void mock.module("../../src/orchestrator/workflow-runner-result", () => ({
   reconcilePendingWorkflowRunnerResults,
 }));
 void mock.module("../../src/orchestrator/workflow-runner-store", () => ({
+  extendWorkflowRunnerStartupLease,
   findWorkflowRunnerCleanupCandidates,
   listActiveWorkflowRunnerAttempts,
 }));
@@ -125,8 +131,9 @@ describe("workflow runner reconciliation", () => {
     ensureCurrentWorkflowRunnerResources.mockReset();
     ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
       events.push(`ensure:${input.attempt.attemptId}`);
-      return Promise.resolve("ready");
+      return Promise.resolve({ state: "ready", startup: { phase: "running" } });
     });
+    extendWorkflowRunnerStartupLease.mockClear();
     failWorkflowRunnerResourceAttempt.mockClear();
     cleanupWorkflowRunnerAttempt.mockReset();
     cleanupWorkflowRunnerAttempt.mockImplementation((input) => {
@@ -176,6 +183,59 @@ describe("workflow runner reconciliation", () => {
       expect.objectContaining({ attempt: secondAttempt }),
     );
     expect(cleanupWorkflowRunnerAttempt).toHaveBeenCalledTimes(2);
+  });
+
+  it("extends the startup lease while the Pod is still coming up", async () => {
+    // The regression this guards: the startup lease is claimed before the Pod
+    // exists, so a cold image pull slower than the lease killed a healthy
+    // attempt that had not run a line.
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({ state: "ready", startup: { phase: "starting" } });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(extendWorkflowRunnerStartupLease).toHaveBeenCalledTimes(2);
+    expect(extendWorkflowRunnerStartupLease).toHaveBeenCalledWith(firstAttempt, 360_000);
+    expect(failWorkflowRunnerResourceAttempt).not.toHaveBeenCalled();
+  });
+
+  it("does not extend once the container is running", async () => {
+    await reconcileWorkflowRunners();
+    expect(extendWorkflowRunnerStartupLease).not.toHaveBeenCalled();
+  });
+
+  it("terminalizes a stalled Pod instead of burning the lease", async () => {
+    ensureCurrentWorkflowRunnerResources.mockImplementationOnce((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "stalled", reason: "ImagePullBackOff" },
+      });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(failWorkflowRunnerResourceAttempt).toHaveBeenCalledWith(
+      firstAttempt,
+      "Runner Pod could not start: ImagePullBackOff",
+    );
+    expect(extendWorkflowRunnerStartupLease).not.toHaveBeenCalledWith(firstAttempt, 360_000);
+    // The stalled attempt must not stop the pass.
+    expect(events).toContain(`ensure:${secondAttempt.attemptId}`);
+  });
+
+  it("skips lease work for an attempt that is no longer ready", async () => {
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({ state: "terminal" });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(extendWorkflowRunnerStartupLease).not.toHaveBeenCalled();
+    expect(failWorkflowRunnerResourceAttempt).not.toHaveBeenCalled();
   });
 
   it("skips active resource creation when runner configuration is unsafe", async () => {

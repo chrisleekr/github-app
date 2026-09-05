@@ -441,6 +441,19 @@ Structured lifecycle events for `workflow_runs` state transitions, emitted at th
 | `workflow.run.dispatch_refused` | info         | `reason` (no `runId`)       | Refused before any row inserted.                                                                                                                                                                                                                                                          |
 | `workflow.run.enqueue_failed`   | error        | `reason`                    | Initial post-commit publication failed. The row stays queued with an open outbox generation while retrying. Retry-budget or `WORKFLOW_DISPATCH_TIMEOUT_MS` expiry fails the workflow and execution, releases the target guard, and durably queues a `dispatch-expired` public projection. |
 
+## Workflow runner startup fields
+
+`Workflow runner resources reconciled` (`src/k8s/workflow-runner-spawner.ts#ensureWorkflowRunnerResources`) is emitted once per attempt per reconciler pass, carrying `runId`, `attemptId` and `podName`. Two fields report what kubelet is doing with the Pod, which is how the controller separates a Pod that is still coming up from a runner that will never report in.
+
+| Field           | Values                                 | Meaning                                                                                                                       |
+| --------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `startupPhase`  | `starting`                             | Pod exists, no container error. The pass extends the startup lease, bounded by the attempt deadline.                          |
+| `startupPhase`  | `running`                              | Container started or already finished. Heartbeat renewals own the lease from here.                                            |
+| `startupPhase`  | `stalled`                              | The attempt is terminalized on this pass rather than waiting out the lease.                                                   |
+| `startupReason` | kubelet waiting reason, or `PodFailed` | Present only when `startupPhase` is `stalled`. Also appears in the failure comment as `Runner Pod could not start: <reason>`. |
+
+A run of consecutive `startupPhase=starting` lines for one `attemptId` measures how long the daemon image pull is taking. Sustained runs longer than a minute or two mean the image is not warm on the runner nodes.
+
 ## Workspace lifecycle events
 
 The `workspace.*` family makes the non-success workspace-cleanup paths greppable, complementing the success-path `pipeline.stage stage=workspace.cleanup` row and the startup `workspace.sweep` reaper. Schema pinned by `WorkspaceLogFieldsSchema` (`src/core/workspace-events.ts#WorkspaceLogFieldsSchema`). `workDir` is a process-local temp path and safe to log; the authenticated clone URL embeds the install token and is never logged (clone events carry the `owner/repo` slug and branch only). All `err` fields routed through `redactErrorMessage`.

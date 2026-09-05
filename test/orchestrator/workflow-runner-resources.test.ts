@@ -11,7 +11,7 @@ const attempt = {
   workflowName: "review" as const,
   attemptDeadlineAt: new Date("2026-08-23T04:10:00Z"),
 };
-const ensureWorkflowRunnerResources = mock(() => Promise.resolve());
+const ensureWorkflowRunnerResources = mock(() => Promise.resolve({ phase: "running" as const }));
 const deleteWorkflowRunnerResources = mock(() => Promise.resolve(true));
 const getWorkflowRunnerRegistrationState = mock(() =>
   Promise.resolve({ state: "ready" as const, attempt }),
@@ -44,7 +44,7 @@ describe("workflow runner resource operation ordering", () => {
   beforeEach(() => {
     resetWorkflowRunnerResourceChainsForTests();
     ensureWorkflowRunnerResources.mockReset();
-    ensureWorkflowRunnerResources.mockResolvedValue();
+    ensureWorkflowRunnerResources.mockResolvedValue({ phase: "running" });
     deleteWorkflowRunnerResources.mockReset();
     deleteWorkflowRunnerResources.mockResolvedValue(true);
     getWorkflowRunnerRegistrationState.mockReset();
@@ -56,7 +56,7 @@ describe("workflow runner resource operation ordering", () => {
     await cleanupCurrentWorkflowRunnerResources(attempt);
     getWorkflowRunnerRegistrationState.mockResolvedValueOnce({ state: "completed" });
 
-    expect(await ensureCurrentWorkflowRunnerResources(input)).toBe("terminal");
+    expect(await ensureCurrentWorkflowRunnerResources(input)).toEqual({ state: "terminal" });
     expect(ensureWorkflowRunnerResources).not.toHaveBeenCalled();
     expect(deleteWorkflowRunnerResources).toHaveBeenCalledTimes(2);
   });
@@ -76,10 +76,21 @@ describe("workflow runner resource operation ordering", () => {
     const cleaning = cleanupCurrentWorkflowRunnerResources(attempt);
     releaseEnsure();
 
-    expect(await ensuring).toBe("terminal");
+    expect(await ensuring).toEqual({ state: "terminal" });
     await cleaning;
     expect(deleteWorkflowRunnerResources).toHaveBeenCalledTimes(2);
     expect(markWorkflowRunnerResourcesCleaned).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces the Pod startup phase alongside a ready attempt", async () => {
+    // The reconciler reads this to tell a Pod that is still pulling its image
+    // from a runner that will never report in.
+    ensureWorkflowRunnerResources.mockResolvedValueOnce({ phase: "starting" });
+
+    expect(await ensureCurrentWorkflowRunnerResources(input)).toEqual({
+      state: "ready",
+      startup: { phase: "starting" },
+    });
   });
 
   it("leaves resources intact while a durable result awaits projection", async () => {
@@ -89,7 +100,7 @@ describe("workflow runner resource operation ordering", () => {
       payload: {},
     });
 
-    expect(await ensureCurrentWorkflowRunnerResources(input)).toBe("result-pending");
+    expect(await ensureCurrentWorkflowRunnerResources(input)).toEqual({ state: "result-pending" });
     expect(ensureWorkflowRunnerResources).not.toHaveBeenCalled();
     expect(deleteWorkflowRunnerResources).not.toHaveBeenCalled();
   });

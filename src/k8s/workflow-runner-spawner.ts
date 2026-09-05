@@ -39,6 +39,44 @@ interface WorkflowRunnerResourceIdentity {
   readonly attemptId: string;
 }
 
+/**
+ * What kubelet is doing with the runner Pod at this reconcile tick.
+ *
+ * The controller cannot tell "the runner died" from "the Pod has not started
+ * yet" out of lease renewals alone, because neither renews. This is the missing
+ * evidence: `starting` means kubelet is still making progress and the startup
+ * lease should be extended rather than expired.
+ */
+export type RunnerPodStartup =
+  | { readonly phase: "starting" }
+  | { readonly phase: "running" }
+  | { readonly phase: "stalled"; readonly reason: string };
+
+// Waiting reasons kubelet retries indefinitely. Nothing the controller waits for
+// resolves them, so they terminalize the attempt instead of burning the lease.
+const STALLED_WAITING_REASONS = new Set([
+  "CreateContainerConfigError",
+  "CreateContainerError",
+  "ErrImageNeverPull",
+  "ErrImagePull",
+  "ImagePullBackOff",
+  "InvalidImageName",
+]);
+
+export function classifyPodStartup(pod: V1Pod): RunnerPodStartup {
+  const reason = pod.status?.containerStatuses?.[0]?.state?.waiting?.reason;
+  if (reason !== undefined && STALLED_WAITING_REASONS.has(reason)) {
+    return { phase: "stalled", reason };
+  }
+  const phase = pod.status?.phase;
+  if (phase === "Running" || phase === "Succeeded") return { phase: "running" };
+  if (phase === "Failed") return { phase: "stalled", reason: "PodFailed" };
+  // A Pod read back immediately after creation carries no status yet. Absent
+  // status is "starting", so the first tick extends rather than assuming a
+  // runner that has not reported in is already up.
+  return { phase: "starting" };
+}
+
 export class WorkflowRunnerResourceError extends Error {
   constructor(
     readonly kind: "permanent" | "transient",
@@ -539,7 +577,7 @@ export async function ensureWorkflowRunnerResources(input: {
   readonly capability: string;
   readonly image: string;
   readonly orchestratorUrl: string;
-}): Promise<void> {
+}): Promise<RunnerPodStartup> {
   assertSecureOrchestratorUrl(input.orchestratorUrl);
   assertDigestPinnedRunnerImage(input.image);
   // Reject provider drift before the attempt capability Secret exists.
@@ -550,14 +588,18 @@ export async function ensureWorkflowRunnerResources(input: {
     throw new WorkflowRunnerResourceError("transient", "Runner Pod UID missing after reconcile");
   }
   await ensureSecret(input.attempt, input.capability, podUid);
+  const startup = classifyPodStartup(pod);
   logger.info(
     {
       runId: input.attempt.runId,
       attemptId: input.attempt.attemptId,
       podName: workflowRunnerResourceNames(input.attempt.attemptId).podName,
+      startupPhase: startup.phase,
+      ...(startup.phase === "stalled" ? { startupReason: startup.reason } : {}),
     },
     "Workflow runner resources reconciled",
   );
+  return startup;
 }
 
 function assertDigestPinnedRunnerImage(image: string): void {
