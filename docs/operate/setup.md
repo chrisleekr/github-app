@@ -4,14 +4,14 @@ This page covers running the bot on your laptop against a real GitHub App. For f
 
 ## Prerequisites
 
-| Tool                    | Version                                    | Purpose                                                                                       |
-| ----------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| [Bun](https://bun.sh)   | from `.tool-versions` (currently `1.3.14`) | Runtime and package manager.                                                                  |
-| Git                     | any                                        | Repository checkout during agent execution.                                                   |
-| Docker                  | any recent                                 | Local Postgres + Valkey via `docker-compose.dev.yml`.                                         |
-| GitHub account          | _none_                                     | Admin access to the org or personal account where the App is registered.                      |
-| Webhook relay           | _none_                                     | A [smee.io](https://smee.io) channel to relay GitHub webhook deliveries to your local server. |
-| AI provider credentials | _none_                                     | One of: Anthropic API key, Claude Code OAuth token, AWS credentials for Bedrock.              |
+| Tool                    | Version                                   | Purpose                                                                                       |
+| ----------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [Bun](https://bun.sh)   | from `.tool-versions` (currently `1.4.1`) | Runtime and package manager.                                                                  |
+| Git                     | any                                       | Repository checkout during agent execution.                                                   |
+| Docker                  | any recent                                | Local Postgres + Valkey via `docker-compose.dev.yml`.                                         |
+| GitHub account          | _none_                                    | Admin access to the org or personal account where the App is registered.                      |
+| Webhook relay           | _none_                                    | A [smee.io](https://smee.io) channel to relay GitHub webhook deliveries to your local server. |
+| AI provider credentials | _none_                                    | One of: Anthropic API key, Claude Code OAuth token, AWS credentials for Bedrock.              |
 
 ## First run
 

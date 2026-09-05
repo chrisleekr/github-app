@@ -15,11 +15,11 @@ The two images intentionally diverge after the shared base because their cost an
 
 ### Shared base stages
 
-| Stage         | Base              | Purpose                                                                                                                                                                                                                                         |
-| ------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `base`        | `oven/bun:1.3.14` | Installs Node.js from NodeSource (major pinned in the Dockerfile, currently 25) for the Claude Code CLI, npm 11, `curl`, `git`, `@anthropic-ai/claude-code` globally (pinned via the `CLAUDE_CODE_VERSION` ARG), plus targeted OS CVE upgrades. |
-| `development` | `base`            | `bun install` (all deps) + `bun run build` → `dist/` (app, daemon, workflow runner, process-boundary probe, MCP stdio servers).                                                                                                                 |
-| `deps`        | `base`            | `bun install --production --ignore-scripts` (runtime deps only).                                                                                                                                                                                |
+| Stage         | Base             | Purpose                                                                                                                                                                                                                                         |
+| ------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base`        | `oven/bun:1.4.1` | Installs Node.js from NodeSource (major pinned in the Dockerfile, currently 25) for the Claude Code CLI, npm 11, `curl`, `git`, `@anthropic-ai/claude-code` globally (pinned via the `CLAUDE_CODE_VERSION` ARG), plus targeted OS CVE upgrades. |
+| `development` | `base`           | `bun install` (all deps) + `bun run build` → `dist/` (app, daemon, workflow runner, process-boundary probe, MCP stdio servers).                                                                                                                 |
+| `deps`        | `base`           | `bun install --production --ignore-scripts` (runtime deps only).                                                                                                                                                                                |
 
 ### Orchestrator-only stage
 

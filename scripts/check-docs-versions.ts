@@ -6,9 +6,10 @@
  * authoritative across the repo.
  *
  * Scope: every Markdown file under docs/ plus the root-level README.md,
- * CONTRIBUTING.md and CLAUDE.md. Those three are read by humans on every
- * repo visit and by the bot on every agent run, so a stale Bun pin there
- * is as damaging as one inside docs/.
+ * CONTRIBUTING.md and CLAUDE.md, plus the optional root-level `.gitlab-ci.yml`
+ * for `oven/bun:<ver>` references. Those Markdown files are read by humans
+ * on every repo visit and by the bot on every agent run, so a stale Bun pin
+ * there is as damaging as one inside docs/.
  *
  * Detected forms:
  *   - bare semver "1.3.13" inside a Bun context: the line mentions `bun`
@@ -37,6 +38,7 @@ const DOCKERFILES = [
   join(repoRoot, "Dockerfile.orchestrator"),
   join(repoRoot, "Dockerfile.daemon"),
 ];
+const GITLAB_CI = join(repoRoot, ".gitlab-ci.yml");
 const DOCS_ROOT = join(repoRoot, "docs");
 // Root-level Markdown that ships outside docs/ but is just as load-bearing.
 const ROOT_DOCS = ["README.md", "CONTRIBUTING.md", "CLAUDE.md"];
@@ -145,6 +147,31 @@ function checkDockerfile(path: string, canonical: string): Mismatch[] {
       found: "<missing>",
       context: "no `FROM oven/bun:<ver> AS base` line",
     });
+  }
+  return out;
+}
+
+function checkGitlabCi(canonical: string): Mismatch[] {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- optional repo-root path
+  if (!existsSync(GITLAB_CI)) return [];
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- optional repo-root path
+  const contents = readFileSync(GITLAB_CI, "utf-8");
+  const lines = contents.split("\n");
+  const out: Mismatch[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    OVEN_RE.lastIndex = 0;
+    let ovenMatch: RegExpExecArray | null;
+    while ((ovenMatch = OVEN_RE.exec(line)) !== null) {
+      if (ovenMatch[1] !== canonical) {
+        out.push({
+          file: relative(repoRoot, GITLAB_CI),
+          line: i + 1,
+          found: `oven/bun:${ovenMatch[1] ?? ""}`,
+          context: line.trim(),
+        });
+      }
+    }
   }
   return out;
 }
@@ -270,6 +297,7 @@ function main(): void {
   const mismatches: Mismatch[] = [];
   mismatches.push(...checkPackageJson(canonical));
   for (const df of DOCKERFILES) mismatches.push(...checkDockerfile(df, canonical));
+  mismatches.push(...checkGitlabCi(canonical));
   for (const md of collectMarkdownFiles()) mismatches.push(...checkDocFile(md, canonical));
 
   if (mismatches.length === 0) {

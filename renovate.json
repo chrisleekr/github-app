@@ -13,6 +13,15 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?:\\s+packageName=(?<packageName>\\S+))?\\s+ARG \\S*_VERSION=(?<currentValue>\\S+)"
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Digest-pinned oven/bun references inside .gitlab-ci.yml script blocks. The gitlabci manager only reads image: keys, so the admission-policy docker run line would otherwise go stale. The (?m)^\\s+ anchor excludes image: lines so nothing is extracted twice.",
+      "managerFilePatterns": ["/\\.gitlab-ci\\.ya?ml$/"],
+      "matchStrings": [
+        "(?m)^\\s+(?<depName>oven/bun):(?<currentValue>[\\w.-]+)@(?<currentDigest>sha256:[a-f0-9]{64})\\s*$"
+      ],
+      "datasourceTemplate": "docker"
     }
   ],
   "packageRules": [
@@ -42,6 +51,11 @@
       "description": "Group Dockerfile ARG tool version bumps from the custom regex manager.",
       "matchManagers": ["custom.regex"],
       "groupName": "dockerfile tool versions"
+    },
+    {
+      "description": "Group every Bun runtime pin (.tool-versions, packageManager, Dockerfile FROM, .gitlab-ci.yml images and script refs) into one PR. Renovate cannot edit the Markdown prose, and it leaves a still-satisfied semver range in package.json engines.bun untouched after bumping the canonical pin elsewhere, while the checker requires an exact match rather than just a satisfied range, so both still need a hand edit; grouping makes that one PR instead of several.",
+      "matchDepNames": ["bun", "oven/bun"],
+      "groupName": "bun runtime"
     },
     {
       "description": "Auto-merge non-major bumps across all managers once CI is green. Major bumps open a PR for review.",

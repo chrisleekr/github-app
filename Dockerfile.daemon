@@ -11,7 +11,7 @@
 # scripts/check-dockerfile-base-sync.ts in CI.
 
 # --- SHARED-BASE-BEGIN ---
-FROM oven/bun:1.3.14 AS base
+FROM oven/bun:1.4.1 AS base
 WORKDIR /app
 
 # Node.js required by Claude Code CLI; git required for repo checkout.
@@ -243,7 +243,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends chromium && \
   chmod 0444 /etc/mmdc-puppeteer.json
 
 # 6. uv (astral-sh) + poetry via pipx. Redirect installer output to /usr/local
-#   : /root is mode 700 in oven/bun:1.3.14, unreadable to the final USER bun
+#   : /root is mode 700 in oven/bun:1.4.1, unreadable to the final USER bun
 #    (UID 1000), so default $HOME/.local/bin targets would land dead-on-arrival.
 ENV PIPX_HOME=/usr/local/pipx \
   PIPX_BIN_DIR=/usr/local/bin \
