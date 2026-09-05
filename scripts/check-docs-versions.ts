@@ -6,9 +6,10 @@
  * authoritative across the repo.
  *
  * Scope: every Markdown file under docs/ plus the root-level README.md,
- * CONTRIBUTING.md and CLAUDE.md. Those three are read by humans on every
- * repo visit and by the bot on every agent run, so a stale Bun pin there
- * is as damaging as one inside docs/.
+ * CONTRIBUTING.md and CLAUDE.md, plus the optional root-level `.gitlab-ci.yml`
+ * for `oven/bun:<ver>` references. Those Markdown files are read by humans
+ * on every repo visit and by the bot on every agent run, so a stale Bun pin
+ * there is as damaging as one inside docs/.
  *
  * Detected forms:
  *   - bare semver "1.3.13" inside a Bun context: the line mentions `bun`
@@ -17,7 +18,9 @@
  *     unrecognised preceding word leaves the semver in scope on purpose,
  *     so a line that names both a Bun version and another version is
  *     handled without silently skipping an unexpected phrasing.
- *   - `oven/bun:<ver>` references.
+ *   - `oven/bun:<ver>` references. Digest-pinned ones in `.gitlab-ci.yml`
+ *     must also agree with each other, since Docker resolves `tag@digest`
+ *     by digest and would otherwise run an old image behind a fresh tag.
  *
  * Exit 0 on match, 1 on any mismatch with a per-file diff on stderr.
  */
@@ -37,6 +40,7 @@ const DOCKERFILES = [
   join(repoRoot, "Dockerfile.orchestrator"),
   join(repoRoot, "Dockerfile.daemon"),
 ];
+const GITLAB_CI = join(repoRoot, ".gitlab-ci.yml");
 const DOCS_ROOT = join(repoRoot, "docs");
 // Root-level Markdown that ships outside docs/ but is just as load-bearing.
 const ROOT_DOCS = ["README.md", "CONTRIBUTING.md", "CLAUDE.md"];
@@ -115,29 +119,13 @@ function checkDockerfile(path: string, canonical: string): Mismatch[] {
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- constant paths above
   const contents = readFileSync(path, "utf-8");
   const lines = contents.split("\n");
-  const out: Mismatch[] = [];
-  let foundBase = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const baseMatch = /^FROM\s+oven\/bun:(\d+\.\d+\.\d+)\s+AS\s+base/.exec(line);
-    if (baseMatch) foundBase = true;
-    // Scan every `oven/bun:<ver>` occurrence on the line; the anchored FROM
-    // check above only confirms the base stage exists. Comments, ENV lines
-    // and RUN snippets can also embed `oven/bun:<ver>` and rot independently
-    // (e.g. `# /root is mode 700 in oven/bun:<ver>` in Dockerfile.daemon).
-    OVEN_RE.lastIndex = 0;
-    let ovenMatch: RegExpExecArray | null;
-    while ((ovenMatch = OVEN_RE.exec(line)) !== null) {
-      if (ovenMatch[1] !== canonical) {
-        out.push({
-          file: relative(repoRoot, path),
-          line: i + 1,
-          found: `oven/bun:${ovenMatch[1] ?? ""}`,
-          context: line.trim(),
-        });
-      }
-    }
-  }
+  // Scans every `oven/bun:<ver>` occurrence, not just the FROM line: comments,
+  // ENV lines and RUN snippets embed the tag too and rot independently (e.g.
+  // `# /root is mode 700 in oven/bun:<ver>` in Dockerfile.daemon).
+  const out = ovenTagMismatches(path, scanOvenRefs(lines), canonical);
+  const foundBase = lines.some((line) =>
+    /^FROM\s+oven\/bun:(\d+\.\d+\.\d+)\s+AS\s+base/.test(line),
+  );
   if (!foundBase) {
     out.push({
       file: relative(repoRoot, path),
@@ -145,6 +133,46 @@ function checkDockerfile(path: string, canonical: string): Mismatch[] {
       found: "<missing>",
       context: "no `FROM oven/bun:<ver> AS base` line",
     });
+  }
+  return out;
+}
+
+function checkGitlabCi(canonical: string): Mismatch[] {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- optional repo-root path
+  if (!existsSync(GITLAB_CI)) return [];
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- optional repo-root path
+  const contents = readFileSync(GITLAB_CI, "utf-8");
+  const refs = scanOvenRefs(contents.split("\n"));
+  const out = ovenTagMismatches(GITLAB_CI, refs, canonical);
+
+  // A file that exists but yields nothing to check is indistinguishable from a
+  // passing one. A renamed job, an `image: $BUN_IMAGE` variable or a mirror
+  // registry prefix would otherwise retire this gate silently.
+  if (refs.length === 0) {
+    out.push({
+      file: relative(repoRoot, GITLAB_CI),
+      line: 0,
+      found: "<missing>",
+      context: "no `oven/bun:<ver>` reference",
+    });
+    return out;
+  }
+
+  // Docker resolves `tag@digest` by digest, so a bumped tag left with a stale
+  // digest still runs the old image while the tag check above passes. Every
+  // digest-pinned reference in this file is the same image by construction, so
+  // disagreement means a half-updated pair. This cannot catch a pair that is
+  // consistently stale without a registry call; the tag check covers that.
+  const pinned = refs.filter((ref) => ref.digest !== undefined);
+  if (new Set(pinned.map((ref) => ref.digest)).size > 1) {
+    for (const ref of pinned) {
+      out.push({
+        file: relative(repoRoot, GITLAB_CI),
+        line: ref.line,
+        found: ref.digest ?? "",
+        context: "digest disagrees with the other digest-pinned oven/bun references",
+      });
+    }
   }
   return out;
 }
@@ -178,7 +206,42 @@ function collectMarkdownFiles(): string[] {
   return out;
 }
 
-const OVEN_RE = /oven\/bun:(\d+\.\d+\.\d+)/g;
+const OVEN_RE = /oven\/bun:(\d+\.\d+\.\d+)[\w.-]*(?:@(sha256:[0-9a-f]{64}))?/g;
+
+interface OvenRef {
+  readonly line: number;
+  readonly tag: string;
+  readonly digest: string | undefined;
+  readonly context: string;
+}
+
+// Single scanner for every `oven/bun:<ver>` occurrence, shared by the
+// Dockerfile, .gitlab-ci.yml and Markdown checkers. OVEN_RE is stateful
+// (`/g`), so centralising the `lastIndex` reset keeps a future change to the
+// match rules from landing at two of the three call sites.
+function scanOvenRefs(lines: string[]): OvenRef[] {
+  const refs: OvenRef[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    OVEN_RE.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = OVEN_RE.exec(line)) !== null) {
+      refs.push({ line: i + 1, tag: match[1] ?? "", digest: match[2], context: line.trim() });
+    }
+  }
+  return refs;
+}
+
+function ovenTagMismatches(path: string, refs: OvenRef[], canonical: string): Mismatch[] {
+  return refs
+    .filter((ref) => ref.tag !== canonical)
+    .map((ref) => ({
+      file: relative(repoRoot, path),
+      line: ref.line,
+      found: `oven/bun:${ref.tag}`,
+      context: ref.context,
+    }));
+}
 const BUN_SEMVER_RE = /(?<![\w.-])(\d+\.\d+\.\d+)(?![\w.-])/g;
 
 // Tokens that own a non-Bun version on a line that also mentions Bun. A
@@ -222,21 +285,9 @@ function checkDocFile(path: string, canonical: string): Mismatch[] {
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- enumerated from docs/ and ROOT_DOCS
   const contents = readFileSync(path, "utf-8");
   const lines = contents.split("\n");
-  const out: Mismatch[] = [];
+  const out = ovenTagMismatches(path, scanOvenRefs(lines), canonical);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    OVEN_RE.lastIndex = 0;
-    let ovenMatch: RegExpExecArray | null;
-    while ((ovenMatch = OVEN_RE.exec(line)) !== null) {
-      if (ovenMatch[1] !== canonical) {
-        out.push({
-          file: relative(repoRoot, path),
-          line: i + 1,
-          found: `oven/bun:${ovenMatch[1] ?? ""}`,
-          context: line.trim(),
-        });
-      }
-    }
     if (!/bun/i.test(line)) continue;
     BUN_SEMVER_RE.lastIndex = 0;
     let semverMatch: RegExpExecArray | null;
@@ -270,6 +321,7 @@ function main(): void {
   const mismatches: Mismatch[] = [];
   mismatches.push(...checkPackageJson(canonical));
   for (const df of DOCKERFILES) mismatches.push(...checkDockerfile(df, canonical));
+  mismatches.push(...checkGitlabCi(canonical));
   for (const md of collectMarkdownFiles()) mismatches.push(...checkDocFile(md, canonical));
 
   if (mismatches.length === 0) {

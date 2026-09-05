@@ -19,6 +19,24 @@ const PACKAGE_JSON = JSON.stringify(
 const DOCKERFILE_OK = `# fixture\nFROM oven/bun:1.3.13 AS base\nRUN echo hello\n`;
 // Stale `oven/bun:` mention inside a comment, caught by the new line-scan.
 const DOCKERFILE_STALE_COMMENT = `FROM oven/bun:1.3.13 AS base\n# /root is mode 700 in oven/bun:1.3.8\n`;
+const GITLAB_STALE = `image: oven/bun:1.3.14-alpine
+
+stages:
+  - test
+
+job:
+  image: oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0
+  script:
+      oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0
+`;
+const GITLAB_CANONICAL = GITLAB_STALE.replaceAll("1.3.14", "1.4.1");
+// Same tag on both digest-pinned references, second digest left stale. Docker
+// resolves `tag@digest` by digest, so this half-updated pair runs an old image.
+const GITLAB_DIGEST_DRIFT = GITLAB_CANONICAL.replace(
+  "sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b47bdbf2152d2196383c0\n",
+  "sha256:0000000000000000000000000000000000000000000000000000000000000000\n",
+);
+const GITLAB_NO_BUN = `image: node:22-alpine\n\nstages:\n  - test\n`;
 
 interface Layout {
   toolVersion: string;
@@ -28,6 +46,7 @@ interface Layout {
   docs?: Record<string, string>;
   // Root-level Markdown (README.md / CONTRIBUTING.md / CLAUDE.md), keyed by filename.
   rootDocs?: Record<string, string>;
+  gitlabCi?: string;
 }
 
 function makeFixture(layout: Layout): string {
@@ -44,6 +63,10 @@ function makeFixture(layout: Layout): string {
   }
   for (const [name, body] of Object.entries(layout.rootDocs ?? {})) {
     writeFileSync(join(root, name), body);
+  }
+  if (layout.gitlabCi !== undefined) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixture path
+    writeFileSync(join(root, ".gitlab-ci.yml"), layout.gitlabCi);
   }
   return root;
 }
@@ -190,5 +213,86 @@ describe("scripts/check-docs-versions.ts", () => {
     expect(exitCode).toBe(1);
     expect(stderr).toContain("package.json");
     expect(stderr).toContain("engines.bun");
+  });
+
+  it("flags stale Bun pins in .gitlab-ci.yml", () => {
+    const root = makeFixture({
+      toolVersion: "1.4.1",
+      packageJson: JSON.stringify({
+        name: "fixture",
+        engines: { bun: ">=1.4.1" },
+        packageManager: "bun@1.4.1",
+      }),
+      dockerfileOrch: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      dockerfileDaemon: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      gitlabCi: GITLAB_STALE,
+    });
+    fixtures.push(root);
+    const { exitCode, stderr } = runScript(root);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain(".gitlab-ci.yml:1");
+    expect(stderr).toContain(".gitlab-ci.yml:7");
+    expect(stderr).toContain(".gitlab-ci.yml:9");
+    expect(stderr).toContain("found `oven/bun:1.3.14`");
+  });
+
+  it("passes when every .gitlab-ci.yml Bun reference matches the canonical pin", () => {
+    const root = makeFixture({
+      toolVersion: "1.4.1",
+      packageJson: JSON.stringify({
+        name: "fixture",
+        engines: { bun: ">=1.4.1" },
+        packageManager: "bun@1.4.1",
+      }),
+      dockerfileOrch: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      dockerfileDaemon: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      gitlabCi: GITLAB_CANONICAL,
+    });
+    fixtures.push(root);
+    const { exitCode } = runScript(root);
+    expect(exitCode).toBe(0);
+  });
+
+  it("flags digest-pinned .gitlab-ci.yml references that disagree with each other", () => {
+    const root = makeFixture({
+      toolVersion: "1.4.1",
+      packageJson: JSON.stringify({
+        name: "fixture",
+        engines: { bun: ">=1.4.1" },
+        packageManager: "bun@1.4.1",
+      }),
+      dockerfileOrch: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      dockerfileDaemon: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      gitlabCi: GITLAB_DIGEST_DRIFT,
+    });
+    fixtures.push(root);
+    const { exitCode, stderr } = runScript(root);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("digest disagrees");
+  });
+
+  it("fails when .gitlab-ci.yml exists but has no oven/bun reference to check", () => {
+    const root = makeFixture({
+      toolVersion: "1.4.1",
+      packageJson: JSON.stringify({
+        name: "fixture",
+        engines: { bun: ">=1.4.1" },
+        packageManager: "bun@1.4.1",
+      }),
+      dockerfileOrch: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      dockerfileDaemon: "# fixture\nFROM oven/bun:1.4.1 AS base\nRUN echo hello\n",
+      gitlabCi: GITLAB_NO_BUN,
+    });
+    fixtures.push(root);
+    const { exitCode, stderr } = runScript(root);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("no `oven/bun:<ver>` reference");
+  });
+
+  it("does not require .gitlab-ci.yml to exist", () => {
+    const root = makeFixture({ toolVersion: "1.3.13" });
+    fixtures.push(root);
+    const { exitCode } = runScript(root);
+    expect(exitCode).toBe(0);
   });
 });
