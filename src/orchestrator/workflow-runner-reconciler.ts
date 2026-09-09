@@ -1,3 +1,7 @@
+import {
+  readWorkflowRunnerPostMortem,
+  type RunnerPodPostMortem,
+} from "../k8s/workflow-runner-postmortem";
 import { WorkflowRunnerResourceError } from "../k8s/workflow-runner-spawner";
 import { logger } from "../logger";
 import { reconcilePendingWorkflowFailureNotifications } from "./workflow-expiry-notifier";
@@ -15,8 +19,65 @@ import {
 import {
   extendWorkflowRunnerStartupLease,
   findWorkflowRunnerCleanupCandidates,
+  hasWorkflowRunnerPostMortem,
   listActiveWorkflowRunnerAttempts,
+  recordWorkflowRunnerPostMortem,
+  type WorkflowRunnerAttempt,
 } from "./workflow-runner-store";
+
+/**
+ * Whether the reading says anything the failure comment or an operator could
+ * use. A pass that catches the Pod before kubelet has written any status reads
+ * all nulls, and the store keeps the first write forever, so recording that
+ * would spend the one slot on nothing and lock out the pass that has the answer.
+ */
+function isInformative(postMortem: RunnerPodPostMortem): boolean {
+  return (
+    postMortem.reason !== null ||
+    postMortem.podReason !== null ||
+    postMortem.exitCode !== null ||
+    postMortem.logTail !== ""
+  );
+}
+
+/**
+ * Persist and log why the runner Pod died, at most once per attempt.
+ *
+ * This is the only durable record. The Pod, its terminated container status and
+ * its logs are deleted on cleanup, so by the time anyone reads the failure
+ * comment there is nothing left to inspect, and "the runner stopped renewing"
+ * cannot distinguish an OOMKill from a crash from a node eviction.
+ *
+ * Never throws: a post-mortem that cannot be read must not derail the failure
+ * path that prompted it.
+ */
+async function capturePodPostMortem(
+  attempt: WorkflowRunnerAttempt,
+  startupReason: string,
+): Promise<void> {
+  try {
+    if (await hasWorkflowRunnerPostMortem(attempt)) return;
+    const postMortem = await readWorkflowRunnerPostMortem(attempt);
+    if (postMortem === null || !isInformative(postMortem)) return;
+    if (!(await recordWorkflowRunnerPostMortem(attempt, { ...postMortem }))) return;
+    logger.error(
+      {
+        event: "workflow_runner_pod_died",
+        runId: attempt.runId,
+        attemptId: attempt.attemptId,
+        workflowName: attempt.workflowName,
+        startupReason,
+        ...postMortem,
+      },
+      "Workflow runner Pod died",
+    );
+  } catch (err) {
+    logger.warn(
+      { err, runId: attempt.runId, attemptId: attempt.attemptId },
+      "Workflow runner post-mortem capture failed",
+    );
+  }
+}
 
 async function reconcileActiveResources(): Promise<void> {
   // Reuse the dispatch validator so both paths apply one rule. A hand-rolled
@@ -49,6 +110,30 @@ async function reconcileActiveResources(): Promise<void> {
         orchestratorUrl,
       });
       if (result.state !== "ready") continue;
+
+      // Observing a dead Pod is not the same as acting on it, so this runs
+      // regardless of what the branches below do with the attempt. It is the
+      // only moment the controller holds both the evidence and a live Pod: the
+      // lease has minutes left and neither the terminalization below nor its
+      // cleanup has deleted anything yet.
+      //
+      // `Succeeded` counts as dead here even though startup calls it running.
+      // Under `restartPolicy: Never` a runner whose process returns 0 without
+      // ever sending a result lands there, stays classified running on every
+      // pass, and has its Pod and log deleted at lease-expiry cleanup. That is
+      // the one silent death the expiry notice could not explain, and reaching
+      // this attempt at all means no result was reported: an attempt that
+      // finished normally is no longer active.
+      const dead =
+        result.startup.phase === "stalled"
+          ? result.startup.reason
+          : result.startup.phase === "running" && result.startup.terminal
+            ? "PodSucceeded without a reported result"
+            : null;
+      if (dead !== null) {
+        // eslint-disable-next-line no-await-in-loop -- one post-mortem per attempt, in order
+        await capturePodPostMortem(attempt, dead);
+      }
 
       // Startup handling only. Once the payload is issued the runner holds its
       // credential and may have pushed commits, so a dead Pod is not a start

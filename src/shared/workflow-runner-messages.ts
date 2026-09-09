@@ -21,7 +21,15 @@ const attemptIdentity = {
   attemptId: z.uuid(),
 };
 
-const CONTROLLER_RESERVED_STATE_KEYS = ["_configNotice", "_lastHumanMessage"] as const;
+const CONTROLLER_RESERVED_STATE_KEYS = [
+  "_configNotice",
+  "_lastHumanMessage",
+  // Written only by the reconciler's post-mortem capture. A runner that could
+  // pre-set it would suppress its own post-mortem, because the capture is fenced
+  // on the key being absent, and would choose the text of the public failure
+  // comment.
+  "_runnerPostMortem",
+] as const;
 
 function containsControllerReservedState(value: unknown): boolean {
   return (

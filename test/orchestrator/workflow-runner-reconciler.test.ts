@@ -36,7 +36,7 @@ const ensureCurrentWorkflowRunnerResources = mock((input: { attempt: { attemptId
   events.push(`ensure:${input.attempt.attemptId}`);
   return Promise.resolve({
     state: "ready",
-    startup: { phase: "running" },
+    startup: { phase: "running", terminal: false },
     payloadIssuedAt: null,
   } as const);
 });
@@ -48,6 +48,29 @@ const failWorkflowRunnerResourceAttempt = mock(() => Promise.resolve());
 const cleanupWorkflowRunnerAttempt = mock((input: { attemptId: string }) => {
   events.push(`cleanup:${input.attemptId}`);
   return Promise.resolve();
+});
+const defaultPostMortemRead = (input: { attemptId: string }): Promise<unknown> => {
+  events.push(`postmortem:read:${input.attemptId}`);
+  return Promise.resolve({
+    podName: `workflow-runner-${input.attemptId}`,
+    podPhase: "Failed",
+    podReason: null,
+    podMessage: null,
+    exitCode: 137,
+    reason: "OOMKilled",
+    signal: 9,
+    message: null,
+    startedAt: null,
+    finishedAt: null,
+    logTail: "",
+    logError: null,
+  });
+};
+const readWorkflowRunnerPostMortem = mock(defaultPostMortemRead);
+const hasWorkflowRunnerPostMortem = mock((_input: { attemptId: string }) => Promise.resolve(false));
+const recordWorkflowRunnerPostMortem = mock((input: { attemptId: string }) => {
+  events.push(`postmortem:record:${input.attemptId}`);
+  return Promise.resolve(true);
 });
 const listActiveWorkflowRunnerAttempts = mock(() => Promise.resolve([firstAttempt, secondAttempt]));
 const findWorkflowRunnerCleanupCandidates = mock(() =>
@@ -66,11 +89,12 @@ class TestWorkflowRunnerResourceError extends Error {
 void mock.module("../../src/k8s/workflow-runner-spawner", () => ({
   WorkflowRunnerResourceError: TestWorkflowRunnerResourceError,
 }));
+const loggerError = mock((_fields: Record<string, unknown>, _msg: string) => undefined);
 void mock.module("../../src/logger", () => ({
   logger: {
     info: mock(() => undefined),
     warn: mock(() => undefined),
-    error: mock(() => undefined),
+    error: loggerError,
     debug: mock(() => undefined),
   },
 }));
@@ -118,6 +142,11 @@ void mock.module("../../src/orchestrator/workflow-runner-store", () => ({
   extendWorkflowRunnerStartupLease,
   findWorkflowRunnerCleanupCandidates,
   listActiveWorkflowRunnerAttempts,
+  recordWorkflowRunnerPostMortem,
+  hasWorkflowRunnerPostMortem,
+}));
+void mock.module("../../src/k8s/workflow-runner-postmortem", () => ({
+  readWorkflowRunnerPostMortem,
 }));
 
 const { reconcileWorkflowRunners } =
@@ -137,12 +166,13 @@ describe("workflow runner reconciliation", () => {
       events.push(`ensure:${input.attempt.attemptId}`);
       return Promise.resolve({
         state: "ready",
-        startup: { phase: "running" },
+        startup: { phase: "running", terminal: false },
         payloadIssuedAt: null,
       });
     });
     extendWorkflowRunnerStartupLease.mockClear();
-    failWorkflowRunnerResourceAttempt.mockClear();
+    failWorkflowRunnerResourceAttempt.mockReset();
+    failWorkflowRunnerResourceAttempt.mockImplementation(() => Promise.resolve());
     cleanupWorkflowRunnerAttempt.mockReset();
     cleanupWorkflowRunnerAttempt.mockImplementation((input) => {
       events.push(`cleanup:${input.attemptId}`);
@@ -150,6 +180,12 @@ describe("workflow runner reconciliation", () => {
     });
     listActiveWorkflowRunnerAttempts.mockClear();
     findWorkflowRunnerCleanupCandidates.mockClear();
+    readWorkflowRunnerPostMortem.mockReset();
+    readWorkflowRunnerPostMortem.mockImplementation(defaultPostMortemRead);
+    hasWorkflowRunnerPostMortem.mockReset();
+    hasWorkflowRunnerPostMortem.mockImplementation(() => Promise.resolve(false));
+    loggerError.mockClear();
+    recordWorkflowRunnerPostMortem.mockClear();
   });
 
   it("replays results before repairing active resources and terminal cleanup", async () => {
@@ -256,6 +292,157 @@ describe("workflow runner reconciliation", () => {
 
     expect(failWorkflowRunnerResourceAttempt).not.toHaveBeenCalled();
     expect(extendWorkflowRunnerStartupLease).not.toHaveBeenCalled();
+    // But it must still be explained. This pass is the last moment the Pod and
+    // its logs exist, and lease expiry alone cannot say why the runner died.
+    expect(readWorkflowRunnerPostMortem).toHaveBeenCalledWith(firstAttempt);
+    expect(recordWorkflowRunnerPostMortem).toHaveBeenCalledWith(
+      firstAttempt,
+      expect.objectContaining({ reason: "OOMKilled", exitCode: 137 }),
+    );
+    // The line an operator greps for. Without it the only trace of an OOMKill is
+    // a lease-expiry notice that names a symptom.
+    expect(loggerError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "workflow_runner_pod_died",
+        runId: firstAttempt.runId,
+        attemptId: firstAttempt.attemptId,
+        startupReason: "PodFailed",
+        reason: "OOMKilled",
+        exitCode: 137,
+      }),
+      "Workflow runner Pod died",
+    );
+  });
+
+  it("does not re-read the Pod once a post-mortem is on record", async () => {
+    hasWorkflowRunnerPostMortem.mockImplementation(() => Promise.resolve(true));
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "stalled", reason: "PodFailed" },
+        payloadIssuedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(readWorkflowRunnerPostMortem).not.toHaveBeenCalled();
+    expect(loggerError).not.toHaveBeenCalled();
+  });
+
+  // A pass that catches the Pod before kubelet wrote any status reads all nulls.
+  // Recording that would spend the one-shot slot and lock out the pass that has
+  // the answer, so the empty reading is dropped and the next pass retries.
+  it("leaves the record open when the reading says nothing", async () => {
+    readWorkflowRunnerPostMortem.mockImplementation((input: { attemptId: string }) =>
+      Promise.resolve({
+        podName: `workflow-runner-${input.attemptId}`,
+        podPhase: "Running",
+        podReason: null,
+        podMessage: null,
+        exitCode: null,
+        reason: null,
+        signal: null,
+        message: null,
+        startedAt: null,
+        finishedAt: null,
+        logTail: "",
+        logError: null,
+      }),
+    );
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "stalled", reason: "PodFailed" },
+        payloadIssuedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(recordWorkflowRunnerPostMortem).not.toHaveBeenCalled();
+    expect(loggerError).not.toHaveBeenCalled();
+  });
+
+  it("still reconciles when the post-mortem read fails", async () => {
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "stalled", reason: "PodFailed" },
+        payloadIssuedAt: new Date("2026-01-01T00:00:00Z"),
+      });
+    });
+    readWorkflowRunnerPostMortem.mockRejectedValue(new Error("Kubernetes unavailable"));
+
+    await reconcileWorkflowRunners();
+
+    expect(events).toContain(`ensure:${secondAttempt.attemptId}`);
+    expect(recordWorkflowRunnerPostMortem).not.toHaveBeenCalled();
+  });
+
+  it("captures the post-mortem before terminalizing a pre-payload stalled Pod", async () => {
+    // Ordering matters: terminalizing starts the cleanup that deletes the Pod
+    // the post-mortem reads.
+    ensureCurrentWorkflowRunnerResources.mockImplementationOnce((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "stalled", reason: "PodFailed" },
+        payloadIssuedAt: null,
+      });
+    });
+    failWorkflowRunnerResourceAttempt.mockImplementation(() => {
+      events.push("fail");
+      return Promise.resolve();
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(events.indexOf(`postmortem:read:${firstAttempt.attemptId}`)).toBeLessThan(
+      events.indexOf("fail"),
+    );
+  });
+
+  // Under restartPolicy Never a runner whose process returns 0 without sending
+  // a result lands in phase Succeeded, which startup classifies as running. It
+  // would otherwise stay that way on every pass, and its Pod and log would be
+  // deleted at lease-expiry cleanup, leaving the operator the bare "stopped
+  // renewing" notice this feature exists to replace.
+  it("captures the post-mortem for a runner that exited 0 without a result", async () => {
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "running", terminal: true },
+        payloadIssuedAt: new Date().toISOString(),
+      });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(events).toContain(`postmortem:read:${firstAttempt.attemptId}`);
+    expect(recordWorkflowRunnerPostMortem).toHaveBeenCalled();
+    // Still not a start failure: the payload was issued, so terminalizing here
+    // would replace the inspect-the-repository warning with "could not start".
+    expect(failWorkflowRunnerResourceAttempt).not.toHaveBeenCalled();
+  });
+
+  it("leaves a healthy running Pod alone", async () => {
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "running", terminal: false },
+        payloadIssuedAt: new Date().toISOString(),
+      });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(recordWorkflowRunnerPostMortem).not.toHaveBeenCalled();
   });
 
   it("skips lease work for an attempt that is no longer ready", async () => {

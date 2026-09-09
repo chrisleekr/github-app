@@ -228,7 +228,7 @@ describe("HandlerResultSchema daemon actions", () => {
 
 describe("workflow runner outbound bounds", () => {
   it("rejects controller-reserved state keys on every runner-owned state path", () => {
-    for (const key of ["_configNotice", "_lastHumanMessage"]) {
+    for (const key of ["_configNotice", "_lastHumanMessage", "_runnerPostMortem"]) {
       expect(() =>
         WorkflowRunnerCommandSchema.parse({
           type: "set-state",

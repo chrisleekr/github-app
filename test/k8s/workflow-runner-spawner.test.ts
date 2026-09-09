@@ -892,8 +892,17 @@ describe("workflow runner Pod startup classification", () => {
   });
 
   it("reads a started Pod as running", () => {
-    expect(classifyPodStartup({ status: { phase: "Running" } })).toEqual({ phase: "running" });
-    expect(classifyPodStartup({ status: { phase: "Succeeded" } })).toEqual({ phase: "running" });
+    expect(classifyPodStartup({ status: { phase: "Running" } })).toEqual({
+      phase: "running",
+      terminal: false,
+    });
+    // Succeeded is not a startup problem, but it is terminal: under
+    // restartPolicy Never nothing further will come from this Pod, which is
+    // what lets the reconciler catch a runner that exited 0 without a result.
+    expect(classifyPodStartup({ status: { phase: "Succeeded" } })).toEqual({
+      phase: "running",
+      terminal: true,
+    });
   });
 
   it("reads waiting reasons no retry resolves as stalled", () => {

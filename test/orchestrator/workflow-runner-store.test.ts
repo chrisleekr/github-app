@@ -639,6 +639,73 @@ describe.skipIf(sql === null)("workflow runner admission", () => {
     });
   });
 
+  it("records the runner Pod post-mortem exactly once per attempt", async () => {
+    // The reconciler runs every 30s against a Pod Kubernetes is collecting, so
+    // a last-write-wins update would replace the first, complete reading with a
+    // progressively emptier one.
+    const { claimWorkflowRunnerAttempt, recordWorkflowRunnerPostMortem } =
+      await import("../../src/orchestrator/workflow-runner-store");
+    const job = await queuedWorkflow(61);
+    const claim = await claimWorkflowRunnerAttempt(job, 600_000, 1, requireSql());
+    if (claim.outcome !== "claimed") throw new Error("Expected claim");
+
+    expect(
+      await recordWorkflowRunnerPostMortem(
+        claim.attempt,
+        { reason: "OOMKilled", exitCode: 137 },
+        requireSql(),
+      ),
+    ).toBe(true);
+    expect(
+      await recordWorkflowRunnerPostMortem(claim.attempt, { reason: "Error" }, requireSql()),
+    ).toBe(false);
+
+    const [row] = await requireSql()`
+      SELECT state->'_runnerPostMortem' AS post_mortem FROM workflow_runs
+       WHERE id = ${claim.attempt.runId}
+    `;
+    expect(row.post_mortem).toEqual({ reason: "OOMKilled", exitCode: 137 });
+  });
+
+  it("reports whether an attempt already has a post-mortem on record", async () => {
+    // Read before the two Kubernetes calls, so a stalled attempt left to lease
+    // expiry does not re-read its Pod and log on every 30s pass.
+    const {
+      claimWorkflowRunnerAttempt,
+      recordWorkflowRunnerPostMortem,
+      hasWorkflowRunnerPostMortem,
+    } = await import("../../src/orchestrator/workflow-runner-store");
+    const job = await queuedWorkflow(63);
+    const claim = await claimWorkflowRunnerAttempt(job, 600_000, 1, requireSql());
+    if (claim.outcome !== "claimed") throw new Error("Expected claim");
+
+    expect(await hasWorkflowRunnerPostMortem(claim.attempt, requireSql())).toBe(false);
+    await recordWorkflowRunnerPostMortem(claim.attempt, { reason: "OOMKilled" }, requireSql());
+    expect(await hasWorkflowRunnerPostMortem(claim.attempt, requireSql())).toBe(true);
+    expect(
+      await hasWorkflowRunnerPostMortem(
+        { runId: claim.attempt.runId, attemptId: crypto.randomUUID() },
+        requireSql(),
+      ),
+    ).toBe(false);
+  });
+
+  it("refuses a post-mortem aimed at a superseded attempt", async () => {
+    const { claimWorkflowRunnerAttempt, recordWorkflowRunnerPostMortem } =
+      await import("../../src/orchestrator/workflow-runner-store");
+    const job = await queuedWorkflow(62);
+    const claim = await claimWorkflowRunnerAttempt(job, 600_000, 1, requireSql());
+    if (claim.outcome !== "claimed") throw new Error("Expected claim");
+
+    expect(
+      await recordWorkflowRunnerPostMortem(
+        { runId: claim.attempt.runId, attemptId: crypto.randomUUID() },
+        { reason: "OOMKilled" },
+        requireSql(),
+      ),
+    ).toBe(false);
+  });
+
   it("extends a startup lease while the runner has not yet been handed its payload", async () => {
     // Regression: the startup lease is claimed before the Pod exists, so image
     // pull burns it. The reconciler extends on evidence the Pod is still coming

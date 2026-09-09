@@ -218,6 +218,38 @@ export async function notifyWorkflowAttemptFailures(
   }
 }
 
+// Shape of a kubelet reason: a short CamelCase identifier such as OOMKilled,
+// Error or Evicted. Checked rather than trusted, so a value that ever reached
+// this state key from somewhere other than the reconciler still cannot carry
+// markdown or an arbitrary-length body onto a public comment.
+const KUBELET_REASON = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
+
+/**
+ * One line naming the runner Pod's cause of death, when the reconciler caught
+ * it. Without it the reader gets "the runner stopped renewing" and no way to
+ * tell an OOMKill from a crash without cluster access the Pod no longer has.
+ *
+ * Deliberately only the kubelet reason and `exitCode`, both bounded enum-ish
+ * values. The terminated `message` and the log tail are repository content and
+ * stay in the controller log rather than on a public comment.
+ */
+function podPostMortemLine(row: WorkflowRunRow): string | null {
+  const raw = row.state["_runnerPostMortem"];
+  if (raw === null || typeof raw !== "object") return null;
+  const postMortem = raw as Record<string, unknown>;
+  // Container reason first: it is the specific verdict. `podReason` is the
+  // node-level one, the only place an ephemeral-storage eviction appears.
+  const reason = postMortem["reason"] ?? postMortem["podReason"];
+  const exitCode = postMortem["exitCode"];
+  const parts: string[] = [];
+  if (typeof reason === "string" && KUBELET_REASON.test(reason)) parts.push(reason);
+  if (typeof exitCode === "number" && Number.isInteger(exitCode)) {
+    parts.push(`exit code ${exitCode}`);
+  }
+  if (parts.length === 0) return null;
+  return `The runner Pod terminated: ${parts.join(", ")}. Container status and log tail are in the controller logs under \`event: "workflow_runner_pod_died"\`.`;
+}
+
 export async function notifyExpiredWorkflowAttempts(
   rows: readonly WorkflowRunRow[],
 ): Promise<void> {
@@ -234,6 +266,7 @@ export async function notifyExpiredWorkflowAttempts(
       // telling the reader to go inspect the repository is false and sends them
       // hunting for damage that cannot exist.
       const ranNothing = row.runner_payload_issued_at === null;
+      const postMortem = podPostMortemLine(row);
       return [
         deadlineExpired
           ? "❌ **Workflow execution deadline expired**"
@@ -243,6 +276,7 @@ export async function notifyExpiredWorkflowAttempts(
           ? "The immutable attempt deadline elapsed before completion was confirmed. The database marked the workflow failed and released its in-flight lock."
           : "The runner stopped renewing this attempt before completion was confirmed. The database marked the workflow failed and released its in-flight lock.",
         "",
+        ...(postMortem === null ? [] : [postMortem, ""]),
         ranNothing
           ? "The runner never started, so no repository or GitHub changes were made. Re-triggering the workflow is safe."
           : `External GitHub or git operations may have completed before the ${deadlineExpired ? "deadline" : "lease"} expired. Inspect the repository before re-triggering the workflow.`,
@@ -281,11 +315,19 @@ export async function notifyRunnerStartFailures(rows: readonly WorkflowRunRow[])
     humanMessage: (row) => {
       const reason = row.state["failedReason"];
       const detail = typeof reason === "string" ? reason : "Workflow runner configuration failed";
+      // The reconciler captures a post-mortem for every stalled attempt, and a
+      // pre-payload one lands here rather than in the expiry notice. Without
+      // this line a Pod that was OOMKilled before registering reads as
+      // "could not start: PodFailed" while the run row already holds the reason
+      // and exit code, which is the commonest shape for an under-resourced
+      // runner and the one an operator most needs named.
+      const postMortem = podPostMortemLine(row);
       return [
         "❌ **Workflow runner could not start**",
         "",
         `${detail}. The database marked the workflow failed and released its in-flight lock.`,
         "",
+        ...(postMortem === null ? [] : [postMortem, ""]),
         "Fix the runner deployment configuration, then re-trigger the workflow.",
       ].join("\n");
     },
