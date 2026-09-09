@@ -2549,8 +2549,39 @@
 <td><em>(empty)</em></td>
 <td>Name of an existing <code>kubernetes.io/dockerconfigjson</code> Secret in <code>WORKFLOW_RUNNER_NAMESPACE</code> that runner Pods may reference. Must match <code>runnerImagePullSecret</code> in the runner boundary ConfigMap. Empty emits no <code>imagePullSecrets</code>, which only works against a registry allowing anonymous pull.</td>
 </tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_CPU_REQUEST</code></td>
+<td><code>500m</code></td>
+<td>CPU the runner Pod reserves. Must match <code>runnerCpuRequest</code> in the runner boundary ConfigMap.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_MEMORY_REQUEST</code></td>
+<td><code>1Gi</code></td>
+<td>Memory the runner Pod reserves. Must match <code>runnerMemoryRequest</code> in the runner boundary ConfigMap.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_STORAGE_REQUEST</code></td>
+<td><code>2Gi</code></td>
+<td>Ephemeral storage the runner Pod reserves. Must match <code>runnerStorageRequest</code> in the runner boundary ConfigMap.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_CPU_LIMIT</code></td>
+<td><code>2</code></td>
+<td>CPU ceiling. Exceeding it throttles the runner rather than killing it. Must match <code>runnerCpuLimit</code> in the runner boundary ConfigMap.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_MEMORY_LIMIT</code></td>
+<td><code>4Gi</code></td>
+<td>Memory ceiling. Exceeding it OOMKills the runner mid-attempt, which surfaces as an expired lease unless the Pod post-mortem is read. Must match <code>runnerMemoryLimit</code> in the runner boundary ConfigMap.</td>
+</tr>
+<tr>
+<td><code>WORKFLOW_RUNNER_STORAGE_LIMIT</code></td>
+<td><code>10Gi</code></td>
+<td>Ephemeral storage ceiling, and the workspace <code>emptyDir</code> <code>sizeLimit</code>. Must match <code>runnerStorageLimit</code> in the runner boundary ConfigMap.</td>
+</tr>
 </tbody>
 </table>
+<p>The six runner quantities accept a narrower grammar than Kubernetes, and only in canonical form: CPU as whole cores or millicores (<code>2</code>, <code>500m</code>), memory and ephemeral storage as <code>Mi</code> or <code>Gi</code> (<code>512Mi</code>, <code>8Gi</code>). <code>4G</code>, <code>1.5</code> and <code>512Ki</code> are rejected, and so are <code>8192Mi</code>, <code>2000m</code> and <code>1000</code>, because the API server re-serializes those as <code>8Gi</code>, <code>2</code> and <code>1k</code>, while the spawner compares the returned Pod's resource strings byte for byte. A request above its matching limit is rejected too. Every one of these fails at startup naming the variable, rather than at Pod creation naming Pod identity.</p>
 <p>The following variables are internal to the Pod and are injected by <code>src/k8s/workflow-runner-spawner.ts</code>; operators must not set them on the controller or shared daemon Deployment.</p>
 <table>
 <thead>
@@ -2583,7 +2614,7 @@
 </tr>
 </tbody>
 </table>
-<p>The Pod also receives <code>ORCHESTRATOR_URL</code>, derived from <code>ORCHESTRATOR_PUBLIC_URL</code>, and <code>LD_PRELOAD</code> for the native process-boundary guard. It obtains the target-repository GitHub installation token and its expiry only after its first registration over WSS. That credential payload is recorded and sent at most once; reconnects restore controller access without resending it. The database claim fixes an immutable deadline 4,200 seconds after admission. Heartbeats cannot extend the lease past it, and execution stops at the earlier of that deadline or five minutes before the token expires. The Pod uses <code>restartPolicy: Never</code>, so a process failure becomes terminal rather than restarting after the one-time credential delivery. Each Pod has a 10 GiB <code>emptyDir</code> workspace and exact ephemeral-storage request/limit values of 2 GiB/10 GiB.</p>
+<p>The Pod also receives <code>ORCHESTRATOR_URL</code>, derived from <code>ORCHESTRATOR_PUBLIC_URL</code>, and <code>LD_PRELOAD</code> for the native process-boundary guard. It obtains the target-repository GitHub installation token and its expiry only after its first registration over WSS. That credential payload is recorded and sent at most once; reconnects restore controller access without resending it. The database claim fixes an immutable deadline 4,200 seconds after admission. Heartbeats cannot extend the lease past it, and execution stops at the earlier of that deadline or five minutes before the token expires. The Pod uses <code>restartPolicy: Never</code>, so a process failure becomes terminal rather than restarting after the one-time credential delivery. The <code>emptyDir</code> workspace <code>sizeLimit</code> and the ephemeral-storage request and limit follow <code>WORKFLOW_RUNNER_STORAGE_REQUEST</code> and <code>WORKFLOW_RUNNER_STORAGE_LIMIT</code> above, defaulting to 2 GiB and 10 GiB.</p>
 <h2 id="triage">Triage<a class="headerlink" href="#triage" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2951,7 +2982,7 @@ before committing:</p>
    no schema change needed.</li>
 </ol>
 <h2 id="prompt-cache-layout">Prompt cache layout<a class="headerlink" href="#prompt-cache-layout" title="Permanent link">&para;</a></h2>
-<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:675#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:231#useCacheableLayout</code> for the runtime guard.</p>
+<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:762#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:231#useCacheableLayout</code> for the runtime guard.</p>
 <table>
 <thead>
 <tr>
