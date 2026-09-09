@@ -322,6 +322,26 @@ describe("workflow expiry notifier", () => {
     expect(markWorkflowFailureNotified).toHaveBeenCalledTimes(1);
   });
 
+  // The reconciler captures a post-mortem for every stalled attempt, and a
+  // pre-payload one is terminalized here rather than at lease expiry. Without
+  // this the comment reads "could not start: PodFailed" while the run row
+  // already holds OOMKilled and exit 137, the commonest under-resourced shape.
+  it("names the Pod's cause of death on a runner-start failure", async () => {
+    const failed = row("failed", null, "Runner Pod could not start: PodFailed");
+    failed.state = {
+      failedReason: "Runner Pod could not start: PodFailed",
+      _runnerPostMortem: { reason: "OOMKilled", exitCode: 137, logTail: "secret repo content" },
+    };
+
+    await notifyRunnerStartFailures([failed] as never);
+
+    const call = setState.mock.calls[0] as unknown as [unknown, { humanMessage: string }];
+    expect(call[1].humanMessage).toContain("OOMKilled");
+    expect(call[1].humanMessage).toContain("exit code 137");
+    // Repository content stays in the controller log, never on a public comment.
+    expect(call[1].humanMessage).not.toContain("secret repo content");
+  });
+
   it("projects and receipts a queued dispatch expiry", async () => {
     const failed = row("dispatch-expired", null, "workflow dispatch deadline expired");
     failed.attempt_id = null;

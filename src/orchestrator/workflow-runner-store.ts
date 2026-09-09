@@ -772,18 +772,6 @@ export async function extendWorkflowRunnerStartupLease(
 }
 
 /**
- * Record why the runner Pod died, once per attempt.
- *
- * Fenced on the key being absent, so the 30s reconcile loop stores the first
- * reading instead of overwriting it with a progressively emptier one as
- * Kubernetes garbage-collects the Pod, and on `attempt_id`, so a superseded
- * attempt cannot stamp the current one. True only for the write that landed,
- * which is also the caller's cue to emit the log line exactly once.
- *
- * `jsonb_exists` rather than the `?` operator: `?` is a placeholder marker in
- * enough SQL layers that the function form is the safer spelling here.
- */
-/**
  * Whether this attempt already has a post-mortem on record.
  *
  * Consulted before the two Kubernetes reads, which is the only reason it exists:
@@ -805,6 +793,18 @@ export async function hasWorkflowRunnerPostMortem(
   return rows[0]?.present === true;
 }
 
+/**
+ * Record why the runner Pod died, once per attempt.
+ *
+ * Fenced on the key being absent, so the 30s reconcile loop stores the first
+ * reading instead of overwriting it with a progressively emptier one as
+ * Kubernetes garbage-collects the Pod, and on `attempt_id`, so a superseded
+ * attempt cannot stamp the current one. True only for the write that landed,
+ * which is also the caller's cue to emit the log line exactly once.
+ *
+ * `jsonb_exists` rather than the `?` operator: `?` is a placeholder marker in
+ * enough SQL layers that the function form is the safer spelling here.
+ */
 export async function recordWorkflowRunnerPostMortem(
   attempt: { readonly runId: string; readonly attemptId: string },
   postMortem: Record<string, unknown>,

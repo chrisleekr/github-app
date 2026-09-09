@@ -10,6 +10,7 @@ const readNamespacedPodLog = mock(
     container?: string;
     tailLines?: number;
     limitBytes?: number;
+    previous?: boolean;
   }): Promise<string> => Promise.resolve(""),
 );
 const core = { readNamespacedPod, readNamespacedPodLog };
@@ -200,6 +201,49 @@ describe("readWorkflowRunnerPostMortem", () => {
     expect(postMortem?.logError).toContain("403");
   });
 
+  // A cut at a fixed code-unit index can split an astral character. The lone
+  // surrogate left behind is escaped by JSON.stringify as \udXXX, which
+  // Postgres rejects on the jsonb cast, and the caller swallows the throw
+  // without closing its one-shot fence: the post-mortem is then lost for every
+  // pass, on exactly the runs with the most log to show.
+  it("stores a well-formed tail when the cut splits an astral character", async () => {
+    readNamespacedPod.mockImplementation(() => Promise.resolve(oomKilledPod()));
+    // One emoji is two code units. Padding to an odd offset from the cut point
+    // guarantees the 16384-from-the-end boundary lands between them.
+    readNamespacedPodLog.mockImplementation(() =>
+      Promise.resolve(`${"o".repeat(4_000)}\u{1F50D}${"y".repeat(16_383)}`),
+    );
+
+    const postMortem = await readWorkflowRunnerPostMortem({ attemptId });
+    const tail = postMortem?.logTail ?? "";
+
+    expect(tail.length).toBe(16_384);
+    // The real assertion: it survives the round trip the store performs.
+    expect(() => JSON.parse(JSON.stringify({ logTail: tail }))).not.toThrow();
+    expect(/[\uD800-\uDFFF]/.test(tail)).toBe(false);
+    expect(JSON.stringify(tail)).not.toContain("\\ud");
+  });
+
+  // `limitBytes` stops the server partway through a window that starts at the
+  // oldest of the 200 lines, so hitting it means the final lines were never
+  // sent and the tail is from the middle of the run.
+  it("reports that the transfer ceiling cut the log short", async () => {
+    readNamespacedPod.mockImplementation(() => Promise.resolve(oomKilledPod()));
+    readNamespacedPodLog.mockImplementation(() => Promise.resolve("z".repeat(262_144)));
+
+    const postMortem = await readWorkflowRunnerPostMortem({ attemptId });
+
+    expect(postMortem?.logTail.length).toBe(16_384);
+    expect(postMortem?.logError).toContain("transfer ceiling");
+  });
+
+  it("leaves logError null when the log fits under the ceiling", async () => {
+    readNamespacedPod.mockImplementation(() => Promise.resolve(oomKilledPod()));
+    readNamespacedPodLog.mockImplementation(() => Promise.resolve("short log\n"));
+
+    expect((await readWorkflowRunnerPostMortem({ attemptId }))?.logError).toBeNull();
+  });
+
   it("falls back to lastState for a container kubelet already replaced", async () => {
     readNamespacedPod.mockImplementation(() =>
       Promise.resolve({
@@ -220,6 +264,18 @@ describe("readWorkflowRunnerPostMortem", () => {
 
     expect(postMortem?.exitCode).toBe(1);
     expect(postMortem?.reason).toBe("Error");
+    // The verdict belongs to the container kubelet replaced, so the log must
+    // come from that container too. Without `previous`, the record would pair
+    // one container's exit code with another container's output.
+    expect(readNamespacedPodLog.mock.calls[0]?.[0]).toMatchObject({ previous: true });
+  });
+
+  it("reads the live container's log when the verdict is its own", async () => {
+    readNamespacedPod.mockImplementation(() => Promise.resolve(oomKilledPod()));
+
+    await readWorkflowRunnerPostMortem({ attemptId });
+
+    expect(readNamespacedPodLog.mock.calls[0]?.[0]).not.toHaveProperty("previous");
   });
 
   it("returns null once the Pod is gone", async () => {

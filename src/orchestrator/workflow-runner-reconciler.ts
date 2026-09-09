@@ -26,17 +26,6 @@ import {
 } from "./workflow-runner-store";
 
 /**
- * Persist and log why the runner Pod died, at most once per attempt.
- *
- * This is the only durable record. The Pod, its terminated container status and
- * its logs are deleted on cleanup, so by the time anyone reads the failure
- * comment there is nothing left to inspect, and "the runner stopped renewing"
- * cannot distinguish an OOMKill from a crash from a node eviction.
- *
- * Never throws: a post-mortem that cannot be read must not derail the failure
- * path that prompted it.
- */
-/**
  * Whether the reading says anything the failure comment or an operator could
  * use. A pass that catches the Pod before kubelet has written any status reads
  * all nulls, and the store keeps the first write forever, so recording that
@@ -51,6 +40,17 @@ function isInformative(postMortem: RunnerPodPostMortem): boolean {
   );
 }
 
+/**
+ * Persist and log why the runner Pod died, at most once per attempt.
+ *
+ * This is the only durable record. The Pod, its terminated container status and
+ * its logs are deleted on cleanup, so by the time anyone reads the failure
+ * comment there is nothing left to inspect, and "the runner stopped renewing"
+ * cannot distinguish an OOMKill from a crash from a node eviction.
+ *
+ * Never throws: a post-mortem that cannot be read must not derail the failure
+ * path that prompted it.
+ */
 async function capturePodPostMortem(
   attempt: WorkflowRunnerAttempt,
   startupReason: string,

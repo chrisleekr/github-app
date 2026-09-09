@@ -315,11 +315,19 @@ export async function notifyRunnerStartFailures(rows: readonly WorkflowRunRow[])
     humanMessage: (row) => {
       const reason = row.state["failedReason"];
       const detail = typeof reason === "string" ? reason : "Workflow runner configuration failed";
+      // The reconciler captures a post-mortem for every stalled attempt, and a
+      // pre-payload one lands here rather than in the expiry notice. Without
+      // this line a Pod that was OOMKilled before registering reads as
+      // "could not start: PodFailed" while the run row already holds the reason
+      // and exit code, which is the commonest shape for an under-resourced
+      // runner and the one an operator most needs named.
+      const postMortem = podPostMortemLine(row);
       return [
         "❌ **Workflow runner could not start**",
         "",
         `${detail}. The database marked the workflow failed and released its in-flight lock.`,
         "",
+        ...(postMortem === null ? [] : [postMortem, ""]),
         "Fix the runner deployment configuration, then re-trigger the workflow.",
       ].join("\n");
     },
