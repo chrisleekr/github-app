@@ -114,6 +114,15 @@ data:
   runnerNodeLabel: "REPLACE_WITH_WORKFLOW_RUNNER_NODE_LABEL"
   runnerNodeValue: "REPLACE_WITH_WORKFLOW_RUNNER_NODE_VALUE"
   runnerImagePullSecret: "REPLACE_WITH_RUNNER_IMAGE_PULL_SECRET_OR_EMPTY"
+  # Sourced from the spawner constants, so the quantities the policy pins and the
+  # ones the Pod carries are the same values. Changing either alone denies every
+  # runner Pod.
+  runnerCpuRequest: "REPLACE_WITH_RUNNER_CPU_REQUEST"
+  runnerMemoryRequest: "REPLACE_WITH_RUNNER_MEMORY_REQUEST"
+  runnerStorageRequest: "REPLACE_WITH_RUNNER_STORAGE_REQUEST"
+  runnerCpuLimit: "REPLACE_WITH_RUNNER_CPU_LIMIT"
+  runnerMemoryLimit: "REPLACE_WITH_RUNNER_MEMORY_LIMIT"
+  runnerStorageLimit: "REPLACE_WITH_RUNNER_STORAGE_LIMIT"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
@@ -176,8 +185,14 @@ spec:
       message: Workflow runner name and labels must carry one exact v4 attempt identity.
     - expression: >-
         has(params.data) &&
-        size(params.data) == 13 &&
+        size(params.data) == 19 &&
         'runnerImagePullSecret' in params.data &&
+        'runnerCpuRequest' in params.data && isQuantity(params.data['runnerCpuRequest']) &&
+        'runnerMemoryRequest' in params.data && isQuantity(params.data['runnerMemoryRequest']) &&
+        'runnerStorageRequest' in params.data && isQuantity(params.data['runnerStorageRequest']) &&
+        'runnerCpuLimit' in params.data && isQuantity(params.data['runnerCpuLimit']) &&
+        'runnerMemoryLimit' in params.data && isQuantity(params.data['runnerMemoryLimit']) &&
+        'runnerStorageLimit' in params.data && isQuantity(params.data['runnerStorageLimit']) &&
         'runnerNodeLabel' in params.data && params.data['runnerNodeLabel'] != '' &&
         'runnerNodeValue' in params.data && params.data['runnerNodeValue'] != '' &&
         'runnerImage' in params.data &&
@@ -226,7 +241,7 @@ spec:
         (!has(variables.podSpec.volumes[0].emptyDir.medium) ||
          variables.podSpec.volumes[0].emptyDir.medium == '') &&
         quantity(variables.podSpec.volumes[0].emptyDir.sizeLimit).compareTo(
-          quantity('10Gi')) == 0
+          quantity(params.data['runnerStorageLimit'])) == 0
       message: Workflow runner Pods may use only the size-limited workspace volume.
     - expression: >-
         variables.podSpec.restartPolicy == 'Never' &&
@@ -348,21 +363,25 @@ spec:
         has(variables.runner.resources.requests) &&
         size(variables.runner.resources.requests) == 3 &&
         'cpu' in variables.runner.resources.requests &&
-        quantity(variables.runner.resources.requests['cpu']).compareTo(quantity('500m')) == 0 &&
+        quantity(variables.runner.resources.requests['cpu']).compareTo(
+          quantity(params.data['runnerCpuRequest'])) == 0 &&
         'memory' in variables.runner.resources.requests &&
-        quantity(variables.runner.resources.requests['memory']).compareTo(quantity('1Gi')) == 0 &&
+        quantity(variables.runner.resources.requests['memory']).compareTo(
+          quantity(params.data['runnerMemoryRequest'])) == 0 &&
         'ephemeral-storage' in variables.runner.resources.requests &&
         quantity(variables.runner.resources.requests['ephemeral-storage']).compareTo(
-          quantity('2Gi')) == 0 &&
+          quantity(params.data['runnerStorageRequest'])) == 0 &&
         has(variables.runner.resources.limits) &&
         size(variables.runner.resources.limits) == 3 &&
         'cpu' in variables.runner.resources.limits &&
-        quantity(variables.runner.resources.limits['cpu']).compareTo(quantity('2')) == 0 &&
+        quantity(variables.runner.resources.limits['cpu']).compareTo(
+          quantity(params.data['runnerCpuLimit'])) == 0 &&
         'memory' in variables.runner.resources.limits &&
-        quantity(variables.runner.resources.limits['memory']).compareTo(quantity('4Gi')) == 0 &&
+        quantity(variables.runner.resources.limits['memory']).compareTo(
+          quantity(params.data['runnerMemoryLimit'])) == 0 &&
         'ephemeral-storage' in variables.runner.resources.limits &&
         quantity(variables.runner.resources.limits['ephemeral-storage']).compareTo(
-          quantity('10Gi')) == 0
+          quantity(params.data['runnerStorageLimit'])) == 0
       message: Workflow runner resource requests and limits are immutable.
     - expression: >-
         size(variables.runner.env) == size(variables.expectedEnvNames) &&

@@ -43,6 +43,15 @@ const testConfig = {
   // the nodeSelector and toleration follow configuration, not a literal.
   workflowRunnerNodeLabel: "node.homelab/class",
   workflowRunnerNodeValue: "worker",
+  // Same reason: non-default quantities prove the Pod's resource block and the
+  // workspace sizeLimit follow configuration rather than literals the admission
+  // boundary would then disagree with.
+  workflowRunnerCpuRequest: "250m",
+  workflowRunnerMemoryRequest: "512Mi",
+  workflowRunnerStorageRequest: "3Gi",
+  workflowRunnerCpuLimit: "4",
+  workflowRunnerMemoryLimit: "8Gi",
+  workflowRunnerStorageLimit: "12Gi",
   provider: "anthropic" as "anthropic" | "bedrock",
   model: "claude-test",
   anthropicApiKey: "configured",
@@ -282,7 +291,7 @@ describe("workflow runner Pod boundary", () => {
       runAsGroup: 1000,
       seccompProfile: { type: "RuntimeDefault" },
     });
-    expect(pod.spec.volumes).toEqual([{ name: "workspace", emptyDir: { sizeLimit: "10Gi" } }]);
+    expect(pod.spec.volumes).toEqual([{ name: "workspace", emptyDir: { sizeLimit: "12Gi" } }]);
     const runner = pod.spec.containers[0];
     if (runner === undefined) throw new Error("Expected runner container");
     expect(runner.name).toBe("runner");
@@ -294,8 +303,8 @@ describe("workflow runner Pod boundary", () => {
     });
     expect(runner.volumeMounts).toEqual([{ name: "workspace", mountPath: "/tmp/bot-workspaces" }]);
     expect(runner.resources).toEqual({
-      requests: { cpu: "500m", memory: "1Gi", "ephemeral-storage": "2Gi" },
-      limits: { cpu: "2", memory: "4Gi", "ephemeral-storage": "10Gi" },
+      requests: { cpu: "250m", memory: "512Mi", "ephemeral-storage": "3Gi" },
+      limits: { cpu: "4", memory: "8Gi", "ephemeral-storage": "12Gi" },
     });
     expect(runner.envFrom).toBeUndefined();
     const env = new Map(runner.env.map((entry) => [entry["name"], entry]));

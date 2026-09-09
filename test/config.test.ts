@@ -33,6 +33,76 @@ const BEDROCK_BASE = {
   model: "anthropic.claude-3-5-haiku-20241022-v1:0",
 };
 
+describe("configSchema: workflow runner resource quantities", () => {
+  it("defaults to the quantities the admission boundary pins", () => {
+    const result = configSchema.safeParse({ ...ANTHROPIC_BASE });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.workflowRunnerCpuRequest).toBe("500m");
+    expect(result.data.workflowRunnerMemoryRequest).toBe("1Gi");
+    expect(result.data.workflowRunnerStorageRequest).toBe("2Gi");
+    expect(result.data.workflowRunnerCpuLimit).toBe("2");
+    expect(result.data.workflowRunnerMemoryLimit).toBe("4Gi");
+    expect(result.data.workflowRunnerStorageLimit).toBe("10Gi");
+  });
+
+  it("accepts a canonical override", () => {
+    const result = configSchema.safeParse({ ...ANTHROPIC_BASE, workflowRunnerMemoryLimit: "8Gi" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.workflowRunnerMemoryLimit).toBe("8Gi");
+  });
+
+  // The API server re-serializes 8192Mi as 8Gi and 2000m as 2, and the spawner
+  // compares the returned Pod's resource strings byte for byte, so a
+  // non-canonical spelling would terminalize every attempt with a message about
+  // Pod identity instead of about the variable that caused it.
+  it.each([
+    ["workflowRunnerMemoryLimit", "8192Mi", "WORKFLOW_RUNNER_MEMORY_LIMIT"],
+    ["workflowRunnerStorageLimit", "1024Mi", "WORKFLOW_RUNNER_STORAGE_LIMIT"],
+    ["workflowRunnerCpuLimit", "2000m", "WORKFLOW_RUNNER_CPU_LIMIT"],
+  ])("rejects the non-canonical %s value %s", (key, value, envVar) => {
+    const result = configSchema.safeParse({ ...ANTHROPIC_BASE, [key]: value });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.path[0] === key);
+    expect(issue?.message).toContain(envVar);
+    expect(issue?.message).toContain("canonical");
+  });
+
+  it.each([
+    ["workflowRunnerCpuRequest", "1.5"],
+    ["workflowRunnerMemoryRequest", "4G"],
+    ["workflowRunnerStorageRequest", "512Ki"],
+  ])("rejects %s=%s, a shape the boundary does not pin", (key, value) => {
+    expect(configSchema.safeParse({ ...ANTHROPIC_BASE, [key]: value }).success).toBe(false);
+  });
+
+  // The API server refuses this Pod, which the spawner classifies permanent, so
+  // every attempt dies naming Pod creation rather than the two variables.
+  it("rejects a request above its limit", () => {
+    const result = configSchema.safeParse({
+      ...ANTHROPIC_BASE,
+      workflowRunnerMemoryRequest: "8Gi",
+      workflowRunnerMemoryLimit: "4Gi",
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.path[0] === "workflowRunnerMemoryLimit");
+    expect(issue?.message).toBe(
+      "WORKFLOW_RUNNER_MEMORY_REQUEST must not exceed WORKFLOW_RUNNER_MEMORY_LIMIT",
+    );
+  });
+
+  it("allows a request equal to its limit", () => {
+    const result = configSchema.safeParse({
+      ...ANTHROPIC_BASE,
+      workflowRunnerCpuRequest: "2",
+      workflowRunnerCpuLimit: "2",
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
 describe("configSchema: Anthropic provider", () => {
   it("parses successfully with an API key", () => {
     const result = configSchema.safeParse({ ...ANTHROPIC_BASE });

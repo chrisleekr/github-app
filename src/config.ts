@@ -100,6 +100,54 @@ const shipForbiddenTargetBranchesField = z
   });
 
 /**
+ * Kubernetes resource quantities for the workflow-runner Pod. Only the two
+ * shapes the admission boundary pins are accepted: CPU as cores or millicores,
+ * memory and ephemeral storage as Mi or Gi.
+ *
+ * Canonical spellings only, which is the part that is easy to get wrong. The API
+ * server re-serializes a quantity with the largest suffix that loses no
+ * precision, so it hands back `1Gi` for `1024Mi` and `2` for `2000m`, while
+ * `buildWorkflowRunnerPod`'s boundary check compares the returned strings byte
+ * for byte. A non-canonical spelling therefore fails on the created Pod, is
+ * classified permanent, and terminalizes every attempt with a message about Pod
+ * identity rather than about the variable that caused it. Rejecting it here
+ * costs a startup failure that names the variable.
+ */
+function cpuQuantity(envVar: string, fallback: string): z.ZodDefault<z.ZodString> {
+  return z
+    .string()
+    .trim()
+    .regex(/^[1-9][0-9]*m?$/, `${envVar} must be whole cores (e.g. 2) or millicores (e.g. 500m)`)
+    .refine(
+      (value) => !value.endsWith("m") || Number(value.slice(0, -1)) % 1000 !== 0,
+      `${envVar} must be canonical: Kubernetes rewrites a whole-core millicore value, so use 2 rather than 2000m`,
+    )
+    .default(fallback);
+}
+
+function byteQuantity(envVar: string, fallback: string): z.ZodDefault<z.ZodString> {
+  return z
+    .string()
+    .trim()
+    .regex(/^[1-9][0-9]*(Mi|Gi)$/, `${envVar} must be Mi or Gi (e.g. 512Mi, 4Gi)`)
+    .refine(
+      (value) => Number(value.slice(0, -2)) % 1024 !== 0,
+      `${envVar} must be canonical: Kubernetes rewrites a multiple of 1024 to the next suffix, so use 8Gi rather than 8192Mi`,
+    )
+    .default(fallback);
+}
+
+/** Millicores, for comparing a CPU request against its limit. */
+function cpuMillis(value: string): number {
+  return value.endsWith("m") ? Number(value.slice(0, -1)) : Number(value) * 1000;
+}
+
+/** Mebibytes, for comparing a memory or storage request against its limit. */
+function byteMebis(value: string): number {
+  return Number(value.slice(0, -2)) * (value.endsWith("Gi") ? 1024 : 1);
+}
+
+/**
  * Zod-validated environment variables.
  * Fails fast at startup if required vars are missing.
  */
@@ -518,6 +566,15 @@ const configSchema = z
     // secret, which only works against a registry allowing anonymous pull.
     workflowRunnerImagePullSecret: z.string().trim().default(""),
 
+    // Pinned by the admission boundary from the same chart values, so the Pod the
+    // controller builds and the quantities the policy asserts cannot drift.
+    workflowRunnerCpuRequest: cpuQuantity("WORKFLOW_RUNNER_CPU_REQUEST", "500m"),
+    workflowRunnerMemoryRequest: byteQuantity("WORKFLOW_RUNNER_MEMORY_REQUEST", "1Gi"),
+    workflowRunnerStorageRequest: byteQuantity("WORKFLOW_RUNNER_STORAGE_REQUEST", "2Gi"),
+    workflowRunnerCpuLimit: cpuQuantity("WORKFLOW_RUNNER_CPU_LIMIT", "2"),
+    workflowRunnerMemoryLimit: byteQuantity("WORKFLOW_RUNNER_MEMORY_LIMIT", "4Gi"),
+    workflowRunnerStorageLimit: byteQuantity("WORKFLOW_RUNNER_STORAGE_LIMIT", "10Gi"),
+
     // Container image the orchestrator launches for ephemeral daemons. Should
     // match the tag the persistent daemon Deployment is running. Optional at
     // startup, only required when an ephemeral spawn is actually triggered;
@@ -798,6 +855,7 @@ const configSchema = z
     validateProviderCredentials(data, ctx);
     validateDataLayerConfig(data, ctx);
     validateWorkerNamespaces(data, ctx);
+    validateRunnerResourceOrdering(data, ctx);
   })
   // Runs only if .superRefine added no issues, so by this point:
   //   - provider=bedrock guarantees data.model is defined
@@ -1001,6 +1059,59 @@ function validateWorkerNamespaces(
   });
 }
 
+/**
+ * A request above its limit is refused by the API server, not by the admission
+ * boundary, so it surfaces as a permanent Pod-creation failure on every attempt
+ * with nothing naming the two variables that disagree. Both accepted shapes
+ * reduce to a number, so the pair is comparable here.
+ */
+function validateRunnerResourceOrdering(
+  data: {
+    workflowRunnerCpuRequest: string;
+    workflowRunnerCpuLimit: string;
+    workflowRunnerMemoryRequest: string;
+    workflowRunnerMemoryLimit: string;
+    workflowRunnerStorageRequest: string;
+    workflowRunnerStorageLimit: string;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const pairs = [
+    [
+      "CPU",
+      "workflowRunnerCpuLimit",
+      cpuMillis(data.workflowRunnerCpuRequest),
+      cpuMillis(data.workflowRunnerCpuLimit),
+      "WORKFLOW_RUNNER_CPU_REQUEST",
+      "WORKFLOW_RUNNER_CPU_LIMIT",
+    ],
+    [
+      "MEMORY",
+      "workflowRunnerMemoryLimit",
+      byteMebis(data.workflowRunnerMemoryRequest),
+      byteMebis(data.workflowRunnerMemoryLimit),
+      "WORKFLOW_RUNNER_MEMORY_REQUEST",
+      "WORKFLOW_RUNNER_MEMORY_LIMIT",
+    ],
+    [
+      "STORAGE",
+      "workflowRunnerStorageLimit",
+      byteMebis(data.workflowRunnerStorageRequest),
+      byteMebis(data.workflowRunnerStorageLimit),
+      "WORKFLOW_RUNNER_STORAGE_REQUEST",
+      "WORKFLOW_RUNNER_STORAGE_LIMIT",
+    ],
+  ] as const;
+  for (const [, path, request, limit, requestVar, limitVar] of pairs) {
+    if (request <= limit) continue;
+    ctx.addIssue({
+      code: "custom",
+      message: `${requestVar} must not exceed ${limitVar}`,
+      path: [path],
+    });
+  }
+}
+
 export type Config = z.infer<typeof configSchema>;
 
 // Export schema for use in tests (avoids importing the singleton which runs loadConfig())
@@ -1197,6 +1308,12 @@ function loadConfig(): Config {
     workflowRunnerNodeLabel: process.env["WORKFLOW_RUNNER_NODE_LABEL"],
     workflowRunnerNodeValue: process.env["WORKFLOW_RUNNER_NODE_VALUE"],
     workflowRunnerImagePullSecret: process.env["WORKFLOW_RUNNER_IMAGE_PULL_SECRET"],
+    workflowRunnerCpuRequest: process.env["WORKFLOW_RUNNER_CPU_REQUEST"],
+    workflowRunnerMemoryRequest: process.env["WORKFLOW_RUNNER_MEMORY_REQUEST"],
+    workflowRunnerStorageRequest: process.env["WORKFLOW_RUNNER_STORAGE_REQUEST"],
+    workflowRunnerCpuLimit: process.env["WORKFLOW_RUNNER_CPU_LIMIT"],
+    workflowRunnerMemoryLimit: process.env["WORKFLOW_RUNNER_MEMORY_LIMIT"],
+    workflowRunnerStorageLimit: process.env["WORKFLOW_RUNNER_STORAGE_LIMIT"],
     daemonImage: process.env["DAEMON_IMAGE"],
     orchestratorPublicUrl: process.env["ORCHESTRATOR_PUBLIC_URL"],
 
