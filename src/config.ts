@@ -106,21 +106,32 @@ const shipForbiddenTargetBranchesField = z
  *
  * Canonical spellings only, which is the part that is easy to get wrong. The API
  * server re-serializes a quantity with the largest suffix that loses no
- * precision, so it hands back `1Gi` for `1024Mi` and `2` for `2000m`, while
- * `buildWorkflowRunnerPod`'s boundary check compares the returned strings byte
- * for byte. A non-canonical spelling therefore fails on the created Pod, is
- * classified permanent, and terminalizes every attempt with a message about Pod
- * identity rather than about the variable that caused it. Rejecting it here
- * costs a startup failure that names the variable.
+ * precision, so it hands back `1Gi` for `1024Mi`, `2` for `2000m` and `1k` for
+ * `1000`, while `buildWorkflowRunnerPod`'s boundary check compares the returned
+ * strings byte for byte. A non-canonical spelling therefore fails on the created
+ * Pod, is classified permanent, and terminalizes every attempt with a message
+ * about Pod identity rather than about the variable that caused it. Rejecting it
+ * here costs a startup failure that names the variable.
  */
+const CPU_SHAPE = /^([1-9][0-9]*)(m?)$/;
+const BYTE_SHAPE = /^([1-9][0-9]*)(Mi|Gi)$/;
+
 function cpuQuantity(envVar: string, fallback: string): z.ZodDefault<z.ZodString> {
   return z
     .string()
     .trim()
-    .regex(/^[1-9][0-9]*m?$/, `${envVar} must be whole cores (e.g. 2) or millicores (e.g. 500m)`)
+    .regex(CPU_SHAPE, `${envVar} must be whole cores (e.g. 2) or millicores (e.g. 500m)`)
     .refine(
-      (value) => !value.endsWith("m") || Number(value.slice(0, -1)) % 1000 !== 0,
-      `${envVar} must be canonical: Kubernetes rewrites a whole-core millicore value, so use 2 rather than 2000m`,
+      // Kubernetes' own canonicality test for a decimal quantity, verbatim: it
+      // reuses the input string only when the digit run does not end in "000"
+      // (apimachinery pkg/api/resource/quantity.go, ParseQuantity). So the rule
+      // is the same for both suffixes, `2000m` becomes `2` and `1000` becomes
+      // `1k`. A string test also has no numeric range to overflow.
+      //
+      // A failed `.regex` above does not stop this check from running, so the
+      // guard keeps a malformed value from being reported twice.
+      (value) => !CPU_SHAPE.test(value) || !value.replace(/m$/, "").endsWith("000"),
+      `${envVar} must be canonical: Kubernetes rewrites a digit run ending in 000, storing 2000m as 2 and 1000 as 1k`,
     )
     .default(fallback);
 }
@@ -129,22 +140,33 @@ function byteQuantity(envVar: string, fallback: string): z.ZodDefault<z.ZodStrin
   return z
     .string()
     .trim()
-    .regex(/^[1-9][0-9]*(Mi|Gi)$/, `${envVar} must be Mi or Gi (e.g. 512Mi, 4Gi)`)
-    .refine(
-      (value) => Number(value.slice(0, -2)) % 1024 !== 0,
-      `${envVar} must be canonical: Kubernetes rewrites a multiple of 1024 to the next suffix, so use 8Gi rather than 8192Mi`,
-    )
+    .regex(BYTE_SHAPE, `${envVar} must be Mi or Gi (e.g. 512Mi, 4Gi)`)
+    .refine((value) => {
+      // Exact arithmetic: a mantissa past 2^53 would compare equal to its
+      // neighbour under `Number`. Guarded for the same reason as above, and
+      // because `BigInt` throws on a non-numeric string where `Number` did not.
+      const match = BYTE_SHAPE.exec(value);
+      return match?.[1] === undefined || BigInt(match[1]) % 1024n !== 0n;
+    }, `${envVar} must be canonical: Kubernetes rewrites a multiple of 1024 to the next suffix, so use 8Gi rather than 8192Mi`)
     .default(fallback);
 }
 
-/** Millicores, for comparing a CPU request against its limit. */
-function cpuMillis(value: string): number {
-  return value.endsWith("m") ? Number(value.slice(0, -1)) : Number(value) * 1000;
+/**
+ * Millicores, for comparing a CPU request against its limit. Null when the value
+ * is not a shape this schema accepts, which happens because a field-level
+ * failure does not stop the object-level `superRefine` from running.
+ */
+function cpuMillis(value: string): bigint | null {
+  const match = CPU_SHAPE.exec(value);
+  if (match?.[1] === undefined) return null;
+  return match[2] === "m" ? BigInt(match[1]) : BigInt(match[1]) * 1000n;
 }
 
 /** Mebibytes, for comparing a memory or storage request against its limit. */
-function byteMebis(value: string): number {
-  return Number(value.slice(0, -2)) * (value.endsWith("Gi") ? 1024 : 1);
+function byteMebis(value: string): bigint | null {
+  const match = BYTE_SHAPE.exec(value);
+  if (match?.[1] === undefined) return null;
+  return BigInt(match[1]) * (match[2] === "Gi" ? 1024n : 1n);
 }
 
 /**
@@ -1063,7 +1085,12 @@ function validateWorkerNamespaces(
  * A request above its limit is refused by the API server, not by the admission
  * boundary, so it surfaces as a permanent Pod-creation failure on every attempt
  * with nothing naming the two variables that disagree. Both accepted shapes
- * reduce to a number, so the pair is comparable here.
+ * reduce to an exact integer, so the pair is comparable here.
+ *
+ * A field that failed its own shape check still arrives here, because zod runs
+ * an object-level `superRefine` regardless. Such a pair is skipped: the
+ * field-level message already names the variable, and comparing it would add a
+ * second, misleading issue about an ordering nobody expressed.
  */
 function validateRunnerResourceOrdering(
   data: {
@@ -1077,32 +1104,30 @@ function validateRunnerResourceOrdering(
   ctx: z.RefinementCtx,
 ): void {
   const pairs = [
-    [
-      "CPU",
-      "workflowRunnerCpuLimit",
-      cpuMillis(data.workflowRunnerCpuRequest),
-      cpuMillis(data.workflowRunnerCpuLimit),
-      "WORKFLOW_RUNNER_CPU_REQUEST",
-      "WORKFLOW_RUNNER_CPU_LIMIT",
-    ],
-    [
-      "MEMORY",
-      "workflowRunnerMemoryLimit",
-      byteMebis(data.workflowRunnerMemoryRequest),
-      byteMebis(data.workflowRunnerMemoryLimit),
-      "WORKFLOW_RUNNER_MEMORY_REQUEST",
-      "WORKFLOW_RUNNER_MEMORY_LIMIT",
-    ],
-    [
-      "STORAGE",
-      "workflowRunnerStorageLimit",
-      byteMebis(data.workflowRunnerStorageRequest),
-      byteMebis(data.workflowRunnerStorageLimit),
-      "WORKFLOW_RUNNER_STORAGE_REQUEST",
-      "WORKFLOW_RUNNER_STORAGE_LIMIT",
-    ],
+    {
+      path: "workflowRunnerCpuLimit",
+      request: cpuMillis(data.workflowRunnerCpuRequest),
+      limit: cpuMillis(data.workflowRunnerCpuLimit),
+      requestVar: "WORKFLOW_RUNNER_CPU_REQUEST",
+      limitVar: "WORKFLOW_RUNNER_CPU_LIMIT",
+    },
+    {
+      path: "workflowRunnerMemoryLimit",
+      request: byteMebis(data.workflowRunnerMemoryRequest),
+      limit: byteMebis(data.workflowRunnerMemoryLimit),
+      requestVar: "WORKFLOW_RUNNER_MEMORY_REQUEST",
+      limitVar: "WORKFLOW_RUNNER_MEMORY_LIMIT",
+    },
+    {
+      path: "workflowRunnerStorageLimit",
+      request: byteMebis(data.workflowRunnerStorageRequest),
+      limit: byteMebis(data.workflowRunnerStorageLimit),
+      requestVar: "WORKFLOW_RUNNER_STORAGE_REQUEST",
+      limitVar: "WORKFLOW_RUNNER_STORAGE_LIMIT",
+    },
   ] as const;
-  for (const [, path, request, limit, requestVar, limitVar] of pairs) {
+  for (const { path, request, limit, requestVar, limitVar } of pairs) {
+    if (request === null || limit === null) continue;
     if (request <= limit) continue;
     ctx.addIssue({
       code: "custom",

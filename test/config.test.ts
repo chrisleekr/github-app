@@ -52,14 +52,20 @@ describe("configSchema: workflow runner resource quantities", () => {
     if (result.success) expect(result.data.workflowRunnerMemoryLimit).toBe("8Gi");
   });
 
-  // The API server re-serializes 8192Mi as 8Gi and 2000m as 2, and the spawner
-  // compares the returned Pod's resource strings byte for byte, so a
+  // The API server re-serializes 8192Mi as 8Gi, 2000m as 2 and 1000 as 1k, and
+  // the spawner compares the returned Pod's resource strings byte for byte, so a
   // non-canonical spelling would terminalize every attempt with a message about
   // Pod identity instead of about the variable that caused it.
   it.each([
     ["workflowRunnerMemoryLimit", "8192Mi", "WORKFLOW_RUNNER_MEMORY_LIMIT"],
     ["workflowRunnerStorageLimit", "1024Mi", "WORKFLOW_RUNNER_STORAGE_LIMIT"],
     ["workflowRunnerCpuLimit", "2000m", "WORKFLOW_RUNNER_CPU_LIMIT"],
+    // Whole cores divisible by 1000 hit the same rule: Kubernetes formats a
+    // suffixless decimal quantity with an exponent that is a multiple of three,
+    // so it stores 1000 as 1k and 4000 as 4k.
+    ["workflowRunnerCpuLimit", "1000", "WORKFLOW_RUNNER_CPU_LIMIT"],
+    ["workflowRunnerCpuRequest", "4000", "WORKFLOW_RUNNER_CPU_REQUEST"],
+    ["workflowRunnerCpuRequest", "1000m", "WORKFLOW_RUNNER_CPU_REQUEST"],
   ])("rejects the non-canonical %s value %s", (key, value, envVar) => {
     const result = configSchema.safeParse({ ...ANTHROPIC_BASE, [key]: value });
     expect(result.success).toBe(false);
@@ -100,6 +106,37 @@ describe("configSchema: workflow runner resource quantities", () => {
       workflowRunnerCpuLimit: "2",
     });
     expect(result.success).toBe(true);
+  });
+
+  // Number rounds both of these to the same value, so a Number comparison would
+  // accept a request above its limit.
+  it("compares quantities beyond the safe integer range exactly", () => {
+    const result = configSchema.safeParse({
+      ...ANTHROPIC_BASE,
+      workflowRunnerCpuRequest: "9007199254740993m",
+      workflowRunnerCpuLimit: "9007199254740992m",
+    });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const issue = result.error.issues.find((i) => i.path[0] === "workflowRunnerCpuLimit");
+    expect(issue?.message).toBe(
+      "WORKFLOW_RUNNER_CPU_REQUEST must not exceed WORKFLOW_RUNNER_CPU_LIMIT",
+    );
+  });
+
+  // zod runs the object-level superRefine even when a field failed its own
+  // checks, so the ordering rule sees the raw string. It must stay quiet: the
+  // shape message already names the variable, and an ordering complaint about a
+  // value nobody could parse sends the reader after the wrong variable.
+  it("reports only the shape failure for an unparseable quantity", () => {
+    const result = configSchema.safeParse({ ...ANTHROPIC_BASE, workflowRunnerCpuRequest: "abc" });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const messages = result.error.issues.map((i) => i.message);
+    expect(messages).toContain(
+      "WORKFLOW_RUNNER_CPU_REQUEST must be whole cores (e.g. 2) or millicores (e.g. 500m)",
+    );
+    expect(messages.some((m) => m.includes("must not exceed"))).toBe(false);
   });
 });
 

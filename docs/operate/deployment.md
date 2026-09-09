@@ -225,7 +225,7 @@ The daemon image is ~2 GB unpacked. The same sizing applies to ephemeral daemon 
 
 ### Isolated workflow runner
 
-Each structured workflow gets one Pod with fixed per-container resources from `src/k8s/workflow-runner-spawner.ts`:
+Each structured workflow gets one Pod. The per-container resources below are the defaults; each is set by the matching `WORKFLOW_RUNNER_*` variable in [configuration](configuration.md), and the same value must be repeated in the boundary ConfigMap key named in step 2 below.
 
 | Resource          | Request | Limit  |
 | ----------------- | ------- | ------ |
