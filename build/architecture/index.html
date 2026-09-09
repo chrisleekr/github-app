@@ -2388,11 +2388,11 @@ failed it never reaches the gate, so no YAML value can readmit it.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>src/workflows/dispatcher.ts:183#applyRepoGate</code></td>
-<td><code>dispatchByLabel</code>, <code>dispatchByIntent</code>, <code>dispatchWorkflowByName</code></td>
+<td><code>src/workflows/dispatcher.ts:178#applyRepoGate</code></td>
+<td><code>dispatchByLabel</code>, <code>dispatchWorkflowByName</code></td>
 </tr>
 <tr>
-<td><code>src/workflows/ship/command-dispatch.ts:80#isBlockedByRepoConfig</code></td>
+<td><code>src/workflows/ship/command-dispatch.ts:114#isBlockedByRepoConfig</code></td>
 <td>the canonical ship rail, which bypasses the dispatcher entirely</td>
 </tr>
 </tbody>
@@ -2405,7 +2405,8 @@ must not strand a run it was meant to end, but <code>ignore_authors</code> and
 Because that path does not yet know the workflow name, rule 2 is skipped there
 and re-evaluated downstream.</p>
 <p>Rule 2 needs a registry workflow name, and the canonical rail speaks in
-<code>CommandIntent</code>s. Two intents collide with registry names, <code>ship</code> and <code>triage</code>,
+<code>CommandIntent</code>s. Seven intents collide with registry names, <code>ship</code> and <code>triage</code>
+because a rail above owns the word plus the five mention-reachable workflows,
 so <code>command-dispatch.ts</code> maps them through <code>INTENT_TO_WORKFLOW</code> before calling
 the gate. The mapping matters because the canonical parser runs first in the
 event handlers and returns before <code>dispatchByLabel</code>: a <code>bot:triage</code> label that

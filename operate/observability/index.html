@@ -3315,8 +3315,39 @@ in-flight reason means a push arrived mid-review and was dropped by design.</p>
 <td>Same</td>
 <td>Daemon reported <code>halted</code> or <code>failed</code>. <code>reason</code> carries the structured halt reason.</td>
 </tr>
+<tr>
+<td><code>nl.intent.resolved</code></td>
+<td><code>command-dispatch.dispatchCommentSurface</code>, once per classified mention</td>
+<td>The winning intent. Fields: <code>intent</code>, <code>classified_intent</code>, <code>confidence</code>, <code>rail</code>; <code>event_surface</code> comes from the handler's child logger.</td>
+</tr>
+<tr>
+<td><code>scoped.tool_loop.empty_text</code></td>
+<td><code>dispatch-scoped.buildCallLlm</code> after <code>runWithTools</code></td>
+<td>The tool loop returned no text. Fields: <code>capExceeded</code>, <code>stopReason</code>, <code>iterations</code>, <code>toolCallCount</code>.</td>
+</tr>
+<tr>
+<td><code>scoped.single_turn.empty_text</code></td>
+<td><code>dispatch-scoped.buildCallLlm</code> after <code>llm.create</code></td>
+<td>The tool-less branch returned no text. Field: <code>outputTokens</code>, the only truncation signal <code>llm.create</code> exposes.</td>
+</tr>
+<tr>
+<td><code>chat_thread.empty_response</code></td>
+<td><code>chat-thread.runChatThread</code> before parsing</td>
+<td>chat-thread got an empty body and answered with the budget message, not a parse error.</td>
+</tr>
 </tbody>
 </table>
+<p>The last four are string literals at their emit sites rather than <code>SHIP_LOG_EVENTS</code> members: they
+belong to the comment rail, not to a ship intent.</p>
+<p><code>nl.intent.resolved</code> is the one line that makes a misroute greppable, and all four shapes carry the
+same fields. <code>classified_intent</code> is what the model said and <code>intent</code> is what actually ran, so they
+differ exactly when the confidence threshold downgraded a workflow verb to <code>chat-thread</code>. <code>rail</code> is
+<code>ship</code>, <code>scoped</code>, <code>workflow</code>, <code>refusal</code>, or <code>none</code>.</p>
+<p><code>rail: "none"</code> is the one an operator most needs: the model answered <code>none</code>, or per-surface
+eligibility rewrote the verb to <code>none</code> in <code>src/workflows/ship/nl-classifier.ts</code>, and nothing ran.
+This is the only classifier left, so without this line a seriously meant ask that the model
+discarded leaves no trace at all. The line is emitted only when a classification actually happened,
+never when the mention gate declined before the LLM call.</p>
 <h3 id="querying-example-datadog-loki">Querying example (Datadog / Loki)<a class="headerlink" href="#querying-example-datadog-loki" title="Permanent link">&para;</a></h3>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>event:"ship.intent.transition" to_status:"human_took_over" terminal_blocker_category:"flake-cap"
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>| count by pr.repo
@@ -3422,7 +3453,7 @@ daemon executor.</p>
 </tr>
 </tbody>
 </table>
-<p>Wired sites (<code>site</code> value): <code>triage-orchestrator</code>, <code>intent-classifier</code>, <code>chat-thread</code>, <code>discussion-digest</code>, <code>nl-classifier</code>, <code>triage-handler</code>, <code>llm-output-scanner</code>. (<code>meta-issue-classifier</code> is a pure function with no logger in scope and omits the context.)</p>
+<p>Wired sites (<code>site</code> value): <code>triage-orchestrator</code>, <code>chat-thread</code>, <code>discussion-digest</code>, <code>nl-classifier</code>, <code>triage-handler</code>, <code>llm-output-scanner</code>. (<code>meta-issue-classifier</code> is a pure function with no logger in scope and omits the context.)</p>
 <h2 id="triage-circuit-breaker-events">Triage circuit breaker events<a class="headerlink" href="#triage-circuit-breaker-events" title="Permanent link">&para;</a></h2>
 <p>The triage circuit breaker caps the blast radius of a Claude/Bedrock outage. It emits a structured <code>circuit.*</code> event family in addition to the existing <code>triage circuit breaker transition</code> line. The schema is pinned by <code>circuit-breaker-log-fields.ts#CircuitLogFieldsSchema</code>; emit wiring lives in <code>triage.ts</code> on the shared breaker's <code>onEvent</code> hook. <code>deliveryId</code> appears on the paired caller-side short-circuit / fallback lines via the per-request child logger.</p>
 <table>

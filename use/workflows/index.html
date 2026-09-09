@@ -1846,21 +1846,74 @@
 </ul>
 <p>Re-running a workflow also <strong>removes that workflow's previous tracking comment</strong> before posting the new one, so the thread does not pile up stale bot output.</p>
 <h2 id="trigger-comment-intent-classifier">Trigger-comment intent classifier<a class="headerlink" href="#trigger-comment-intent-classifier" title="Permanent link">&para;</a></h2>
-<p>A comment that mentions the trigger phrase is routed through <code>src/workflows/intent-classifier.ts</code>: a single-turn Haiku call that returns <code>{ workflow, confidence, rationale }</code>.</p>
-<ul>
-<li><code>confidence &lt; INTENT_CONFIDENCE_THRESHOLD</code> (default <code>0.75</code>) → the dispatcher posts a clarification reply and stops.</li>
-<li><code>workflow</code> not in registry → refusal reply.</li>
-<li><code>workflow</code> in registry → same dispatch as the label path.</li>
-</ul>
-<p>The classifier prompt distinguishes <code>review</code> (proactive, find bugs, post inline findings) from <code>resolve</code> (reactive, fix CI, answer feedback). Tune the threshold per environment with <code>INTENT_CONFIDENCE_THRESHOLD</code>.</p>
+<p>A comment that mentions the trigger phrase is routed through <strong>one</strong> classifier,
+<code>src/workflows/ship/nl-classifier.ts</code>: a single-turn call on <code>TRIAGE_MODEL</code> that returns
+<code>{ intent, confidence, deadline_ms? }</code>. It covers all three rails, so no verb can be shadowed
+by a second classifier that never gets consulted.</p>
+<p>The comment body is delivered to the model inside a <code>&lt;user-comment&gt;</code> block, with fences and
+headings collapsed and a 2000-character cap, so it is data the model cannot mistake for
+instructions.</p>
+<p><code>src/workflows/ship/command-dispatch.ts</code> routes the verdict:</p>
+<table>
+<thead>
+<tr>
+<th>Verdict</th>
+<th>Outcome</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ship-lifecycle verb (<code>ship</code>, <code>stop</code>, <code>resume</code>, <code>abort</code>)</td>
+<td>ship rail, threshold not applied</td>
+</tr>
+<tr>
+<td>scoped verb (<code>fix-thread</code>, <code>chat-thread</code>, <code>summarize</code>, <code>rebase</code>, <code>investigate</code>, <code>triage</code>, <code>open-pr</code>)</td>
+<td>scoped rail</td>
+</tr>
+<tr>
+<td>registry workflow (<code>plan</code>, <code>implement</code>, <code>review</code>, <code>resolve</code>, <code>remember</code>)</td>
+<td><code>dispatchWorkflowByName</code>, the same primitive the label trigger uses</td>
+</tr>
+<tr>
+<td>registry workflow below <code>INTENT_CONFIDENCE_THRESHOLD</code> (default <code>0.75</code>)</td>
+<td>downgraded to <code>chat-thread</code> rather than guessing</td>
+</tr>
+<tr>
+<td><code>unsupported</code></td>
+<td>refusal reply</td>
+</tr>
+<tr>
+<td><code>none</code></td>
+<td>no action</td>
+</tr>
+<tr>
+<td>classifier outage or unparseable output</td>
+<td><code>chat-thread</code>, so a provider blip is a conversation and not silence</td>
+</tr>
+</tbody>
+</table>
+<p>Eligibility is enforced deterministically after classification against <code>INTENT_ELIGIBLE_SURFACES</code>
+in <code>src/shared/ship-types.ts</code>, not left to the model: <code>plan</code> and <code>implement</code> are issue-only,
+<code>review</code> and <code>resolve</code> are PR-only, <code>remember</code> runs on both. A verb the surface does not accept
+is rewritten to <code>none</code>.</p>
+<p>The threshold applies to registry workflows only. <code>stop</code> and <code>abort</code> must land even when the
+model is unsure, or disabling the bot would strand the run the maintainer was trying to end.</p>
+<p><code>ship</code> and <code>triage</code> keep the meaning their existing rails gave them. Both words also name a
+registry workflow, but the mention rail routes them to the ship session runner and the scoped
+triage handler respectively, so no mention that worked before changes meaning.</p>
+<p>The classifier prompt distinguishes <code>review</code> (proactive, find bugs, post inline findings) from
+<code>resolve</code> (reactive, fix CI, answer feedback). Tune the threshold per environment with
+<code>INTENT_CONFIDENCE_THRESHOLD</code>.</p>
 <h2 id="label-path-dispatch">Label-path dispatch<a class="headerlink" href="#label-path-dispatch" title="Permanent link">&para;</a></h2>
-<p>Both the label trigger and the in-registry classifier verdict run the same durable sequence in <code>src/workflows/dispatcher.ts</code>: registry lookup → <a href="../repo-config/">repo-config gate</a> → context check → prior-output requirement → label mutex → atomic <code>workflow_runs</code> plus <code>executions</code> insert → outbox publication → return. The repo-config gate runs second, immediately after the registry lookup, so a workflow disabled in <code>.github-app.yaml</code> leaves no run row, no label mutation, and no queue job. Prior-output is checked before the mutex, so refusing a workflow that lacks its prerequisite (e.g. <code>bot:implement</code> before any <code>bot:plan</code>) does not strip unrelated <code>bot:*</code> labels. The partial unique index is the durable in-flight guard: a redelivered or concurrent trigger for the same workflow and target is rejected by PostgreSQL, not just by the best-effort Valkey delivery claim. Queue publication happens only after the transaction commits. The reaper repairs both a null receipt from a failed publish and a stale receipt whose acknowledged Valkey item was later lost, while an atomic membership check keeps at most one stable copy across the queue and current processing list.</p>
+<p>Both the label trigger and a registry-workflow mention verdict run the same durable sequence in <code>src/workflows/dispatcher.ts</code>: registry lookup → <a href="../repo-config/">repo-config gate</a> → context check → prior-output requirement → label mutex → atomic <code>workflow_runs</code> plus <code>executions</code> insert → outbox publication → return. The repo-config gate runs second, immediately after the registry lookup, so a workflow disabled in <code>.github-app.yaml</code> leaves no run row, no label mutation, and no queue job. Prior-output is checked before the mutex, so refusing a workflow that lacks its prerequisite (e.g. <code>bot:implement</code> before any <code>bot:plan</code>) does not strip unrelated <code>bot:*</code> labels. The partial unique index is the durable in-flight guard: a redelivered or concurrent trigger for the same workflow and target is rejected by PostgreSQL, not just by the best-effort Valkey delivery claim. Queue publication happens only after the transaction commits. The reaper repairs both a null receipt from a failed publish and a stale receipt whose acknowledged Valkey item was later lost, while an atomic membership check keeps at most one stable copy across the queue and current processing list.</p>
 <h2 id="per-workflow-execution-knobs">Per-workflow execution knobs<a class="headerlink" href="#per-workflow-execution-knobs" title="Permanent link">&para;</a></h2>
 <p>The dispatch gate above only decides whether a workflow runs. The per-workflow <code>model</code>, <code>max_turns</code>, <code>timeout</code>, <code>extra_allowed_tools</code>, and (for <code>review</code>) <code>path_filters</code> / <code>instructions</code> knobs are a second gate. Structured workflows resolve it during controller-owned runner-payload preparation in <code>src/orchestrator/workflow-runner-payload.ts</code>; legacy direct jobs resolve it at shared-daemon accept in <code>src/orchestrator/connection-handler.ts</code>. Both clamp against the server-side env ceilings, so a repo can narrow the defaults but never exceed them.</p>
 <p>Six workflows honour those knobs: <code>review</code>, <code>resolve</code>, <code>implement</code>, <code>remember</code>, <code>plan</code>, and <code>triage</code>. The first four apply them through <code>runPipeline</code>; <code>plan</code> and <code>triage</code> own their prompts and bypass the pipeline, so they apply the same resolved values through the shared helper <code>src/core/agent-policy.ts</code> instead. <code>path_filters</code> / <code>instructions</code> remain pipeline-only, since both need fetched PR data and the prompt builder.</p>
 <p><code>workflows.ship</code> accepts only <code>enabled</code>. Its handler is a composite orchestrator that enqueues the child workflows and never invokes an agent, so agent knobs there would be a permanent no-op; the children run under their own workflow names and resolve <code>workflows.&lt;child&gt;.*</code> over <code>defaults:</code>. See <a href="../repo-config/">Per-repo configuration</a> for the full schema and clamping rules.</p>
 <h2 id="conversational-chat-thread-sub-threshold-fallback">Conversational <code>chat-thread</code> (sub-threshold fallback)<a class="headerlink" href="#conversational-chat-thread-sub-threshold-fallback" title="Permanent link">&para;</a></h2>
-<p>When the intent classifier verdict is below <code>INTENT_CONFIDENCE_THRESHOLD</code> AND the conversational backend (<code>DATABASE_URL</code>) is configured, the dispatcher routes the comment to <code>src/workflows/ship/scoped/chat-thread.ts</code> instead of refusing: a freeform exchange entry point for review threads, PR replies, and issue comments. Output modes the executor can return are validated by Zod (<code>answer</code>, <code>decline</code>, <code>execute-workflow</code>, <code>propose-workflow</code>, <code>propose-action</code>, <code>approve-pending</code>, <code>decline-pending</code>, <code>replace-proposal</code>).</p>
+<p>A mention becomes a conversation in three cases: the classifier picked <code>chat-thread</code> outright, a registry-workflow verb scored below <code>INTENT_CONFIDENCE_THRESHOLD</code>, or the classifier could not answer at all. All three land in <code>src/workflows/ship/scoped/chat-thread.ts</code> instead of refusing: a freeform exchange entry point for review threads, PR replies, and issue comments. Output modes the executor can return are validated by Zod (<code>answer</code>, <code>decline</code>, <code>execute-workflow</code>, <code>propose-workflow</code>, <code>propose-action</code>, <code>approve-pending</code>, <code>decline-pending</code>, <code>replace-proposal</code>).</p>
+<p>The conversational backend needs <code>DATABASE_URL</code>. An inline-mode deployment answers with a
+refusal naming the workflow verbs that still work, rather than hanging.</p>
 <h3 id="tool-surface-pr-conversations-only">Tool surface (PR conversations only)<a class="headerlink" href="#tool-surface-pr-conversations-only" title="Permanent link">&para;</a></h3>
 <p>On PR events, <code>chat-thread</code> and the orchestrator-side <code>triage</code> engine drive Anthropic's tool-use loop via <code>src/ai/llm-client.ts runWithTools</code>. Both share the <code>github-state</code> tool set defined in <code>src/github/state-fetchers.ts</code>:</p>
 <table>

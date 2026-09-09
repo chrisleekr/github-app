@@ -1821,12 +1821,12 @@
 <td>More than <code>MAX_CONCURRENT_REQUESTS</code> agent runs are already in flight. Re-invoke later.</td>
 </tr>
 <tr>
-<td>Clarification reply</td>
-<td>Mention-driven request whose intent classifier confidence fell below <code>INTENT_CONFIDENCE_THRESHOLD</code> (default <code>0.75</code>).</td>
+<td>Conversational reply</td>
+<td>Mention-driven workflow request whose classifier confidence fell below <code>INTENT_CONFIDENCE_THRESHOLD</code> (default <code>0.75</code>). Answered by <code>chat-thread</code> rather than refused.</td>
 </tr>
 <tr>
 <td>"Unsupported" reply</td>
-<td>Mention-driven request whose intent does not map to any registered workflow.</td>
+<td>Mention-driven request the classifier judged off-topic, out of remit, or unsafe.</td>
 </tr>
 <tr>
 <td><code>bot:ship</code> refusal</td>

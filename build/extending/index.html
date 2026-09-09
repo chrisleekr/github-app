@@ -2002,7 +2002,13 @@
 </tbody>
 </table>
 <h3 id="step-3-make-it-discoverable-from-comments">Step 3: make it discoverable from comments<a class="headerlink" href="#step-3-make-it-discoverable-from-comments" title="Permanent link">&para;</a></h3>
-<p>If the workflow should be reachable via mentions, extend the system prompt in <code>src/workflows/intent-classifier.ts</code> with at least three fixture comments and add it to <code>test/workflows/fixtures/intent-comments.json</code>. The enum the classifier returns is driven by the registry; the prompt narrative just needs to mention the new verb so the classifier picks it.</p>
+<p>If the workflow should be reachable via mentions, three edits, all in lockstep:</p>
+<ol>
+<li>Add the verb to <code>WORKFLOW_COMMAND_INTENTS</code> in <code>src/shared/ship-types.ts</code>. The classifier enum is derived from <code>COMMAND_INTENTS</code>, so this alone makes the model able to return it.</li>
+<li>Add its eligible surfaces to <code>INTENT_ELIGIBLE_SURFACES</code> in the same file. <code>Record&lt;CommandIntent, ...&gt;</code> means the compiler refuses to build until you do. Eligibility is enforced deterministically after classification; the model's own surface reasoning is not trusted.</li>
+<li>Add it to <code>INTENT_TO_WORKFLOW</code> in <code>src/workflows/ship/command-dispatch.ts</code> so the repo-config per-workflow toggle is enforced before dispatch. <code>test/workflows/ship/command-dispatch.test.ts</code> fails if any <code>CommandIntent</code> matching a <code>WorkflowName</code> is absent.</li>
+</ol>
+<p>Then describe the verb in <code>SYSTEM_PROMPT</code> in <code>src/workflows/ship/nl-classifier.ts</code> so the model knows when to pick it, and add a case to <code>test/workflows/ship/nl-classifier.test.ts</code>.</p>
 <h3 id="step-4-document-and-test">Step 4: document and test<a class="headerlink" href="#step-4-document-and-test" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Add <code>docs/use/workflows/&lt;name&gt;.md</code> matching the template used by the seven built-ins.</li>
@@ -2153,7 +2159,7 @@ importing <code>config</code>).</p>
 <p>If your extension reacts to a GitHub event the bot does not yet handle (e.g. <code>push</code>, <code>pull_request_target</code>), the work splits in two:</p>
 <ol>
 <li><strong>Subscribe</strong> to the event in the GitHub App settings (Permissions &amp; events).</li>
-<li><strong>Add a webhook handler</strong> in <code>src/webhook/events/&lt;event&gt;.ts</code> that parses the payload and dispatches via <code>dispatchByLabel</code> (label path) or <code>dispatchByIntent</code> (comment path). Webhook handlers must return within 10 s, fire <code>processRequest</code> with fire-and-forget semantics.</li>
+<li><strong>Add a webhook handler</strong> in <code>src/webhook/events/&lt;event&gt;.ts</code> that parses the payload and dispatches via <code>dispatchByLabel</code> (label path) or <code>dispatchCommentSurface</code> (comment path). Webhook handlers must return within 10 s, fire <code>processRequest</code> with fire-and-forget semantics.</li>
 <li><strong>Register the event handler</strong> in <code>src/app.ts</code> alongside the existing <code>app.webhooks.on(...)</code> calls.</li>
 </ol>
 <p>Webhook handlers do <strong>not</strong> run business logic, they parse the event, build a <code>BotContext</code>, and dispatch. Structured workflow handlers execute in one-attempt runner Pods. Legacy direct and scoped jobs execute on shared daemons.</p>
