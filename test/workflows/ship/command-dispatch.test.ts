@@ -46,11 +46,32 @@ void mock.module("../../../src/workflows/tracking-mirror", () => ({
 }));
 
 // Both parsers behind `dispatchCommentSurface`. Returning null from the
-// literal surface is what pushes execution past the gate to the NL fallback,
-// which is the path under test.
+// literal surface is what pushes execution past the gate to the NL
+// classifier, which is the path under test.
 const mockRouteTrigger = mock((_input: { surface: string }) => Promise.resolve(null));
+const mockRouteNlTrigger = mock(
+  (_payload: unknown) => Promise.resolve({ kind: "none" }) as Promise<unknown>,
+);
 void mock.module("../../../src/workflows/ship/trigger-router", () => ({
   routeTrigger: mockRouteTrigger,
+  routeNlTrigger: mockRouteNlTrigger,
+}));
+
+// The registry rail the mention surface now shares with the `bot:<name>`
+// label trigger.
+const mockDispatchWorkflowByName = mock((_input: unknown) =>
+  Promise.resolve({ status: "dispatched", runId: "run-1", workflowName: "review" }),
+);
+void mock.module("../../../src/workflows/dispatcher", () => ({
+  dispatchWorkflowByName: mockDispatchWorkflowByName,
+}));
+
+// The classifier's LLM. Stubbed so no test in this file can reach Bedrock.
+void mock.module("../../../src/webhook/triage-client-factory", () => ({
+  getTriageLLMClient: () => ({
+    provider: "anthropic",
+    create: mock(() => Promise.resolve({ text: "{}" })),
+  }),
 }));
 
 // Gate 1's config loader. Stubbed rather than left to fail open: the fake
@@ -88,6 +109,14 @@ function silentLog(): pino.Logger {
 
 const fakeOctokit = {} as unknown as Octokit;
 
+function deps(): {
+  octokit: Octokit;
+  log: pino.Logger;
+  deliveryId: string;
+} {
+  return { octokit: fakeOctokit, log: silentLog(), deliveryId: "delivery-1" };
+}
+
 function command(intent: CommandIntent): CanonicalCommand {
   return {
     intent,
@@ -124,7 +153,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
   });
 
   it("dispatches ship when the repo policy allows it", async () => {
-    dispatchCanonicalCommand(command("ship"), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command("ship"), deps());
     await settle();
 
     expect(mockLoadRepoPolicy).toHaveBeenCalledTimes(1);
@@ -134,7 +163,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
   it("blocks ship when the repo is disabled", async () => {
     mockLoadRepoPolicy.mockResolvedValue(disabledRepo());
 
-    dispatchCanonicalCommand(command("ship"), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command("ship"), deps());
     await settle();
 
     expect(mockRunShipFromCommand).not.toHaveBeenCalled();
@@ -143,7 +172,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
   it("blocks a scoped verb when the repo is disabled", async () => {
     mockLoadRepoPolicy.mockResolvedValue(disabledRepo());
 
-    dispatchCanonicalCommand(command("rebase"), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command("rebase"), deps());
     await settle();
 
     expect(mockDispatchScopedCommand).not.toHaveBeenCalled();
@@ -152,7 +181,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
   it.each(["stop", "abort"] as const)("lets '%s' through a disabled repo", async (intent) => {
     mockLoadRepoPolicy.mockResolvedValue(disabledRepo());
 
-    dispatchCanonicalCommand(command(intent), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command(intent), deps());
     await settle();
 
     // De-escalating verbs must land, or disabling the bot strands the very
@@ -168,7 +197,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
         policyFrom({ version: 1, triggers: { allowed_users: ["bob"] } }),
       );
 
-      dispatchCanonicalCommand(command(intent), { octokit: fakeOctokit, log: silentLog() });
+      dispatchCanonicalCommand(command(intent), deps());
       await settle();
 
       // The carve-out is about config state, not identity: a login the repo
@@ -186,8 +215,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
       );
 
       dispatchCanonicalCommand(command(intent), {
-        octokit: fakeOctokit,
-        log: silentLog(),
+        ...deps(),
         trigger: { title: "WIP: something" },
       });
       await settle();
@@ -201,11 +229,11 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
       policyFrom({ version: 1, workflows: { ship: { enabled: false } } }),
     );
 
-    dispatchCanonicalCommand(command("ship"), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command("ship"), deps());
     await settle();
     expect(mockRunShipFromCommand).not.toHaveBeenCalled();
 
-    dispatchCanonicalCommand(command("rebase"), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command("rebase"), deps());
     await settle();
     expect(mockDispatchScopedCommand).toHaveBeenCalledTimes(1);
   });
@@ -218,7 +246,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
       policyFrom({ version: 1, workflows: { triage: { enabled: false } } }),
     );
 
-    dispatchCanonicalCommand(command("triage"), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command("triage"), deps());
     await settle();
 
     expect(mockDispatchScopedCommand).not.toHaveBeenCalled();
@@ -236,7 +264,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
   it("posts a refusal comment naming the intent for a scoped verb", async () => {
     mockLoadRepoPolicy.mockResolvedValue(disabledRepo());
 
-    dispatchCanonicalCommand(command("summarize"), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command("summarize"), deps());
     await settle();
 
     // Scoped verbs have no registry entry, so the comment names the verb the
@@ -247,7 +275,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
   it("blocks 'resume' on a disabled repo, unlike stop and abort", async () => {
     mockLoadRepoPolicy.mockResolvedValue(disabledRepo());
 
-    dispatchCanonicalCommand(command("resume"), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command("resume"), deps());
     await settle();
 
     expect(mockRunLifecycleCommand).not.toHaveBeenCalled();
@@ -256,7 +284,7 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
   it("fails open and still dispatches when the policy load throws", async () => {
     mockLoadRepoPolicy.mockRejectedValueOnce(new Error("github unreachable"));
 
-    dispatchCanonicalCommand(command("ship"), { octokit: fakeOctokit, log: silentLog() });
+    dispatchCanonicalCommand(command("ship"), deps());
     await settle();
 
     expect(mockRunShipFromCommand).toHaveBeenCalledTimes(1);
@@ -266,39 +294,67 @@ describe("dispatchCanonicalCommand repo-config gate", () => {
 describe("dispatchCommentSurface repo-config gate", () => {
   const pr = { owner: "acme", repo: "repo", number: 42, installation_id: 1 };
 
+  function surfaceInput(
+    overrides: Record<string, unknown> = {},
+  ): Parameters<typeof dispatchCommentSurface>[0] {
+    return {
+      commentBody: `${config.triggerPhrase} please review this`,
+      principal_login: "alice",
+      pr,
+      event_surface: "pr-comment" as const,
+      deliveryId: "delivery-1",
+      octokit: fakeOctokit,
+      log: silentLog(),
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     mockLoadRepoPolicy.mockClear();
     mockLoadRepoPolicy.mockResolvedValue(realEffective.DEFAULT_REPO_POLICY);
     mockRouteTrigger.mockClear();
     mockRouteTrigger.mockResolvedValue(null);
+    mockRouteNlTrigger.mockClear();
+    mockRouteNlTrigger.mockResolvedValue({ kind: "none" });
+    mockPostRefusalComment.mockClear();
+    mockDispatchWorkflowByName.mockClear();
+    mockDispatchScopedCommand.mockClear();
+    mockRunShipFromCommand.mockClear();
   });
 
-  it("returns false and never reaches the NL classifier on a disabled repo", async () => {
+  it("owns the refusal and never reaches the NL classifier on a disabled repo", async () => {
     mockLoadRepoPolicy.mockResolvedValue(disabledRepo());
 
-    const handled = await dispatchCommentSurface({
-      commentBody: `${config.triggerPhrase} please review this`,
-      principal_login: "alice",
-      pr,
-      octokit: fakeOctokit,
-      log: silentLog(),
-    });
+    const handled = await dispatchCommentSurface(surfaceInput());
 
-    // `false`, not `true`: the caller falls through to `dispatchByIntent`,
-    // which re-runs the gate and owns the single refusal comment.
-    expect(handled).toBe(false);
-    const surfaces = mockRouteTrigger.mock.calls.map(([arg]) => arg.surface);
-    expect(surfaces).toEqual(["literal"]);
+    // `true`, not `false`: this used to hand the comment to `dispatchByIntent`,
+    // which re-ran the gate and owned the refusal. With that rail retired this
+    // is the only place left that can answer.
+    expect(handled).toBe(true);
+    expect(mockPostRefusalComment).toHaveBeenCalledTimes(1);
+    expect(mockRouteNlTrigger).not.toHaveBeenCalled();
+  });
+
+  it("stays silent for a passive trigger filter, but still claims the comment", async () => {
+    mockLoadRepoPolicy.mockResolvedValue(
+      policyFrom({ version: 1, triggers: { ignore_title_keywords: ["WIP"] } }),
+    );
+
+    const handled = await dispatchCommentSurface(
+      surfaceInput({ trigger: { title: "WIP: something" } }),
+    );
+
+    // A passive filter answering every Renovate comment in public is the
+    // failure mode `explain: false` exists to prevent.
+    expect(handled).toBe(true);
+    expect(mockPostRefusalComment).not.toHaveBeenCalled();
+    expect(mockRouteNlTrigger).not.toHaveBeenCalled();
   });
 
   it("skips the gate entirely for a comment that does not open with the trigger phrase", async () => {
-    const handled = await dispatchCommentSurface({
-      commentBody: "just a normal review comment, no mention",
-      principal_login: "alice",
-      pr,
-      octokit: fakeOctokit,
-      log: silentLog(),
-    });
+    const handled = await dispatchCommentSurface(
+      surfaceInput({ commentBody: "just a normal review comment, no mention" }),
+    );
 
     // The classifier would return null for this body anyway (FR-025a), so
     // paying a config fetch per comment buys nothing.
@@ -307,16 +363,164 @@ describe("dispatchCommentSurface repo-config gate", () => {
   });
 
   it("reaches the NL classifier when the repo policy allows it", async () => {
-    const handled = await dispatchCommentSurface({
-      commentBody: `${config.triggerPhrase} please review this`,
+    const handled = await dispatchCommentSurface(surfaceInput());
+
+    expect(handled).toBe(false); // literal parser and classifier both declined
+    const surfaces = mockRouteTrigger.mock.calls.map(([arg]) => arg.surface);
+    expect(surfaces).toEqual(["literal"]);
+    expect(mockRouteNlTrigger).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dispatchCommentSurface NL routing", () => {
+  const pr = { owner: "acme", repo: "repo", number: 42, installation_id: 1 };
+
+  function nlCommand(intent: CommandIntent): CanonicalCommand {
+    return {
+      intent,
+      surface: "nl",
       principal_login: "alice",
       pr,
+      event_surface: "pr-comment",
+    };
+  }
+
+  function surfaceInput(): Parameters<typeof dispatchCommentSurface>[0] {
+    return {
+      commentBody: `${config.triggerPhrase} review please`,
+      principal_login: "alice",
+      pr,
+      event_surface: "pr-comment" as const,
+      deliveryId: "delivery-nl",
       octokit: fakeOctokit,
       log: silentLog(),
+    };
+  }
+
+  beforeEach(() => {
+    mockLoadRepoPolicy.mockClear();
+    mockLoadRepoPolicy.mockResolvedValue(realEffective.DEFAULT_REPO_POLICY);
+    mockRouteTrigger.mockClear();
+    mockRouteTrigger.mockResolvedValue(null);
+    mockRouteNlTrigger.mockClear();
+    mockPostRefusalComment.mockClear();
+    mockDispatchWorkflowByName.mockClear();
+    mockDispatchScopedCommand.mockClear();
+    mockRunShipFromCommand.mockClear();
+  });
+
+  // The bug this whole rail exists to fix: `review` used to be absent from the
+  // ship classifier's enum, so it fell into chat-thread and the review workflow
+  // was unreachable by mention.
+  it("dispatches a confident registry workflow through dispatchWorkflowByName", async () => {
+    mockRouteNlTrigger.mockResolvedValue({
+      kind: "command",
+      command: nlCommand("review"),
+      confidence: 0.95,
     });
 
-    expect(handled).toBe(false); // both parsers returned null
-    const surfaces = mockRouteTrigger.mock.calls.map(([arg]) => arg.surface);
-    expect(surfaces).toEqual(["literal", "nl"]);
+    const handled = await dispatchCommentSurface(surfaceInput());
+    await settle();
+
+    expect(handled).toBe(true);
+    expect(mockDispatchWorkflowByName).toHaveBeenCalledTimes(1);
+    const arg = mockDispatchWorkflowByName.mock.calls[0]?.[0] as {
+      workflowName: string;
+      deliveryId: string;
+      target: { type: string; number: number };
+    };
+    expect(arg.workflowName).toBe("review");
+    expect(arg.deliveryId).toBe("delivery-nl");
+    expect(arg.target).toMatchObject({ type: "pr", number: 42 });
+  });
+
+  it("hands the gate's policy to the workflow rail, so rule 2 costs one fetch", async () => {
+    mockRouteNlTrigger.mockResolvedValue({
+      kind: "command",
+      command: nlCommand("review"),
+      confidence: 0.95,
+    });
+
+    await dispatchCommentSurface(surfaceInput());
+    await settle();
+
+    // Two loads, not three: the pre-classification gate (workflow name not yet
+    // known, rule 2 skipped) and the post-classification gate that knows it.
+    // `dispatchWorkflowByName` gets that second policy handed to it rather than
+    // loading a third time.
+    expect(mockLoadRepoPolicy).toHaveBeenCalledTimes(2);
+    const arg = mockDispatchWorkflowByName.mock.calls[0]?.[0] as { repoPolicy?: unknown };
+    expect(arg.repoPolicy).toBe(realEffective.DEFAULT_REPO_POLICY);
+  });
+
+  it("derives target.type from the event surface, not from the pr field", async () => {
+    mockRouteNlTrigger.mockResolvedValue({
+      kind: "command",
+      command: { ...nlCommand("plan"), event_surface: "issue-comment" },
+      confidence: 0.95,
+    });
+
+    await dispatchCommentSurface(surfaceInput());
+    await settle();
+
+    // `pr.number` carries the issue number on issue surfaces, so the surface is
+    // the only honest discriminator.
+    const arg = mockDispatchWorkflowByName.mock.calls[0]?.[0] as {
+      target: { type: string };
+    };
+    expect(arg.target.type).toBe("issue");
+  });
+
+  it("downgrades a low-confidence workflow verb to chat-thread instead of guessing", async () => {
+    mockRouteNlTrigger.mockResolvedValue({
+      kind: "command",
+      command: nlCommand("review"),
+      confidence: config.intentConfidenceThreshold - 0.01,
+    });
+
+    const handled = await dispatchCommentSurface(surfaceInput());
+    await settle();
+
+    expect(handled).toBe(true);
+    expect(mockDispatchWorkflowByName).not.toHaveBeenCalled();
+    // chat-thread is a scoped verb, so it lands on the scoped rail.
+    expect(mockDispatchScopedCommand).toHaveBeenCalledTimes(1);
+    const scoped = mockDispatchScopedCommand.mock.calls[0]?.[0] as { intent: string };
+    expect(scoped.intent).toBe("chat-thread");
+  });
+
+  it("does NOT apply the threshold to ship-lifecycle verbs", async () => {
+    mockRouteNlTrigger.mockResolvedValue({
+      kind: "command",
+      command: nlCommand("ship"),
+      confidence: 0.1,
+    });
+
+    await dispatchCommentSurface(surfaceInput());
+    await settle();
+
+    // `stop` and friends must land even when the model is unsure: refusing to
+    // act on a de-escalating verb strands the run it was meant to end.
+    expect(mockRunShipFromCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts a refusal for an unsupported ask (FR-010)", async () => {
+    mockRouteNlTrigger.mockResolvedValue({ kind: "unsupported" });
+
+    const handled = await dispatchCommentSurface(surfaceInput());
+
+    expect(handled).toBe(true);
+    expect(mockPostRefusalComment).toHaveBeenCalledTimes(1);
+    expect(mockDispatchWorkflowByName).not.toHaveBeenCalled();
+    expect(mockDispatchScopedCommand).not.toHaveBeenCalled();
+  });
+
+  it("returns false for 'none' so the caller knows nothing was claimed", async () => {
+    mockRouteNlTrigger.mockResolvedValue({ kind: "none" });
+
+    const handled = await dispatchCommentSurface(surfaceInput());
+
+    expect(handled).toBe(false);
+    expect(mockPostRefusalComment).not.toHaveBeenCalled();
   });
 });

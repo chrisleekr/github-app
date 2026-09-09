@@ -41,17 +41,46 @@ Re-running a workflow also **removes that workflow's previous tracking comment**
 
 ## Trigger-comment intent classifier
 
-A comment that mentions the trigger phrase is routed through `src/workflows/intent-classifier.ts`: a single-turn Haiku call that returns `{ workflow, confidence, rationale }`.
+A comment that mentions the trigger phrase is routed through **one** classifier,
+`src/workflows/ship/nl-classifier.ts`: a single-turn call on `TRIAGE_MODEL` that returns
+`{ intent, confidence, deadline_ms? }`. It covers all three rails, so no verb can be shadowed
+by a second classifier that never gets consulted.
 
-- `confidence < INTENT_CONFIDENCE_THRESHOLD` (default `0.75`) → the dispatcher posts a clarification reply and stops.
-- `workflow` not in registry → refusal reply.
-- `workflow` in registry → same dispatch as the label path.
+The comment body is delivered to the model inside a `<user-comment>` block, with fences and
+headings collapsed and a 2000-character cap, so it is data the model cannot mistake for
+instructions.
 
-The classifier prompt distinguishes `review` (proactive, find bugs, post inline findings) from `resolve` (reactive, fix CI, answer feedback). Tune the threshold per environment with `INTENT_CONFIDENCE_THRESHOLD`.
+`src/workflows/ship/command-dispatch.ts` routes the verdict:
+
+| Verdict                                                                                              | Outcome                                                             |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| ship-lifecycle verb (`ship`, `stop`, `resume`, `abort`)                                              | ship rail, threshold not applied                                    |
+| scoped verb (`fix-thread`, `chat-thread`, `summarize`, `rebase`, `investigate`, `triage`, `open-pr`) | scoped rail                                                         |
+| registry workflow (`plan`, `implement`, `review`, `resolve`, `remember`)                             | `dispatchWorkflowByName`, the same primitive the label trigger uses |
+| registry workflow below `INTENT_CONFIDENCE_THRESHOLD` (default `0.75`)                               | downgraded to `chat-thread` rather than guessing                    |
+| `unsupported`                                                                                        | refusal reply                                                       |
+| `none`                                                                                               | no action                                                           |
+| classifier outage or unparseable output                                                              | `chat-thread`, so a provider blip is a conversation and not silence |
+
+Eligibility is enforced deterministically after classification against `INTENT_ELIGIBLE_SURFACES`
+in `src/shared/ship-types.ts`, not left to the model: `plan` and `implement` are issue-only,
+`review` and `resolve` are PR-only, `remember` runs on both. A verb the surface does not accept
+is rewritten to `none`.
+
+The threshold applies to registry workflows only. `stop` and `abort` must land even when the
+model is unsure, or disabling the bot would strand the run the maintainer was trying to end.
+
+`ship` and `triage` keep the meaning their existing rails gave them. Both words also name a
+registry workflow, but the mention rail routes them to the ship session runner and the scoped
+triage handler respectively, so no mention that worked before changes meaning.
+
+The classifier prompt distinguishes `review` (proactive, find bugs, post inline findings) from
+`resolve` (reactive, fix CI, answer feedback). Tune the threshold per environment with
+`INTENT_CONFIDENCE_THRESHOLD`.
 
 ## Label-path dispatch
 
-Both the label trigger and the in-registry classifier verdict run the same durable sequence in `src/workflows/dispatcher.ts`: registry lookup → [repo-config gate](../repo-config.md) → context check → prior-output requirement → label mutex → atomic `workflow_runs` plus `executions` insert → outbox publication → return. The repo-config gate runs second, immediately after the registry lookup, so a workflow disabled in `.github-app.yaml` leaves no run row, no label mutation, and no queue job. Prior-output is checked before the mutex, so refusing a workflow that lacks its prerequisite (e.g. `bot:implement` before any `bot:plan`) does not strip unrelated `bot:*` labels. The partial unique index is the durable in-flight guard: a redelivered or concurrent trigger for the same workflow and target is rejected by PostgreSQL, not just by the best-effort Valkey delivery claim. Queue publication happens only after the transaction commits. The reaper repairs both a null receipt from a failed publish and a stale receipt whose acknowledged Valkey item was later lost, while an atomic membership check keeps at most one stable copy across the queue and current processing list.
+Both the label trigger and a registry-workflow mention verdict run the same durable sequence in `src/workflows/dispatcher.ts`: registry lookup → [repo-config gate](../repo-config.md) → context check → prior-output requirement → label mutex → atomic `workflow_runs` plus `executions` insert → outbox publication → return. The repo-config gate runs second, immediately after the registry lookup, so a workflow disabled in `.github-app.yaml` leaves no run row, no label mutation, and no queue job. Prior-output is checked before the mutex, so refusing a workflow that lacks its prerequisite (e.g. `bot:implement` before any `bot:plan`) does not strip unrelated `bot:*` labels. The partial unique index is the durable in-flight guard: a redelivered or concurrent trigger for the same workflow and target is rejected by PostgreSQL, not just by the best-effort Valkey delivery claim. Queue publication happens only after the transaction commits. The reaper repairs both a null receipt from a failed publish and a stale receipt whose acknowledged Valkey item was later lost, while an atomic membership check keeps at most one stable copy across the queue and current processing list.
 
 ## Per-workflow execution knobs
 
@@ -63,7 +92,10 @@ Six workflows honour those knobs: `review`, `resolve`, `implement`, `remember`, 
 
 ## Conversational `chat-thread` (sub-threshold fallback)
 
-When the intent classifier verdict is below `INTENT_CONFIDENCE_THRESHOLD` AND the conversational backend (`DATABASE_URL`) is configured, the dispatcher routes the comment to `src/workflows/ship/scoped/chat-thread.ts` instead of refusing: a freeform exchange entry point for review threads, PR replies, and issue comments. Output modes the executor can return are validated by Zod (`answer`, `decline`, `execute-workflow`, `propose-workflow`, `propose-action`, `approve-pending`, `decline-pending`, `replace-proposal`).
+A mention becomes a conversation in three cases: the classifier picked `chat-thread` outright, a registry-workflow verb scored below `INTENT_CONFIDENCE_THRESHOLD`, or the classifier could not answer at all. All three land in `src/workflows/ship/scoped/chat-thread.ts` instead of refusing: a freeform exchange entry point for review threads, PR replies, and issue comments. Output modes the executor can return are validated by Zod (`answer`, `decline`, `execute-workflow`, `propose-workflow`, `propose-action`, `approve-pending`, `decline-pending`, `replace-proposal`).
+
+The conversational backend needs `DATABASE_URL`. An inline-mode deployment answers with a
+refusal naming the workflow verbs that still work, rather than hanging.
 
 ### Tool surface (PR conversations only)
 

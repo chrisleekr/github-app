@@ -114,7 +114,7 @@ export function handleIssues(octokit: Octokit, payload: IssuesEvent, deliveryId:
           },
         });
         if (command !== null) {
-          dispatchCanonicalCommand(command, { octokit, log, trigger });
+          dispatchCanonicalCommand(command, { octokit, log, trigger, deliveryId });
           return;
         }
       } catch (err) {

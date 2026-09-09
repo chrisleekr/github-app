@@ -102,6 +102,38 @@ function withSurface(
   return final;
 }
 
+/**
+ * NL routing outcome. Richer than `CanonicalCommand | null` because the
+ * caller now owns two verdicts the classifier can return but no handler can
+ * execute: `unsupported` earns a refusal comment (FR-010), and `confidence`
+ * decides whether a workflow verb is trusted or handed to the conversational
+ * executor instead. Collapsing both to `null`, as this used to, is what made
+ * a misroute indistinguishable from silence.
+ */
+export type NlRouteResult =
+  | { readonly kind: "command"; readonly command: CanonicalCommand; readonly confidence: number }
+  | { readonly kind: "unsupported" }
+  | { readonly kind: "none" };
+
+export async function routeNlTrigger(payload: NLPayload): Promise<NlRouteResult> {
+  const result = await classifyComment({
+    commentBody: payload.commentBody,
+    triggerPhrase: payload.triggerPhrase,
+    callLlm: payload.callLlm,
+    ...(payload.event_surface !== undefined ? { eventSurface: payload.event_surface } : {}),
+  });
+  // `null` means the mention-prefix gate declined before any LLM call.
+  if (result === null) return { kind: "none" };
+  if (result.intent === "unsupported") return { kind: "unsupported" };
+  const intent = toCommandIntent(result.intent);
+  if (intent === null) return { kind: "none" };
+  const parsed =
+    result.deadline_ms === undefined ? { intent } : { intent, deadline_ms: result.deadline_ms };
+  const command = withSurface(parsed, "nl", payload);
+  if (command === null) return { kind: "none" };
+  return { kind: "command", command, confidence: result.confidence };
+}
+
 export async function routeTrigger(input: RouteInput): Promise<CanonicalCommand | null> {
   if (input.surface === "literal") {
     const parsed = parseLiteralCommand(input.payload.commentBody);
@@ -113,19 +145,6 @@ export async function routeTrigger(input: RouteInput): Promise<CanonicalCommand 
     if (parsed === null) return null;
     return withSurface(parsed, "label", input.payload);
   }
-  // NL
-  const result = await classifyComment({
-    commentBody: input.payload.commentBody,
-    triggerPhrase: input.payload.triggerPhrase,
-    callLlm: input.payload.callLlm,
-    ...(input.payload.event_surface !== undefined
-      ? { eventSurface: input.payload.event_surface }
-      : {}),
-  });
-  if (result === null) return null;
-  const intent = toCommandIntent(result.intent);
-  if (intent === null) return null;
-  const parsed =
-    result.deadline_ms === undefined ? { intent } : { intent, deadline_ms: result.deadline_ms };
-  return withSurface(parsed, "nl", input.payload);
+  const nl = await routeNlTrigger(input.payload);
+  return nl.kind === "command" ? nl.command : null;
 }

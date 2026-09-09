@@ -402,10 +402,10 @@ failed it never reaches the gate, so no YAML value can readmit it.
 
 There are two dispatch chokepoints, not one, and both call the gate:
 
-| Chokepoint                                                        | Covers                                                          |
-| ----------------------------------------------------------------- | --------------------------------------------------------------- |
-| `src/workflows/dispatcher.ts:183#applyRepoGate`                   | `dispatchByLabel`, `dispatchByIntent`, `dispatchWorkflowByName` |
-| `src/workflows/ship/command-dispatch.ts:80#isBlockedByRepoConfig` | the canonical ship rail, which bypasses the dispatcher entirely |
+| Chokepoint                                                         | Covers                                                          |
+| ------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `src/workflows/dispatcher.ts:178#applyRepoGate`                    | `dispatchByLabel`, `dispatchWorkflowByName`                     |
+| `src/workflows/ship/command-dispatch.ts:107#isBlockedByRepoConfig` | the canonical ship rail, which bypasses the dispatcher entirely |
 
 A future third dispatch path would need the gate too. Two deliberate carve-outs:
 the `stop` and `abort` ship verbs run with `identityRulesOnly` (a config change
@@ -416,7 +416,8 @@ Because that path does not yet know the workflow name, rule 2 is skipped there
 and re-evaluated downstream.
 
 Rule 2 needs a registry workflow name, and the canonical rail speaks in
-`CommandIntent`s. Two intents collide with registry names, `ship` and `triage`,
+`CommandIntent`s. Seven intents collide with registry names, `ship` and `triage`
+because a rail above owns the word plus the five mention-reachable workflows,
 so `command-dispatch.ts` maps them through `INTENT_TO_WORKFLOW` before calling
 the gate. The mapping matters because the canonical parser runs first in the
 event handlers and returns before `dispatchByLabel`: a `bot:triage` label that

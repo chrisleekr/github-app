@@ -7,7 +7,6 @@ import { softDeleteComment, upsertComment } from "../../db/queries/conversation-
 import { createChildLogger, logger } from "../../logger";
 import { runProposalPollOnce } from "../../orchestrator/proposal-poller";
 import { addReaction } from "../../utils/reactions";
-import { dispatchByIntent } from "../../workflows/dispatcher";
 import { dispatchCommentSurface } from "../../workflows/ship/command-dispatch";
 import { fireReactor } from "../../workflows/ship/reactor-bridge";
 import { isOwnerAllowed } from "../authorize";
@@ -19,8 +18,8 @@ import { claimDelivery } from "../idempotency";
  *
  * - `created`/`edited`/`deleted` (T025): fire the ship reactor so any active
  *   intent wakes early to re-evaluate open-thread state.
- * - `created` only: trigger detection → owner allowlist → `dispatchByIntent`
- *   (T039). Review comments always target a PR.
+ * - `created` only: trigger detection → owner allowlist →
+ *   `dispatchCommentSurface`. Review comments always target a PR.
  */
 export function handleReviewComment(
   octokit: Octokit,
@@ -49,10 +48,8 @@ export function handleReviewComment(
   if (payload.action !== "created") return;
   if (payload.comment.user.type === "Bot") return;
 
-  // Authorize before dispatch, both the canonical (`dispatchCommentSurface`)
-  // and legacy (`dispatchByIntent`) paths share the same allowlist gate so
-  // a dropped repo can't slip through canonical routing. Mirrors the
-  // structure used in `issues.ts` and `pull-request.ts` label handlers.
+  // Authorize before dispatch. Mirrors the structure used in the `issues.ts`
+  // and `pull-request.ts` label handlers.
   const senderLogin = payload.comment.user.login;
   const ownerLogin = payload.repository.owner.login;
   const log = createChildLogger({
@@ -89,12 +86,6 @@ export function handleReviewComment(
   // Pre-fetching the node ID here would impose an extra GraphQL round
   // trip on every review-comment webhook, including comments that
   // never trigger a scoped command.
-  //
-  // Canonical routing is awaited; the legacy `dispatchByIntent` path
-  // below runs only when canonical routing produced no command (the
-  // body is not a recognised verb). Without this precedence, an
-  // overlapping verb (e.g. `bot:summarize`) fires both pipelines for
-  // one webhook.
   if (payload.installation === undefined) return;
 
   const installationId = payload.installation.id;
@@ -124,63 +115,44 @@ export function handleReviewComment(
     // Idempotency gate (issue #202): skip a redelivery before any LLM dispatch.
     if (!(await claimDelivery(deliveryId, log))) return;
     const dispatchLog = log.child({ thread_id: threadId, event_surface: "review-comment" });
-    let canonicalHandled = false;
+
+    // Acknowledge before the classifier call. This used to fire only on the
+    // legacy path, so a mention the canonical rail handled got no reaction at
+    // all while the model was thinking.
+    if (containsTrigger(commentBody)) {
+      void addReaction({
+        octokit,
+        logger: log,
+        owner,
+        repo,
+        commentId: payload.comment.id,
+        eventType: "pull_request_review_comment",
+        content: "eyes",
+      });
+    }
+
     try {
-      canonicalHandled = await dispatchCommentSurface({
+      await dispatchCommentSurface({
         commentBody,
         principal_login: senderLogin,
         pr: { owner, repo, number: prNumber, installation_id: installationId },
         event_surface: "review-comment",
         thread_id: threadId,
         trigger_comment_id: payload.comment.id,
+        deliveryId,
         octokit,
         log: dispatchLog,
         trigger,
       });
     } catch (err) {
       dispatchLog.error({ err }, "ship dispatchCommentSurface threw for review_comment");
-    }
-
-    if (canonicalHandled || !containsTrigger(commentBody)) {
-      // See issue-comment.ts, piggyback poll runs BEFORE the early
-      // return so non-trigger comments still catch reactions made by
-      // the original asker on a prior bot proposal.
-      piggybackProposalPoll(octokit, installationId, owner, repo, log);
-      return;
-    }
-
-    log.info("Trigger detected in review_comment, routing via intent classifier");
-
-    void addReaction({
-      octokit,
-      logger: log,
-      owner,
-      repo,
-      commentId: payload.comment.id,
-      eventType: "pull_request_review_comment",
-      content: "eyes",
-    });
-
-    try {
-      await dispatchByIntent({
-        octokit,
-        logger: log,
-        commentBody,
-        target: { type: "pr", owner, repo, number: prNumber },
-        senderLogin,
-        deliveryId,
-        triggerCommentId: payload.comment.id,
-        triggerEventType: "pull_request_review_comment",
-        ...(typeof inReplyToIdRaw === "number" ? { triggerInReplyToId: inReplyToIdRaw } : {}),
-        trigger,
-      });
-    } catch (err) {
-      log.error({ err }, "dispatchByIntent threw for review_comment");
+      // See the matching branch in `issue-comment.ts`: a silent drop after the
+      // 👀 reaction is indistinguishable from the bot being down.
       await postDispatchFailure({ octokit, log, deliveryId, owner, repo, number: prNumber });
     }
 
-    // Piggyback proposal-poll on the trigger path too: the early-
-    // return branch above already handles the non-trigger case.
+    // Runs for every comment, triggering or not: a comment that didn't address
+    // the bot may still carry an approval reply by the original asker.
     piggybackProposalPoll(octokit, installationId, owner, repo, log);
   })();
 }

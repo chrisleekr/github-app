@@ -28,9 +28,12 @@ import {
   runWithTools,
 } from "../../../ai/llm-client";
 import { config } from "../../../config";
+import { getDb } from "../../../db";
+import { logger as rootLogger } from "../../../logger";
 import { enqueueJob } from "../../../orchestrator/job-queue";
 import type { CanonicalCommand } from "../../../shared/ship-types";
 import { getTriageLLMClient } from "../../../webhook/triage-client-factory";
+import { postRefusalComment } from "../../tracking-mirror";
 import { SHIP_LOG_EVENTS } from "../log-fields";
 import { runChatThread } from "./chat-thread";
 import { runInvestigate } from "./investigate";
@@ -42,6 +45,13 @@ export interface ScopedCommandDeps {
   readonly octokit: Octokit;
   readonly log?: Logger;
 }
+
+/**
+ * Output budget for a scoped tool-calling turn. Must cover the tool_use blocks
+ * AND the structured JSON answer that follows them; a budget sized for the
+ * answer alone starves the loop and yields empty text.
+ */
+const SCOPED_TOOL_LOOP_MAX_TOKENS = 1500;
 
 /**
  * Build the LLM-call adapter the scoped handlers expect. Reuses the
@@ -64,10 +74,30 @@ function buildCallLlm(): (input: {
         model: modelId,
         system: params.systemPrompt,
         messages: [{ role: "user", content: params.userPrompt }],
-        maxTokens: 800,
+        // A tool-using turn must carry the tool calls AND a full structured
+        // answer. 800 left no room for the second half, so the loop ran out of
+        // iterations and returned empty text, which the caller then reported as
+        // a parse failure. Matches the budget the retired dispatcher path used.
+        maxTokens: SCOPED_TOOL_LOOP_MAX_TOKENS,
         tools: params.tools,
         onToolCall: params.onToolCall,
       });
+      if (result.capExceeded || result.text.trim() === "") {
+        // `runWithTools` fails open with empty text when the loop ends on
+        // tool_use. Without this line the caller sees only `raw_len: 0` and
+        // cannot tell an exhausted budget from a broken model.
+        rootLogger.warn(
+          {
+            event: "scoped.tool_loop.empty_text",
+            capExceeded: result.capExceeded,
+            stopReason: result.stopReason,
+            iterations: result.iterations,
+            toolCallCount: result.toolCallCount,
+            droppedToolCalls: result.droppedToolCalls,
+          },
+          "scoped tool loop produced no text",
+        );
+      }
       return result.text;
     }
     const res = await llm.create({
@@ -216,6 +246,23 @@ export async function runChatThreadFromCommand(
     deps.log?.warn(
       { intent: command.intent },
       "chat-thread: missing comment_body or trigger_comment_id on canonical command, refusing dispatch",
+    );
+    return;
+  }
+  // chat-thread keeps its state in the conversation cache and `chat_proposals`
+  // tables. An inline-mode deployment (no DATABASE_URL) cannot run it, so say
+  // so rather than hanging. Ported from the retired `dispatchByIntent`, which
+  // was the only path that checked this.
+  if (getDb() === null) {
+    deps.log?.info(
+      { owner: command.pr.owner, repo: command.pr.repo, number: command.pr.number },
+      "chat-thread: DATABASE_URL not configured, posting refusal instead",
+    );
+    await postRefusalComment(
+      { octokit: deps.octokit, logger: deps.log ?? rootLogger },
+      { owner: command.pr.owner, repo: command.pr.repo, number: command.pr.number },
+      "chat-thread",
+      "conversational mode needs a database backend this deployment is not configured with. Ask for a workflow instead, e.g. `@chrisleekr-bot review this PR`, or apply the matching `bot:<workflow>` label.",
     );
     return;
   }

@@ -99,8 +99,29 @@ export const SCOPED_COMMAND_INTENTS = [
 ] as const;
 export type ScopedCommandIntent = (typeof SCOPED_COMMAND_INTENTS)[number];
 
-/** Union of all 11 verbs the bot recognises. */
-export const COMMAND_INTENTS = [...SHIP_COMMAND_INTENTS, ...SCOPED_COMMAND_INTENTS] as const;
+/**
+ * Registry workflows reachable by mention, dispatched through
+ * `dispatchWorkflowByName` (the same primitive the label trigger uses).
+ *
+ * `ship` and `triage` are absent on purpose: both words already belong to a
+ * rail above, and the existing handler keeps them so no mention that works
+ * today changes meaning.
+ */
+export const WORKFLOW_COMMAND_INTENTS = [
+  "plan",
+  "implement",
+  "review",
+  "resolve",
+  "remember",
+] as const;
+export type WorkflowCommandIntent = (typeof WORKFLOW_COMMAND_INTENTS)[number];
+
+/** Union of all 16 verbs the bot recognises. */
+export const COMMAND_INTENTS = [
+  ...SHIP_COMMAND_INTENTS,
+  ...SCOPED_COMMAND_INTENTS,
+  ...WORKFLOW_COMMAND_INTENTS,
+] as const;
 export type CommandIntent = (typeof COMMAND_INTENTS)[number];
 export const CommandIntentSchema = z.enum(COMMAND_INTENTS);
 
@@ -110,6 +131,10 @@ export function isShipCommandIntent(value: CommandIntent): value is ShipCommandI
 
 export function isScopedCommandIntent(value: CommandIntent): value is ScopedCommandIntent {
   return (SCOPED_COMMAND_INTENTS as readonly string[]).includes(value);
+}
+
+export function isWorkflowCommandIntent(value: CommandIntent): value is WorkflowCommandIntent {
+  return (WORKFLOW_COMMAND_INTENTS as readonly string[]).includes(value);
 }
 
 /**
@@ -146,6 +171,17 @@ export const INTENT_ELIGIBLE_SURFACES: Record<CommandIntent, readonly EventSurfa
   investigate: ["issue-comment", "issue-label"],
   triage: ["issue-comment", "issue-label"],
   "open-pr": ["issue-comment", "issue-label"],
+  // Registry workflows, surfaces taken from each entry's `context` in
+  // `src/workflows/registry.ts`. Label surfaces are excluded on purpose:
+  // `bot:review` and friends already dispatch through `dispatchByLabel`, so
+  // listing them here would turn one webhook into two runs. This map is a
+  // cheap pre-filter, not a second source of truth: `dispatchWorkflowByName`
+  // still owns the authoritative `context` and `requiresPrior` checks.
+  plan: ["issue-comment"],
+  implement: ["issue-comment"],
+  review: ["pr-comment", "review-comment"],
+  resolve: ["pr-comment", "review-comment"],
+  remember: ["pr-comment", "review-comment", "issue-comment"],
 };
 
 export function isIntentEligibleOnSurface(intent: CommandIntent, surface: EventSurface): boolean {

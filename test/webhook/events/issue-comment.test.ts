@@ -1,20 +1,21 @@
 /**
- * Integration test for `issue_comment` → `dispatchByIntent` (T036).
+ * Integration test for the mention rail's workflow dispatch (T036).
  *
- * Proves FR-008: a free-form comment with a clear `ship` intent dispatches
- * through `dispatchByIntent` and produces a `workflow_runs` row whose shape
- * is indistinguishable from the row created by the label trigger
- * `dispatchByLabel("bot:ship")`. This is the contract the registry depends
- * on: downstream consumers (orchestrator, tracking-mirror) must not care
- * which trigger produced the run.
+ * Proves FR-008: a mention that classifies to a registry workflow produces a
+ * `workflow_runs` row indistinguishable from the row the label trigger
+ * `dispatchByLabel("bot:ship")` creates. This is the contract the registry
+ * depends on: downstream consumers (orchestrator, tracking-mirror) must not
+ * care which trigger produced the run.
+ *
+ * Both triggers now call the same `dispatchWorkflowByName`, so this test is
+ * what keeps them from drifting apart again.
  *
  * Strategy:
- *   1. Stub the LLM with a canned ship-intent verdict.
- *   2. Mock the label-mutex + refusal-comment surfaces (they touch GitHub).
- *   3. Point `requireDb()` at the local integration database.
- *   4. Run `dispatchByLabel("bot:ship")` on issue #401.
- *   5. Run `dispatchByIntent(<ship comment>)` on issue #402.
- *   6. Compare the two resulting rows field-by-field (excluding the per-row
+ *   1. Mock the label-mutex + refusal-comment surfaces (they touch GitHub).
+ *   2. Point `requireDb()` at the local integration database.
+ *   3. Run `dispatchByLabel("bot:ship")` on issue #401.
+ *   4. Run `dispatchWorkflowByName` with mention-shaped params on issue #402.
+ *   5. Compare the two resulting rows field-by-field (excluding the per-row
  *      fields that MUST differ: `id`, `target_number`, `delivery_id`,
  *      timestamps).
  */
@@ -66,28 +67,6 @@ void mock.module("../../../src/workflows/tracking-mirror", () => ({
   setState: mockSetState,
 }));
 
-// Stub the intent classifier with a perfect ship verdict for the comment
-// body used in the test.
-const mockClassify = mock((body: string) => {
-  if (body.toLowerCase().includes("ship")) {
-    return Promise.resolve({
-      workflow: "ship" as const,
-      confidence: 0.97,
-      rationale: "user explicitly asked to ship",
-    });
-  }
-  return Promise.resolve({
-    workflow: "clarify" as const,
-    confidence: 0,
-    rationale: "no match",
-  });
-});
-void mock.module("../../../src/workflows/intent-classifier", () => ({
-  classify: mockClassify,
-  IntentWorkflowSchema: {},
-  ClassifyResultSchema: {},
-}));
-
 void mock.module("../../../src/db", () => ({
   requireDb: () => requireSql(),
   getDb: () => requireSql(),
@@ -114,7 +93,7 @@ const fakeOctokit = {
   },
 } as unknown as Octokit;
 
-describe.skipIf(sql === null)("issue-comment → dispatchByIntent integration (T036)", () => {
+describe.skipIf(sql === null)("issue-comment → dispatchWorkflowByName integration (T036)", () => {
   beforeAll(async () => {
     await requireSql().unsafe(`
       DROP TABLE IF EXISTS _migrations CASCADE;
@@ -161,7 +140,8 @@ describe.skipIf(sql === null)("issue-comment → dispatchByIntent integration (T
   });
 
   it("produces a workflow_runs row indistinguishable from the label path", async () => {
-    const { dispatchByLabel, dispatchByIntent } = await import("../../../src/workflows/dispatcher");
+    const { dispatchByLabel, dispatchWorkflowByName } =
+      await import("../../../src/workflows/dispatcher");
     const { findById } = await import("../../../src/workflows/runs-store");
 
     const labelOutcome = await dispatchByLabel({
@@ -177,15 +157,17 @@ describe.skipIf(sql === null)("issue-comment → dispatchByIntent integration (T
     const labelRow = await findById(labelOutcome.runId, requireSql());
     expect(labelRow).not.toBeNull();
 
-    const intentOutcome = await dispatchByIntent({
+    const intentOutcome = await dispatchWorkflowByName({
       octokit: fakeOctokit,
       logger: silentLogger(),
-      commentBody: "@chrisleekr-bot ship this end-to-end, please.",
+      workflowName: "ship",
       target: { type: "issue", owner: "acme", repo: "repo", number: 402 },
       senderLogin: "acme",
       deliveryId: "delivery-intent-402",
       triggerCommentId: 555_402,
       triggerEventType: "issue_comment",
+      triggerBodyPreview: "@chrisleekr-bot ship this end-to-end, please.",
+      addRocketReaction: true,
     });
     expect(intentOutcome.status).toBe("dispatched");
     if (intentOutcome.status !== "dispatched") throw new Error("expected dispatched");
@@ -217,34 +199,5 @@ describe.skipIf(sql === null)("issue-comment → dispatchByIntent integration (T
       | undefined;
     expect(labelCall?.workflowRun.workflowName).toBe("ship");
     expect(intentCall?.workflowRun.workflowName).toBe("ship");
-
-    // The intent path must have consulted the classifier exactly once.
-    expect(mockClassify).toHaveBeenCalledTimes(1);
-  });
-
-  it("low-confidence intent comment does NOT create a workflow_runs row", async () => {
-    const { dispatchByIntent } = await import("../../../src/workflows/dispatcher");
-
-    mockEnsureWorkflowJobQueued.mockClear();
-    mockClassify.mockClear();
-
-    const outcome = await dispatchByIntent({
-      octokit: fakeOctokit,
-      logger: silentLogger(),
-      commentBody: "@chrisleekr-bot hey",
-      target: { type: "issue", owner: "acme", repo: "repo", number: 403 },
-      senderLogin: "acme",
-      deliveryId: "delivery-intent-403",
-      triggerCommentId: 555_403,
-      triggerEventType: "issue_comment",
-    });
-    expect(outcome.status).toBe("ignored");
-    expect(mockEnsureWorkflowJobQueued).not.toHaveBeenCalled();
-
-    const rows =
-      (await requireSql()`SELECT * FROM workflow_runs WHERE target_number = ${403}`) as unknown as {
-        length: number;
-      };
-    expect(rows.length).toBe(0);
   });
 });

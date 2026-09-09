@@ -92,19 +92,8 @@ void mock.module("../../src/repo-config/effective", () => ({
   loadRepoPolicy: mockLoadRepoPolicy,
 }));
 
-// The LLM call `dispatchByIntent` makes after the gate. Mocked so the gate
-// tests can assert it was never reached, which is the whole point of gating
-// before classification.
-const mockClassify = mock(() =>
-  Promise.resolve({ workflow: "triage" as const, confidence: 0.99, rationale: "test" }),
-);
-void mock.module("../../src/workflows/intent-classifier", () => ({
-  classify: mockClassify,
-}));
-
 // Import dispatcher AFTER mocks.
-const { dispatchByIntent, dispatchByLabel, dispatchWorkflowByName } =
-  await import("../../src/workflows/dispatcher");
+const { dispatchByLabel, dispatchWorkflowByName } = await import("../../src/workflows/dispatcher");
 
 beforeEach(() => {
   mockRecordWorkflowExecution.mockClear();
@@ -427,20 +416,24 @@ describe("dispatchByLabel repo-config gate", () => {
 });
 
 /**
- * `dispatchByIntent` gates before classification, so the assertions here are
- * about what did NOT happen: no LLM call, and no second config fetch.
+ * The mention rail no longer has a classifier of its own here: `command-dispatch.ts`
+ * gates and classifies, then calls `dispatchWorkflowByName` by name. What stays
+ * this module's job is the post-name half of the contract, the per-workflow rule
+ * and the durable in-flight backstop, both exercised through a mention-shaped call.
  */
-describe("dispatchByIntent repo-config gate", () => {
-  function intentParams(): Parameters<typeof dispatchByIntent>[0] {
+describe("dispatchWorkflowByName mention-rail contract", () => {
+  function mentionParams(): Parameters<typeof dispatchWorkflowByName>[0] {
     return {
       octokit: fakeOctokit,
       logger: silentLog(),
-      commentBody: "@chrisleekr-bot please triage this",
-      target: { type: "issue", owner: "acme", repo: "repo", number: 42 },
+      workflowName: "triage" as const,
+      target: { type: "issue" as const, owner: "acme", repo: "repo", number: 42 },
       senderLogin: "alice",
       deliveryId: "delivery-intent",
       triggerCommentId: 7,
-      triggerEventType: "issue_comment",
+      triggerEventType: "issue_comment" as const,
+      triggerBodyPreview: "@chrisleekr-bot please triage this",
+      addRocketReaction: true,
     };
   }
 
@@ -448,46 +441,8 @@ describe("dispatchByIntent repo-config gate", () => {
     mockEnqueueJob.mockClear();
     mockInsertQueued.mockClear();
     mockPostRefusalComment.mockClear();
-    mockClassify.mockClear();
     mockLoadRepoPolicy.mockClear();
     mockLoadRepoPolicy.mockResolvedValue(realEffective.DEFAULT_REPO_POLICY);
-  });
-
-  it("refuses without paying for classification when the repo is disabled", async () => {
-    mockLoadRepoPolicy.mockResolvedValue({ ...realEffective.DEFAULT_REPO_POLICY, enabled: false });
-
-    const result = await dispatchByIntent(intentParams());
-
-    expect(result.status).toBe("refused");
-    // The gate exists to spend nothing on a repo that opted out.
-    expect(mockClassify).not.toHaveBeenCalled();
-    expect(mockInsertQueued).not.toHaveBeenCalled();
-    expect(mockPublishWorkflowRunById).not.toHaveBeenCalled();
-    expect(mockPostRefusalComment).toHaveBeenCalledTimes(1);
-  });
-
-  it("refuses silently for a filtered author and still skips the LLM", async () => {
-    mockLoadRepoPolicy.mockResolvedValue({
-      ...realEffective.DEFAULT_REPO_POLICY,
-      triggers: { ...realEffective.DEFAULT_REPO_POLICY.triggers, ignoreAuthors: ["alice"] },
-    });
-
-    const result = await dispatchByIntent(intentParams());
-
-    expect(result.status).toBe("refused");
-    expect(mockClassify).not.toHaveBeenCalled();
-    expect(mockPostRefusalComment).not.toHaveBeenCalled();
-  });
-
-  it("loads the policy once and threads it into the per-workflow re-check", async () => {
-    const result = await dispatchByIntent(intentParams());
-
-    expect(result.status).toBe("dispatched");
-    expect(mockClassify).toHaveBeenCalledTimes(1);
-    // One fetch for the pre-classification gate, reused by
-    // `dispatchWorkflowByName` for the per-workflow rule. Two would mean the
-    // `policy` hand-off regressed to a second REST round trip per comment.
-    expect(mockLoadRepoPolicy).toHaveBeenCalledTimes(1);
   });
 
   it("refuses with the fixed comment for Bun's in-flight collision shape", async () => {
@@ -499,7 +454,7 @@ describe("dispatchByIntent repo-config gate", () => {
       }),
     );
 
-    const result = await dispatchByIntent(intentParams());
+    const result = await dispatchWorkflowByName(mentionParams());
 
     expect(result).toMatchObject({
       status: "refused",
@@ -512,19 +467,17 @@ describe("dispatchByIntent repo-config gate", () => {
     );
   });
 
-  it("still refuses a disabled workflow once classification names it", async () => {
+  it("refuses a workflow the repo disabled, even though the mention gate already passed", async () => {
     mockLoadRepoPolicy.mockResolvedValue(policyFrom({ workflows: { triage: { enabled: false } } }));
 
-    const result = await dispatchByIntent(intentParams());
+    const result = await dispatchWorkflowByName(mentionParams());
 
     expect(result).toMatchObject({ status: "refused", workflowName: "triage", explained: true });
-    // The LLM call is still paid: rule 2 cannot fire before the classifier
-    // names the workflow. Only rules 1 and 3 to 7 save that cost.
-    expect(mockClassify).toHaveBeenCalledTimes(1);
     expect(mockPublishWorkflowRunById).not.toHaveBeenCalled();
     expect(mockPostRefusalComment).toHaveBeenCalledTimes(1);
-    // Still one fetch, not two: the post-classification re-check reuses the
-    // policy the pre-classification gate already loaded.
+    // One fetch per dispatch. `command-dispatch.ts` cannot apply rule 2 (the
+    // workflow name is unknown before classification), so this is the only
+    // place that check can run.
     expect(mockLoadRepoPolicy).toHaveBeenCalledTimes(1);
   });
 });
