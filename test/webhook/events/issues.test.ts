@@ -49,6 +49,9 @@ void mock.module("../../../src/config", () => ({
     allowedOwners: ["acme"],
     logLevel: "silent",
     nodeEnv: "test",
+    // `command-dispatch` pulls in `core/trigger`, which builds its regex from
+    // this at import time. A partial mock crashed the module load.
+    triggerPhrase: "@chrisleekr-bot",
   },
 }));
 

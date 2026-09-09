@@ -405,7 +405,7 @@ There are two dispatch chokepoints, not one, and both call the gate:
 | Chokepoint                                                         | Covers                                                          |
 | ------------------------------------------------------------------ | --------------------------------------------------------------- |
 | `src/workflows/dispatcher.ts:178#applyRepoGate`                    | `dispatchByLabel`, `dispatchWorkflowByName`                     |
-| `src/workflows/ship/command-dispatch.ts:107#isBlockedByRepoConfig` | the canonical ship rail, which bypasses the dispatcher entirely |
+| `src/workflows/ship/command-dispatch.ts:114#isBlockedByRepoConfig` | the canonical ship rail, which bypasses the dispatcher entirely |
 
 A future third dispatch path would need the gate too. Two deliberate carve-outs:
 the `stop` and `abort` ship verbs run with `identityRulesOnly` (a config change

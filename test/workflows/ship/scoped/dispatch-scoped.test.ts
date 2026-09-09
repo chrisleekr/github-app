@@ -18,6 +18,13 @@ void mock.module("../../../../src/workflows/ship/scoped/chat-thread", () => ({
   runChatThread: mockRunChatThread,
 }));
 
+const mockCreate = mock((_params: { maxTokens: number }) =>
+  Promise.resolve({ text: "{}", usage: { inputTokens: 1, outputTokens: 1 }, model: "m" }),
+);
+void mock.module("../../../../src/webhook/triage-client-factory", () => ({
+  getTriageLLMClient: (): unknown => ({ provider: "anthropic", create: mockCreate }),
+}));
+
 const realTrackingMirror = await import("../../../../src/workflows/tracking-mirror");
 const mockPostRefusalComment = mock(
   (_deps: unknown, _target: unknown, _name: string, _reason: string) => Promise.resolve(),
@@ -97,5 +104,27 @@ describe("runChatThreadFromCommand: inline-mode guard", () => {
 
     expect(mockRunChatThread).not.toHaveBeenCalled();
     expect(mockPostRefusalComment).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildCallLlm output budget", () => {
+  beforeEach(() => {
+    mockRunChatThread.mockClear();
+    mockCreate.mockClear();
+    dbHandle = {};
+  });
+
+  it("gives the tool-less branch the same budget as the tool loop", async () => {
+    await runChatThreadFromCommand(chatCommand(), { octokit: fakeOctokit, log: silentLog() });
+
+    const passed = mockRunChatThread.mock.calls[0]?.[0] as unknown as {
+      callLlm: (i: { systemPrompt: string; userPrompt: string }) => Promise<string>;
+    };
+    await passed.callLlm({ systemPrompt: "sys", userPrompt: "user" });
+
+    // chat-thread runs tool-less on issue surfaces and whenever the tools flag
+    // is off. 800 truncated the structured answer into a parse failure, and
+    // this rail now also absorbs the classifier's outage fallback.
+    expect(mockCreate.mock.calls[0]?.[0]?.maxTokens).toBe(1500);
   });
 });

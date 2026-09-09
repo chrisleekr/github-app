@@ -297,15 +297,22 @@ Every shepherding emitter draws its `event` value from the typed `SHIP_LOG_EVENT
 | `ship.scoped.<verb>.daemon.failed`    | Same                                                                              | Daemon reported `halted` or `failed`. `reason` carries the structured halt reason.                                                      |
 | `nl.intent.resolved`                  | `command-dispatch.dispatchCommentSurface`, once per classified mention            | The winning intent. Fields: `intent`, `classified_intent`, `confidence`, `rail`; `event_surface` comes from the handler's child logger. |
 | `scoped.tool_loop.empty_text`         | `dispatch-scoped.buildCallLlm` after `runWithTools`                               | The tool loop returned no text. Fields: `capExceeded`, `stopReason`, `iterations`, `toolCallCount`.                                     |
+| `scoped.single_turn.empty_text`       | `dispatch-scoped.buildCallLlm` after `llm.create`                                 | The tool-less branch returned no text. Field: `outputTokens`, the only truncation signal `llm.create` exposes.                          |
 | `chat_thread.empty_response`          | `chat-thread.runChatThread` before parsing                                        | chat-thread got an empty body and answered with the budget message, not a parse error.                                                  |
 
-The last three are string literals at their emit sites rather than `SHIP_LOG_EVENTS` members: they
+The last four are string literals at their emit sites rather than `SHIP_LOG_EVENTS` members: they
 belong to the comment rail, not to a ship intent.
 
-`nl.intent.resolved` is the one line that makes a misroute greppable. `classified_intent` is what
-the model said and `intent` is what actually ran, so they differ exactly when the confidence
-threshold downgraded a workflow verb to `chat-thread`. `rail` is `ship`, `scoped`, `workflow`, or
-`refusal`.
+`nl.intent.resolved` is the one line that makes a misroute greppable, and all four shapes carry the
+same fields. `classified_intent` is what the model said and `intent` is what actually ran, so they
+differ exactly when the confidence threshold downgraded a workflow verb to `chat-thread`. `rail` is
+`ship`, `scoped`, `workflow`, `refusal`, or `none`.
+
+`rail: "none"` is the one an operator most needs: the model answered `none`, or per-surface
+eligibility rewrote the verb to `none` in `src/workflows/ship/nl-classifier.ts`, and nothing ran.
+This is the only classifier left, so without this line a seriously meant ask that the model
+discarded leaves no trace at all. The line is emitted only when a classification actually happened,
+never when the mention gate declined before the LLM call.
 
 ### Querying example (Datadog / Loki)
 

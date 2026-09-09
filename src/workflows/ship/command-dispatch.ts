@@ -10,6 +10,7 @@ import type { Logger } from "pino";
 
 import { resolveModelId } from "../../ai/llm-client";
 import { config } from "../../config";
+import { containsTrigger } from "../../core/trigger";
 import { logger as rootLogger } from "../../logger";
 import { type EffectiveRepoPolicy, loadRepoPolicy } from "../../repo-config/effective";
 import { checkRepoGate, type TriggerContext } from "../../repo-config/gate";
@@ -41,6 +42,12 @@ export interface DispatchDeps {
    * that the ship rail did not already carry.
    */
   readonly deliveryId: string;
+  /**
+   * Policy the caller already loaded for this repo. `dispatchCommentSurface`
+   * loads one for the pre-classification gate; without threading it, every
+   * classified mention paid a second GitHub round trip for the same file.
+   */
+  readonly repoPolicy?: EffectiveRepoPolicy;
 }
 
 /** Which rail a resolved intent lands on. Observability only. */
@@ -109,12 +116,14 @@ async function isBlockedByRepoConfig(
   deps: DispatchDeps,
   log: Logger,
 ): Promise<{ blocked: boolean; policy: EffectiveRepoPolicy }> {
-  const policy = await loadRepoPolicy({
-    octokit: deps.octokit,
-    owner: command.pr.owner,
-    repo: command.pr.repo,
-    log,
-  });
+  const policy =
+    deps.repoPolicy ??
+    (await loadRepoPolicy({
+      octokit: deps.octokit,
+      owner: command.pr.owner,
+      repo: command.pr.repo,
+      log,
+    }));
   const workflowName = INTENT_TO_WORKFLOW[command.intent];
   const verdict = checkRepoGate({
     policy,
@@ -248,7 +257,10 @@ function routeToHandler(
       },
       senderLogin: command.principal_login,
       deliveryId: deps.deliveryId,
-      triggerBodyPreview: command.comment_body ?? "",
+      // Bounded like every other producer: this is attacker-authored text that
+      // lands in `workflow_runs.trigger_body_preview`, the queue offer, and the
+      // daemon payload.
+      triggerBodyPreview: command.comment_body?.slice(0, 200) ?? "",
       addRocketReaction: true,
       ...(repoPolicy !== undefined ? { repoPolicy } : {}),
       triggerEventType:
@@ -342,13 +354,11 @@ export async function dispatchCommentSurface(input: {
       return true;
     }
 
-    // Cheap local pre-check, mirroring the classifier's own FR-025a rule
-    // (`nl-classifier.ts:86`): a body that does not open with the trigger
-    // phrase is returned as `null` there regardless. Testing it here keeps a
-    // disabled repo's ordinary chatter from costing a config fetch and a
-    // gate_blocked log line per comment. `trimStart`, not `trim`, to match the
-    // classifier exactly.
-    if (!input.commentBody.trimStart().startsWith(config.triggerPhrase)) return false;
+    // Cheap local pre-check, and it must be the SAME predicate the classifier
+    // and the 👀 reaction use, or a mention is acknowledged then dropped.
+    // Testing it here keeps a disabled repo's ordinary chatter from costing a
+    // config fetch and a gate_blocked log line per comment.
+    if (!containsTrigger(input.commentBody)) return false;
 
     // Repo-wide gate, between the two parsers on purpose. The literal parser
     // above is local, so running it first preserves the `stop`/`abort`
@@ -441,6 +451,8 @@ export async function dispatchCommentSurface(input: {
         {
           event: "nl.intent.resolved",
           intent: "unsupported",
+          classified_intent: "unsupported",
+          confidence: nl.confidence,
           rail: "refusal",
         },
         "NL intent resolved",
@@ -454,7 +466,25 @@ export async function dispatchCommentSurface(input: {
       return true;
     }
 
-    if (nl.kind === "none") return false;
+    if (nl.kind === "none") {
+      // The model answering `none` for an ask the user meant seriously is the
+      // misroute with no other trace, so it earns the same line as every other
+      // verdict. `classified: false` means the mention gate declined before any
+      // LLM call, which is not a classification and would only add noise.
+      if (nl.classified) {
+        log.info(
+          {
+            event: "nl.intent.resolved",
+            intent: "none",
+            classified_intent: nl.classified_intent,
+            confidence: nl.confidence,
+            rail: "none",
+          },
+          "NL intent resolved",
+        );
+      }
+      return false;
+    }
 
     // A workflow verb starts an expensive isolated run, so an uncertain guess
     // is worse than a conversation. Below the threshold, hand it to
@@ -479,15 +509,20 @@ export async function dispatchCommentSurface(input: {
       "NL intent resolved",
     );
 
-    dispatchCanonicalCommand(command, deps);
+    // Reuse the policy the pre-classification gate already loaded: the
+    // per-workflow re-check reads the same file.
+    dispatchCanonicalCommand(command, { ...deps, repoPolicy: policy });
     return true;
   } catch (err) {
     // Pass `err` directly so pino's serializer captures the stack and
     // structured properties; `String(err)` would discard both.
     (input.log ?? rootLogger).error(
       { event: "ship.dispatch_comment_surface_failed", err },
-      "ship dispatchCommentSurface threw, swallowed",
+      "ship dispatchCommentSurface threw",
     );
-    return false;
+    // Rethrow: the caller already acknowledged the comment with 👀, and its
+    // `catch` is what posts the user-facing failure reply. Returning `false`
+    // here made that reply unreachable and restored the silent drop.
+    throw err;
   }
 }

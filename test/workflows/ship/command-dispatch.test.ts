@@ -315,7 +315,7 @@ describe("dispatchCommentSurface repo-config gate", () => {
     mockRouteTrigger.mockClear();
     mockRouteTrigger.mockResolvedValue(null);
     mockRouteNlTrigger.mockClear();
-    mockRouteNlTrigger.mockResolvedValue({ kind: "none" });
+    mockRouteNlTrigger.mockResolvedValue({ kind: "none", classified: true });
     mockPostRefusalComment.mockClear();
     mockDispatchWorkflowByName.mockClear();
     mockDispatchScopedCommand.mockClear();
@@ -444,13 +444,78 @@ describe("dispatchCommentSurface NL routing", () => {
     await dispatchCommentSurface(surfaceInput());
     await settle();
 
-    // Two loads, not three: the pre-classification gate (workflow name not yet
-    // known, rule 2 skipped) and the post-classification gate that knows it.
-    // `dispatchWorkflowByName` gets that second policy handed to it rather than
-    // loading a third time.
-    expect(mockLoadRepoPolicy).toHaveBeenCalledTimes(2);
+    // One load for the whole mention. The pre-classification gate loads it,
+    // the post-classification gate reuses it through `DispatchDeps`, and
+    // `dispatchWorkflowByName` gets it handed to it rather than fetching again.
+    expect(mockLoadRepoPolicy).toHaveBeenCalledTimes(1);
     const arg = mockDispatchWorkflowByName.mock.calls[0]?.[0] as { repoPolicy?: unknown };
     expect(arg.repoPolicy).toBe(realEffective.DEFAULT_REPO_POLICY);
+  });
+
+  it("caps triggerBodyPreview, which carries attacker-authored comment text", async () => {
+    const long = "x".repeat(40_000);
+    mockRouteNlTrigger.mockResolvedValue({
+      kind: "command",
+      command: { ...nlCommand("review"), comment_body: long },
+      confidence: 0.95,
+    });
+
+    await dispatchCommentSurface(surfaceInput());
+    await settle();
+
+    const arg = mockDispatchWorkflowByName.mock.calls[0]?.[0] as { triggerBodyPreview: string };
+    expect(arg.triggerBodyPreview).toHaveLength(200);
+  });
+
+  it("rethrows so the webhook handler can post its dispatch-failure reply", async () => {
+    mockRouteNlTrigger.mockRejectedValue(new Error("bedrock 503"));
+
+    // Swallowing here made the handler's `catch` unreachable, so an outage was
+    // logged and the user saw only the 👀 reaction.
+    let thrown: unknown = null;
+    try {
+      await dispatchCommentSurface(surfaceInput());
+    } catch (err) {
+      thrown = err;
+    }
+    expect((thrown as Error | null)?.message).toBe("bedrock 503");
+  });
+
+  it("logs nl.intent.resolved when the classifier answers none", async () => {
+    mockRouteNlTrigger.mockResolvedValue({
+      kind: "none",
+      classified: true,
+      classified_intent: "none",
+      confidence: 0.4,
+    });
+    const lines: Record<string, unknown>[] = [];
+    const log = silentLog();
+    log.info = ((obj: Record<string, unknown>) => {
+      lines.push(obj);
+    }) as typeof log.info;
+
+    const handled = await dispatchCommentSurface({ ...surfaceInput(), log });
+    await settle();
+
+    expect(handled).toBe(false);
+    // With the second classifier gone this is the only trace that a mention was
+    // classified and discarded.
+    const resolved = lines.find((l) => l["event"] === "nl.intent.resolved");
+    expect(resolved).toMatchObject({ intent: "none", rail: "none", confidence: 0.4 });
+  });
+
+  it("emits no log line when the mention gate declined before any LLM call", async () => {
+    mockRouteNlTrigger.mockResolvedValue({ kind: "none", classified: false });
+    const lines: Record<string, unknown>[] = [];
+    const log = silentLog();
+    log.info = ((obj: Record<string, unknown>) => {
+      lines.push(obj);
+    }) as typeof log.info;
+
+    await dispatchCommentSurface({ ...surfaceInput(), log });
+    await settle();
+
+    expect(lines.find((l) => l["event"] === "nl.intent.resolved")).toBeUndefined();
   });
 
   it("derives target.type from the event surface, not from the pr field", async () => {
@@ -505,7 +570,7 @@ describe("dispatchCommentSurface NL routing", () => {
   });
 
   it("posts a refusal for an unsupported ask (FR-010)", async () => {
-    mockRouteNlTrigger.mockResolvedValue({ kind: "unsupported" });
+    mockRouteNlTrigger.mockResolvedValue({ kind: "unsupported", confidence: 0.9 });
 
     const handled = await dispatchCommentSurface(surfaceInput());
 
@@ -516,7 +581,7 @@ describe("dispatchCommentSurface NL routing", () => {
   });
 
   it("returns false for 'none' so the caller knows nothing was claimed", async () => {
-    mockRouteNlTrigger.mockResolvedValue({ kind: "none" });
+    mockRouteNlTrigger.mockResolvedValue({ kind: "none", classified: true });
 
     const handled = await dispatchCommentSurface(surfaceInput());
 

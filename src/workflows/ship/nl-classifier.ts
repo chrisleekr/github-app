@@ -1,7 +1,7 @@
 /**
  * Natural-language trigger classifier (FR-025 + FR-025a). Single-turn
  * Bedrock call via the existing `src/ai/llm-client.ts` adaptor, gated
- * on the FR-025a mention-prefix check: comments without the configured
+ * on the FR-025a mention check: comments without a word-boundary
  * `TRIGGER_PHRASE` mention return `null` BEFORE the LLM is invoked
  * (zero LLM cost on conversational comments).
  *
@@ -23,6 +23,7 @@
 import { z } from "zod";
 
 import { parseStructuredResponse, withStructuredRules } from "../../ai/structured-output";
+import { containsTriggerPhrase, stripTriggerPhrase } from "../../core/trigger";
 import { logger } from "../../logger";
 import {
   COMMAND_INTENTS,
@@ -128,18 +129,14 @@ export interface ClassifyInput {
 }
 
 export async function classifyComment(input: ClassifyInput): Promise<NlClassifierResult | null> {
-  // FR-025a: only fire when the trigger phrase is the mention prefix.
-  // `indexOf` would also match quoted/log-pasted text, which we explicitly
-  // do not want to classify (and pay LLM tokens for).
-  const trimmed = input.commentBody.trimStart();
-  if (!trimmed.startsWith(input.triggerPhrase)) return null;
-  // Require a token boundary after the prefix so a longer login that
-  // happens to share the same prefix (e.g. `@chrisleekr-bot-foo` vs
-  // `@chrisleekr-bot`) does not slip through. Permitted boundaries:
-  // end-of-string, whitespace, or common punctuation.
-  const nextChar = trimmed[input.triggerPhrase.length];
-  if (nextChar !== undefined && !/[\s:;,!.?)]/.test(nextChar)) return null;
-  const post = trimmed.slice(input.triggerPhrase.length).trim();
+  // FR-025a: fire on a word-boundary mention ANYWHERE in the body, the same
+  // predicate `containsTrigger` uses for the 👀 reaction. A prefix-only gate
+  // here acknowledged `Hey @chrisleekr-bot, please review this` and then
+  // dropped it, because this is the only classifier left.
+  if (!containsTriggerPhrase(input.commentBody, input.triggerPhrase)) return null;
+  // Strip every mention, wherever it sits, so the model reads the ask rather
+  // than the addressing.
+  const post = stripTriggerPhrase(input.commentBody, input.triggerPhrase).trim();
   if (post === "") return null;
 
   let raw: string;

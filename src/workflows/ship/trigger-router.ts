@@ -17,7 +17,7 @@ import {
 } from "../../shared/ship-types";
 import { parseLabelTrigger } from "./label-trigger";
 import { parseLiteralCommand } from "./literal-command";
-import { classifyComment, toCommandIntent } from "./nl-classifier";
+import { classifyComment, type NlClassifierResult, toCommandIntent } from "./nl-classifier";
 
 interface BasePayload {
   readonly principal_login: string;
@@ -112,8 +112,19 @@ function withSurface(
  */
 export type NlRouteResult =
   | { readonly kind: "command"; readonly command: CanonicalCommand; readonly confidence: number }
-  | { readonly kind: "unsupported" }
-  | { readonly kind: "none" };
+  | { readonly kind: "unsupported"; readonly confidence: number }
+  /**
+   * `classified` separates the two ways nothing runs: the model returned a
+   * verdict of `none` (or a verb ineligible on this surface), versus the
+   * mention gate declining before any LLM call. Only the first is a misroute
+   * worth a log line.
+   */
+  | {
+      readonly kind: "none";
+      readonly classified: boolean;
+      readonly confidence?: number;
+      readonly classified_intent?: NlClassifierResult["intent"];
+    };
 
 export async function routeNlTrigger(payload: NLPayload): Promise<NlRouteResult> {
   const result = await classifyComment({
@@ -122,15 +133,22 @@ export async function routeNlTrigger(payload: NLPayload): Promise<NlRouteResult>
     callLlm: payload.callLlm,
     ...(payload.event_surface !== undefined ? { eventSurface: payload.event_surface } : {}),
   });
-  // `null` means the mention-prefix gate declined before any LLM call.
-  if (result === null) return { kind: "none" };
-  if (result.intent === "unsupported") return { kind: "unsupported" };
+  // `null` means the mention gate declined before any LLM call.
+  if (result === null) return { kind: "none", classified: false };
+  if (result.intent === "unsupported")
+    return { kind: "unsupported", confidence: result.confidence };
+  const unrouted = {
+    kind: "none",
+    classified: true,
+    confidence: result.confidence,
+    classified_intent: result.intent,
+  } as const;
   const intent = toCommandIntent(result.intent);
-  if (intent === null) return { kind: "none" };
+  if (intent === null) return unrouted;
   const parsed =
     result.deadline_ms === undefined ? { intent } : { intent, deadline_ms: result.deadline_ms };
   const command = withSurface(parsed, "nl", payload);
-  if (command === null) return { kind: "none" };
+  if (command === null) return unrouted;
   return { kind: "command", command, confidence: result.confidence };
 }
 

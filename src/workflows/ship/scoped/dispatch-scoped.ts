@@ -47,11 +47,14 @@ export interface ScopedCommandDeps {
 }
 
 /**
- * Output budget for a scoped tool-calling turn. Must cover the tool_use blocks
- * AND the structured JSON answer that follows them; a budget sized for the
- * answer alone starves the loop and yields empty text.
+ * Output budget for a scoped turn. A tool-calling turn must cover the tool_use
+ * blocks AND the structured JSON answer that follows them; a budget sized for
+ * the answer alone starves the loop and yields empty text. The single-turn
+ * branch shares it because the answer is the same structured JSON, and this
+ * rail now absorbs the classifier's outage fallback and every sub-threshold
+ * downgrade. 800 was what the retired dispatcher path raised to 1500.
  */
-const SCOPED_TOOL_LOOP_MAX_TOKENS = 1500;
+const SCOPED_MAX_TOKENS = 1500;
 
 /**
  * Build the LLM-call adapter the scoped handlers expect. Reuses the
@@ -74,11 +77,7 @@ function buildCallLlm(): (input: {
         model: modelId,
         system: params.systemPrompt,
         messages: [{ role: "user", content: params.userPrompt }],
-        // A tool-using turn must carry the tool calls AND a full structured
-        // answer. 800 left no room for the second half, so the loop ran out of
-        // iterations and returned empty text, which the caller then reported as
-        // a parse failure. Matches the budget the retired dispatcher path used.
-        maxTokens: SCOPED_TOOL_LOOP_MAX_TOKENS,
+        maxTokens: SCOPED_MAX_TOKENS,
         tools: params.tools,
         onToolCall: params.onToolCall,
       });
@@ -104,8 +103,18 @@ function buildCallLlm(): (input: {
       model: modelId,
       system: params.systemPrompt,
       messages: [{ role: "user", content: params.userPrompt }],
-      maxTokens: 800,
+      maxTokens: SCOPED_MAX_TOKENS,
     });
+    if (res.text.trim() === "") {
+      // Same blind spot the tool branch had: without this the caller sees only
+      // `raw_len: 0` and cannot tell a truncated answer from a broken model.
+      rootLogger.warn(
+        // `llm.create` returns no stop reason, so `outputTokens` at the cap is
+        // the only truncation signal available here.
+        { event: "scoped.single_turn.empty_text", outputTokens: res.usage.outputTokens },
+        "scoped single-turn call produced no text",
+      );
+    }
     return res.text;
   };
 }

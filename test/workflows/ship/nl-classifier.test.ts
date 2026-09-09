@@ -1,11 +1,13 @@
 /**
  * T014c: NL intent-classifier tests covering FR-025 + FR-025a.
  *
- * The mention-prefix gate is THE cost-control gate: a comment that does
- * not start with the configured `triggerPhrase` MUST NOT invoke the
- * Bedrock SDK at all. These tests assert zero LLM calls on every
- * non-mentioning input: adding tokens to a maintainer's bill for an
- * irrelevant comment is the failure mode this gate prevents.
+ * The mention gate is THE cost-control gate: a comment that does not carry a
+ * word-boundary `triggerPhrase` mention MUST NOT invoke the Bedrock SDK at
+ * all. These tests assert zero LLM calls on every non-mentioning input:
+ * adding tokens to a maintainer's bill for an irrelevant comment is the
+ * failure mode this gate prevents. The mention need not be the prefix: this
+ * is the only classifier left, so a prefix-only gate acknowledged
+ * `Hey @bot, please review` with 👀 and then dropped it.
  */
 
 import { describe, expect, it, mock } from "bun:test";
@@ -13,7 +15,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { isWorkflowCommandIntent } from "../../../src/shared/ship-types";
 import { classifyComment, toCommandIntent } from "../../../src/workflows/ship/nl-classifier";
 
-describe("classifyComment: FR-025a mention-prefix gate", () => {
+describe("classifyComment: FR-025a mention gate", () => {
   it("returns null and does NOT invoke the LLM when the comment lacks the trigger phrase", async () => {
     const callLlm = mock(() => Promise.reject(new Error("must not be called")));
     const result = await classifyComment({
@@ -25,10 +27,26 @@ describe("classifyComment: FR-025a mention-prefix gate", () => {
     expect(callLlm).not.toHaveBeenCalled();
   });
 
-  it("returns null when the trigger-phrase substring appears mid-comment (must be prefix)", async () => {
+  it("classifies a mid-comment mention and strips the mention from the prompt", async () => {
+    const callLlm = mock((input: { userPrompt: string }) => {
+      expect(input.userPrompt).not.toContain("@chrisleekr-bot");
+      // The trailing boundary survives, so surrounding punctuation is intact.
+      expect(input.userPrompt).toContain("Hey, please review this");
+      return Promise.resolve('{"intent":"review","confidence":0.9}');
+    });
+    const result = await classifyComment({
+      commentBody: "Hey @chrisleekr-bot, please review this",
+      triggerPhrase: "@chrisleekr-bot",
+      callLlm,
+    });
+    expect(result?.intent).toBe("review");
+    expect(callLlm).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns null when a bare word merely resembles the phrase", async () => {
     const callLlm = mock(() => Promise.reject(new Error("must not be called")));
     const result = await classifyComment({
-      commentBody: "well @chrisleekr-bot would say ship",
+      commentBody: "well chrisleekr-bot would say ship",
       triggerPhrase: "@chrisleekr-bot",
       callLlm,
     });
@@ -47,7 +65,7 @@ describe("classifyComment: FR-025a mention-prefix gate", () => {
     expect(callLlm).not.toHaveBeenCalled();
   });
 
-  it("returns null when the comment is just the prefix with nothing after it", async () => {
+  it("returns null when the comment is just the mention with nothing after it", async () => {
     const callLlm = mock(() => Promise.reject(new Error("must not be called")));
     const result = await classifyComment({
       commentBody: "@chrisleekr-bot   ",
