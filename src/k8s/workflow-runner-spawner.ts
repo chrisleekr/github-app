@@ -24,8 +24,16 @@ import { loadKubernetesClient } from "./ephemeral-daemon-spawner";
 const RUNNER_PROVIDER_SECRET = "workflow-runner-secrets";
 const PROCESS_GUARD_PATH = "/usr/local/lib/github-app/daemon-process-guard.so";
 const SHA256_IMAGE_DIGEST = /@sha256:[0-9a-f]{64}$/;
-export const WORKFLOW_RUNNER_STORAGE_REQUEST = "2Gi";
-export const WORKFLOW_RUNNER_STORAGE_LIMIT = "10Gi";
+// Deployment-configurable and pinned by the admission boundary from the same
+// chart values, so the Pod spec and the policy move together. Storage feeds both
+// the emptyDir sizeLimit and the ephemeral-storage limit, which the policy checks
+// against one param.
+export const WORKFLOW_RUNNER_CPU_REQUEST = config.workflowRunnerCpuRequest;
+export const WORKFLOW_RUNNER_MEMORY_REQUEST = config.workflowRunnerMemoryRequest;
+export const WORKFLOW_RUNNER_STORAGE_REQUEST = config.workflowRunnerStorageRequest;
+export const WORKFLOW_RUNNER_CPU_LIMIT = config.workflowRunnerCpuLimit;
+export const WORKFLOW_RUNNER_MEMORY_LIMIT = config.workflowRunnerMemoryLimit;
+export const WORKFLOW_RUNNER_STORAGE_LIMIT = config.workflowRunnerStorageLimit;
 export const WORKFLOW_RUNNER_WORKSPACE_PATH = "/tmp/bot-workspaces";
 // Deployment-configurable so a cluster can target a node pool it already
 // labels and taints. Drives the nodeSelector AND the NoSchedule toleration.
@@ -298,13 +306,13 @@ export function buildWorkflowRunnerPod(
           ],
           resources: {
             requests: {
-              cpu: "500m",
-              memory: "1Gi",
+              cpu: WORKFLOW_RUNNER_CPU_REQUEST,
+              memory: WORKFLOW_RUNNER_MEMORY_REQUEST,
               "ephemeral-storage": WORKFLOW_RUNNER_STORAGE_REQUEST,
             },
             limits: {
-              cpu: "2",
-              memory: "4Gi",
+              cpu: WORKFLOW_RUNNER_CPU_LIMIT,
+              memory: WORKFLOW_RUNNER_MEMORY_LIMIT,
               "ephemeral-storage": WORKFLOW_RUNNER_STORAGE_LIMIT,
             },
           },

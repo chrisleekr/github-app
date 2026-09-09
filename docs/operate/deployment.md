@@ -225,7 +225,7 @@ The daemon image is ~2 GB unpacked. The same sizing applies to ephemeral daemon 
 
 ### Isolated workflow runner
 
-Each structured workflow gets one Pod with fixed per-container resources from `src/k8s/workflow-runner-spawner.ts`:
+Each structured workflow gets one Pod. The per-container resources below are the defaults; each is set by the matching `WORKFLOW_RUNNER_*` variable in [configuration](configuration.md), and the same value must be repeated in the boundary ConfigMap key named in step 2 below.
 
 | Resource          | Request | Limit  |
 | ----------------- | ------- | ------ |
@@ -256,7 +256,7 @@ containers:
         mountPath: /workspaces
 ```
 
-Each isolated runner gets one 10 GiB `emptyDir` mounted at `/tmp/bot-workspaces`. The clone and artifacts disappear with the Pod. Keep both the volume limit and the container's 10 GiB ephemeral-storage limit because they cover different accounting surfaces, but do not treat either as a filesystem quota. Kubernetes enforces local-storage excess through eviction, and its default directory scan misses deleted files that a process keeps open. The fixed runner-node placement below contains that failure mode away from control-plane and application nodes. Kubernetes documents the eviction behavior, deleted-open-file gap, and optional quota-based measurement in [Local ephemeral storage](https://kubernetes.io/docs/concepts/storage/ephemeral-storage/).
+Each isolated runner gets one `emptyDir` mounted at `/tmp/bot-workspaces`, sized by `WORKFLOW_RUNNER_STORAGE_LIMIT` (10 GiB by default). The clone and artifacts disappear with the Pod. Keep both the volume limit and the container's ephemeral-storage limit, which follows the same variable, because they cover different accounting surfaces, but do not treat either as a filesystem quota. Kubernetes enforces local-storage excess through eviction, and its default directory scan misses deleted files that a process keeps open. The fixed runner-node placement below contains that failure mode away from control-plane and application nodes. Kubernetes documents the eviction behavior, deleted-open-file gap, and optional quota-based measurement in [Local ephemeral storage](https://kubernetes.io/docs/concepts/storage/ephemeral-storage/).
 
 ## Kubernetes worker requirements
 
@@ -367,12 +367,15 @@ Post-create reconciliation is not early enough to stop a mutated image or lifecy
 
 The [`github-app` Helm chart](https://github.com/chrisleekr/helm-charts/tree/main/charts/github-app) packages this file behind `workflowRunner.enabled`, and is the recommended install path. It derives the boundary parameters below from the same values that render the controller's own config, so `runnerImage` cannot drift from `DAEMON_IMAGE`. This example stays the canonical copy of the policy: the chart carries its `spec` verbatim and a chart-side gate fails when the two differ. Apply the steps below by hand only when installing without the chart.
 
+Upgrading a hand-installed boundary from a release before the six `runnerCpuRequest` / `runnerMemoryRequest` / `runnerStorageRequest` / `runnerCpuLimit` / `runnerMemoryLimit` / `runnerStorageLimit` keys existed: add them to `workflow-runner-boundary` **before** applying the new policy. The policy requires an exact key count, and with `parameterNotFoundAction: Deny` and `failurePolicy: Fail` a ConfigMap that predates them denies every runner Pod. This is the ConfigMap-then-policy ordering in step 7, applied to an upgrade. Chart installs are not exposed: the chart renders both from the same values.
+
 The example creates a Restricted `github-app-runners` namespace and a fail-closed policy and binding. The binding selects the dedicated namespace and the policy validates every Pod create, Pod update, and ephemeral-container update in it. Before applying it:
 
 1. Set `workflow-runner-boundary.data.runnerImage` to the exact `@sha256:<digest>` image configured as `DAEMON_IMAGE`. Tags, including immutable release tags, are rejected by the controller and policy.
 2. Set `workflow-runner-boundary.data.orchestratorOrigin` to the WSS origin used by `ORCHESTRATOR_PUBLIC_URL`, without a path or trailing slash.
    Set `runnerNodeLabel` and `runnerNodeValue` to the controller's `WORKFLOW_RUNNER_NODE_LABEL` / `WORKFLOW_RUNNER_NODE_VALUE` values.
    Set `runnerImagePullSecret` to the controller's `WORKFLOW_RUNNER_IMAGE_PULL_SECRET` value: the name of an existing `kubernetes.io/dockerconfigjson` Secret in the runner namespace, or an empty string to forbid pull secrets entirely. The runner has no ServiceAccount token, so the kubelet reads this Secret and the container never can.
+   Set `runnerCpuRequest`, `runnerMemoryRequest`, `runnerStorageRequest`, `runnerCpuLimit`, `runnerMemoryLimit`, and `runnerStorageLimit` to the controller's matching `WORKFLOW_RUNNER_*` values. The policy compares these against the Pod's `resources` block and, for `runnerStorageLimit`, against the workspace `emptyDir` `sizeLimit` as well, so raising a limit means changing both sides together or every runner Pod is denied.
 3. Copy the controller's exact `provider`, `model`, optional `awsRegion`, `anthropicBedrockBaseUrl`, and `allowedOwners` values into the boundary ConfigMap. Use an empty string for an omitted optional setting.
 4. Set `providerCredential1..3` to the exact selected Secret-key names in spawner order: one Anthropic key; one Bedrock bearer key; or access key, secret key, and optional session token. Leave unused slots empty. The ConfigMap contains names and non-secret settings, never credential values.
 5. Provision and verify the dedicated labeled-and-tainted runner nodes described above. Label the controller namespace `github-app.chrislee.kr/workflow-controller=true`, retain the controller Pod labels from the example, and adapt the DNS selectors if the cluster does not label its DNS Pods `k8s-app=kube-dns`.

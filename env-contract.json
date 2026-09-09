@@ -360,6 +360,36 @@
     "kind": "config"
   },
   {
+    "env": "WORKFLOW_RUNNER_CPU_REQUEST",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_MEMORY_REQUEST",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_STORAGE_REQUEST",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_CPU_LIMIT",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_MEMORY_LIMIT",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
+    "env": "WORKFLOW_RUNNER_STORAGE_LIMIT",
+    "group": "Group 9",
+    "kind": "config"
+  },
+  {
     "env": "DAEMON_IMAGE",
     "group": "Group 9",
     "kind": "config"

@@ -273,6 +273,12 @@ async function main(): Promise<void> {
     WORKFLOW_RUNNER_NODE_LABEL,
     WORKFLOW_RUNNER_NODE_VALUE,
     WORKFLOW_RUNNER_IMAGE_PULL_SECRET,
+    WORKFLOW_RUNNER_CPU_REQUEST,
+    WORKFLOW_RUNNER_MEMORY_REQUEST,
+    WORKFLOW_RUNNER_STORAGE_REQUEST,
+    WORKFLOW_RUNNER_CPU_LIMIT,
+    WORKFLOW_RUNNER_MEMORY_LIMIT,
+    WORKFLOW_RUNNER_STORAGE_LIMIT,
   } = await import("../src/k8s/workflow-runner-spawner");
 
   const source = await Bun.file("examples/workflow-runner-admission.yaml").text();
@@ -291,7 +297,13 @@ async function main(): Promise<void> {
     // never drift from the nodeSelector and toleration the Pod actually carries.
     .replace("REPLACE_WITH_WORKFLOW_RUNNER_NODE_LABEL", WORKFLOW_RUNNER_NODE_LABEL)
     .replace("REPLACE_WITH_WORKFLOW_RUNNER_NODE_VALUE", WORKFLOW_RUNNER_NODE_VALUE)
-    .replace("REPLACE_WITH_RUNNER_IMAGE_PULL_SECRET_OR_EMPTY", WORKFLOW_RUNNER_IMAGE_PULL_SECRET);
+    .replace("REPLACE_WITH_RUNNER_IMAGE_PULL_SECRET_OR_EMPTY", WORKFLOW_RUNNER_IMAGE_PULL_SECRET)
+    .replace("REPLACE_WITH_RUNNER_CPU_REQUEST", WORKFLOW_RUNNER_CPU_REQUEST)
+    .replace("REPLACE_WITH_RUNNER_MEMORY_REQUEST", WORKFLOW_RUNNER_MEMORY_REQUEST)
+    .replace("REPLACE_WITH_RUNNER_STORAGE_REQUEST", WORKFLOW_RUNNER_STORAGE_REQUEST)
+    .replace("REPLACE_WITH_RUNNER_CPU_LIMIT", WORKFLOW_RUNNER_CPU_LIMIT)
+    .replace("REPLACE_WITH_RUNNER_MEMORY_LIMIT", WORKFLOW_RUNNER_MEMORY_LIMIT)
+    .replace("REPLACE_WITH_RUNNER_STORAGE_LIMIT", WORKFLOW_RUNNER_STORAGE_LIMIT);
   // A placeholder added to the example without a substitution here installs a
   // boundary that silently denies the exact Pod, which is how the two node
   // placeholders went unnoticed. Fail on the manifest instead of on the assertion.
