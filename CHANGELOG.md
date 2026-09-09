@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.18.0](https://github.com/chrisleekr/github-app/compare/v1.17.2...v1.18.0) (2026-09-09)
+
+
+### Features
+
+* **k8s:** make workflow-runner Pod resources configurable ([#305](https://github.com/chrisleekr/github-app/issues/305)) ([3c8b39d](https://github.com/chrisleekr/github-app/commit/3c8b39d845c3c49e4bb9f1ff1be17b848b60a03e))
+* **orchestrator:** capture runner Pod post-mortem before cleanup ([#306](https://github.com/chrisleekr/github-app/issues/306)) ([4a68f45](https://github.com/chrisleekr/github-app/commit/4a68f45b695e5edd3f7814b3cb8057cb2df432f1))
+* **workflows:** route every mention through one classifier ([#307](https://github.com/chrisleekr/github-app/issues/307)) ([75bb54c](https://github.com/chrisleekr/github-app/commit/75bb54c87186846ad46cc599c2301352ea08008f))
+
 ## [1.17.2](https://github.com/chrisleekr/github-app/compare/v1.17.1...v1.17.2) (2026-09-05)
 
 
