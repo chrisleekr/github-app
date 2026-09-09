@@ -7,7 +7,6 @@ import { softDeleteComment, upsertComment } from "../../db/queries/conversation-
 import { createChildLogger, logger } from "../../logger";
 import { runProposalPollOnce } from "../../orchestrator/proposal-poller";
 import { addReaction } from "../../utils/reactions";
-import { dispatchByIntent } from "../../workflows/dispatcher";
 import { dispatchCommentSurface } from "../../workflows/ship/command-dispatch";
 import { isOwnerAllowed } from "../authorize";
 import { postDispatchFailure } from "../dispatch-failure";
@@ -16,11 +15,11 @@ import { claimDelivery } from "../idempotency";
 /**
  * Handler for issue_comment.created events.
  *
- * When a comment mentions `@chrisleekr-bot`, the body is routed through the
- * intent classifier (T039) and dispatched to the matching workflow. The old
- * ad-hoc `processRequest` pipeline path is removed for comment triggers,
- * all comment-driven work now lands in `workflow_runs` via the same
- * dispatcher the label trigger uses.
+ * When a comment mentions `@chrisleekr-bot`, the body goes to
+ * `dispatchCommentSurface`, the one comment rail: it classifies once and
+ * routes to the ship, scoped, or registry-workflow handler. Registry
+ * workflows land in `workflow_runs` via `dispatchWorkflowByName`, the same
+ * primitive the label trigger uses.
  */
 export function handleIssueComment(
   octokit: Octokit,
@@ -41,10 +40,8 @@ export function handleIssueComment(
   if (payload.action !== "created") return;
   if (payload.comment.user.type === "Bot") return;
 
-  // Authorize before dispatch, both the canonical (`dispatchCommentSurface`)
-  // and legacy (`dispatchByIntent`) paths share the same allowlist gate so
-  // a dropped repo can't slip through canonical routing. Mirrors the
-  // structure used in `issues.ts`, `pull-request.ts`, and `review-comment.ts`.
+  // Authorize before dispatch. Mirrors the structure used in `issues.ts`,
+  // `pull-request.ts`, and `review-comment.ts`.
   const senderLogin = payload.comment.user.login;
   const ownerLogin = payload.repository.owner.login;
   const log = createChildLogger({
@@ -88,72 +85,54 @@ export function handleIssueComment(
   // `payload.issue.pull_request` flag distinguishes them. The
   // `event_surface` tag enforces per-intent eligibility, e.g.,
   // `bot:investigate` only fires on Issue comments and `bot:summarize`
-  // only on PR comments. Canonical wins; legacy `dispatchByIntent`
-  // runs only when canonical produced no command.
+  // only on PR comments. One rail: `dispatchCommentSurface` classifies once
+  // and routes to the ship, scoped, or workflow handler.
   void (async (): Promise<void> => {
     // Idempotency gate (issue #202): GitHub redelivers with the same
-    // deliveryId, so a redelivery would re-run both the canonical NL classifier
-    // and the legacy intent LLM call (and any chat-thread turn). Claim the
-    // delivery before any dispatch; a redelivery skips. Fail-open in claimDelivery.
+    // deliveryId, so a redelivery would re-run the NL classifier and any
+    // chat-thread turn. Claim the delivery before any dispatch; a redelivery
+    // skips. Fail-open in claimDelivery.
     if (!(await claimDelivery(deliveryId, log))) return;
     const dispatchLog = log.child({ event_surface: eventSurface });
-    let canonicalHandled = false;
+
+    // Acknowledge before the classifier call. This used to fire only on the
+    // legacy path, so a mention the canonical rail handled got no reaction at
+    // all while the model was thinking.
+    if (containsTrigger(commentBody)) {
+      void addReaction({
+        octokit,
+        logger: log,
+        owner,
+        repo,
+        commentId: payload.comment.id,
+        eventType: "issue_comment",
+        content: "eyes",
+      });
+    }
+
     try {
-      canonicalHandled = await dispatchCommentSurface({
+      await dispatchCommentSurface({
         commentBody,
         principal_login: senderLogin,
         pr: { owner, repo, number: targetNumber, installation_id: installationId },
         event_surface: eventSurface,
         trigger_comment_id: payload.comment.id,
+        deliveryId,
         octokit,
         log: dispatchLog,
         trigger,
       });
     } catch (err) {
       dispatchLog.error({ err }, "ship dispatchCommentSurface threw for issue_comment");
-    }
-
-    if (canonicalHandled || !containsTrigger(commentBody)) {
-      // Piggyback proposal-poll BEFORE returning, even comments that
-      // didn't trigger the bot may carry an approval reply by the
-      // original asker (the user reacts 👍 and then types something
-      // unrelated). Running the poll here ensures the bot picks up
-      // pending approvals on the next webhook for this target.
-      piggybackProposalPoll(octokit, installationId, owner, repo, log);
-      return;
-    }
-
-    log.info("Trigger detected in issue_comment, routing via intent classifier");
-
-    void addReaction({
-      octokit,
-      logger: log,
-      owner,
-      repo,
-      commentId: payload.comment.id,
-      eventType: "issue_comment",
-      content: "eyes",
-    });
-
-    try {
-      await dispatchByIntent({
-        octokit,
-        logger: log,
-        commentBody,
-        target: { type: isPR ? "pr" : "issue", owner, repo, number: targetNumber },
-        senderLogin,
-        deliveryId,
-        triggerCommentId: payload.comment.id,
-        triggerEventType: "issue_comment",
-        trigger,
-      });
-    } catch (err) {
-      log.error({ err }, "dispatchByIntent threw for issue_comment");
+      // A mention the bot acknowledged with 👀 and then dropped silently reads
+      // as the bot being broken. Same fixed, secret-free reply the label rails
+      // post; the raw error stays in the log line above.
       await postDispatchFailure({ octokit, log, deliveryId, owner, repo, number: targetNumber });
     }
 
-    // Piggyback proposal-poll on the trigger path too: the early-
-    // return branch above already covered the non-trigger case.
+    // Runs for every comment, triggering or not: a comment that didn't
+    // address the bot may still carry an approval reply by the original asker
+    // (they react 👍 and then type something unrelated).
     piggybackProposalPoll(octokit, installationId, owner, repo, log);
   })();
 }

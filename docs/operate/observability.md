@@ -284,17 +284,35 @@ The schema is the source of truth. Adding or renaming a field requires updating 
 
 Every shepherding emitter draws its `event` value from the typed `SHIP_LOG_EVENTS` constant in `src/workflows/ship/log-fields.ts`. Operators can grep for these literals deterministically.
 
-| Event key                             | Where it fires                                                                    | What it indicates                                                                                     |
-| ------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `ship.iteration.enqueued`             | `iteration.runIteration` after `publishWorkflowRunById`                           | A non-ready verdict bridged into the isolated `workflow_runs` runner pipeline. One row per iteration. |
-| `ship.iteration.terminal_cap`         | `iteration.runIteration` cap check                                                | The intent hit `MAX_SHIP_ITERATIONS`.                                                                 |
-| `ship.iteration.terminal_deadline`    | `iteration.runIteration` deadline check                                           | The intent's `deadline_at` elapsed.                                                                   |
-| `ship.tickle.started`                 | `app.ts` boot, after `tickleScheduler.start()`                                    | The cron tickle scheduler is scanning `ship:tickle`.                                                  |
-| `ship.tickle.due`                     | `orchestrator.onStepComplete` early-wake **or** `session-runner.resumeShipIntent` | An intent is being re-entered. `source` discriminates `workflow_run_completion` vs scheduler.         |
-| `ship.tickle.skip_terminal`           | `orchestrator.onStepComplete` early-wake                                          | The hook found a `shipIntentId` but the intent is already terminal; the ZADD was skipped.             |
-| `ship.scoped.<verb>.enqueued`         | `dispatch-scoped.ts` after `enqueueJob`                                           | A scoped command (`rebase`, `fix_thread`, `explain_thread`, `open_pr`) was enqueued.                  |
-| `ship.scoped.<verb>.daemon.completed` | `connection-handler.handleScopedJobCompletion` and the executor                   | Daemon reported `succeeded`.                                                                          |
-| `ship.scoped.<verb>.daemon.failed`    | Same                                                                              | Daemon reported `halted` or `failed`. `reason` carries the structured halt reason.                    |
+| Event key                             | Where it fires                                                                    | What it indicates                                                                                                                       |
+| ------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `ship.iteration.enqueued`             | `iteration.runIteration` after `publishWorkflowRunById`                           | A non-ready verdict bridged into the isolated `workflow_runs` runner pipeline. One row per iteration.                                   |
+| `ship.iteration.terminal_cap`         | `iteration.runIteration` cap check                                                | The intent hit `MAX_SHIP_ITERATIONS`.                                                                                                   |
+| `ship.iteration.terminal_deadline`    | `iteration.runIteration` deadline check                                           | The intent's `deadline_at` elapsed.                                                                                                     |
+| `ship.tickle.started`                 | `app.ts` boot, after `tickleScheduler.start()`                                    | The cron tickle scheduler is scanning `ship:tickle`.                                                                                    |
+| `ship.tickle.due`                     | `orchestrator.onStepComplete` early-wake **or** `session-runner.resumeShipIntent` | An intent is being re-entered. `source` discriminates `workflow_run_completion` vs scheduler.                                           |
+| `ship.tickle.skip_terminal`           | `orchestrator.onStepComplete` early-wake                                          | The hook found a `shipIntentId` but the intent is already terminal; the ZADD was skipped.                                               |
+| `ship.scoped.<verb>.enqueued`         | `dispatch-scoped.ts` after `enqueueJob`                                           | A scoped command (`rebase`, `fix_thread`, `explain_thread`, `open_pr`) was enqueued.                                                    |
+| `ship.scoped.<verb>.daemon.completed` | `connection-handler.handleScopedJobCompletion` and the executor                   | Daemon reported `succeeded`.                                                                                                            |
+| `ship.scoped.<verb>.daemon.failed`    | Same                                                                              | Daemon reported `halted` or `failed`. `reason` carries the structured halt reason.                                                      |
+| `nl.intent.resolved`                  | `command-dispatch.dispatchCommentSurface`, once per classified mention            | The winning intent. Fields: `intent`, `classified_intent`, `confidence`, `rail`; `event_surface` comes from the handler's child logger. |
+| `scoped.tool_loop.empty_text`         | `dispatch-scoped.buildCallLlm` after `runWithTools`                               | The tool loop returned no text. Fields: `capExceeded`, `stopReason`, `iterations`, `toolCallCount`.                                     |
+| `scoped.single_turn.empty_text`       | `dispatch-scoped.buildCallLlm` after `llm.create`                                 | The tool-less branch returned no text. Field: `outputTokens`, the only truncation signal `llm.create` exposes.                          |
+| `chat_thread.empty_response`          | `chat-thread.runChatThread` before parsing                                        | chat-thread got an empty body and answered with the budget message, not a parse error.                                                  |
+
+The last four are string literals at their emit sites rather than `SHIP_LOG_EVENTS` members: they
+belong to the comment rail, not to a ship intent.
+
+`nl.intent.resolved` is the one line that makes a misroute greppable, and all four shapes carry the
+same fields. `classified_intent` is what the model said and `intent` is what actually ran, so they
+differ exactly when the confidence threshold downgraded a workflow verb to `chat-thread`. `rail` is
+`ship`, `scoped`, `workflow`, `refusal`, or `none`.
+
+`rail: "none"` is the one an operator most needs: the model answered `none`, or per-surface
+eligibility rewrote the verb to `none` in `src/workflows/ship/nl-classifier.ts`, and nothing ran.
+This is the only classifier left, so without this line a seriously meant ask that the model
+discarded leaves no trace at all. The line is emitted only when a classification actually happened,
+never when the mention gate declined before the LLM call.
 
 ### Querying example (Datadog / Loki)
 
@@ -341,7 +359,7 @@ The `parseStructuredResponse` chokepoint (`src/ai/structured-output.ts#parseStru
 | `structured_output.parse_failed`    | warn  | `site`, `raw_len`, `parse_ms`, `error`                                                     |
 | `structured_output.validate_failed` | warn  | `site`, `raw_len`, `parse_ms`, `error`, `parsed_kind` (`object` \| `array` \| `primitive`) |
 
-Wired sites (`site` value): `triage-orchestrator`, `intent-classifier`, `chat-thread`, `discussion-digest`, `nl-classifier`, `triage-handler`, `llm-output-scanner`. (`meta-issue-classifier` is a pure function with no logger in scope and omits the context.)
+Wired sites (`site` value): `triage-orchestrator`, `chat-thread`, `discussion-digest`, `nl-classifier`, `triage-handler`, `llm-output-scanner`. (`meta-issue-classifier` is a pure function with no logger in scope and omits the context.)
 
 ## Triage circuit breaker events
 

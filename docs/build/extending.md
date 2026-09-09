@@ -67,7 +67,13 @@ The Zod schema validates at module load: a mistyped entry fails the process at b
 
 ### Step 3: make it discoverable from comments
 
-If the workflow should be reachable via mentions, extend the system prompt in `src/workflows/intent-classifier.ts` with at least three fixture comments and add it to `test/workflows/fixtures/intent-comments.json`. The enum the classifier returns is driven by the registry; the prompt narrative just needs to mention the new verb so the classifier picks it.
+If the workflow should be reachable via mentions, three edits, all in lockstep:
+
+1. Add the verb to `WORKFLOW_COMMAND_INTENTS` in `src/shared/ship-types.ts`. The classifier enum is derived from `COMMAND_INTENTS`, so this alone makes the model able to return it.
+2. Add its eligible surfaces to `INTENT_ELIGIBLE_SURFACES` in the same file. `Record<CommandIntent, ...>` means the compiler refuses to build until you do. Eligibility is enforced deterministically after classification; the model's own surface reasoning is not trusted.
+3. Add it to `INTENT_TO_WORKFLOW` in `src/workflows/ship/command-dispatch.ts` so the repo-config per-workflow toggle is enforced before dispatch. `test/workflows/ship/command-dispatch.test.ts` fails if any `CommandIntent` matching a `WorkflowName` is absent.
+
+Then describe the verb in `SYSTEM_PROMPT` in `src/workflows/ship/nl-classifier.ts` so the model knows when to pick it, and add a case to `test/workflows/ship/nl-classifier.test.ts`.
 
 ### Step 4: document and test
 
@@ -199,7 +205,7 @@ importing `config`).
 If your extension reacts to a GitHub event the bot does not yet handle (e.g. `push`, `pull_request_target`), the work splits in two:
 
 1. **Subscribe** to the event in the GitHub App settings (Permissions & events).
-2. **Add a webhook handler** in `src/webhook/events/<event>.ts` that parses the payload and dispatches via `dispatchByLabel` (label path) or `dispatchByIntent` (comment path). Webhook handlers must return within 10 s, fire `processRequest` with fire-and-forget semantics.
+2. **Add a webhook handler** in `src/webhook/events/<event>.ts` that parses the payload and dispatches via `dispatchByLabel` (label path) or `dispatchCommentSurface` (comment path). Webhook handlers must return within 10 s, fire `processRequest` with fire-and-forget semantics.
 3. **Register the event handler** in `src/app.ts` alongside the existing `app.webhooks.on(...)` calls.
 
 Webhook handlers do **not** run business logic, they parse the event, build a `BotContext`, and dispatch. Structured workflow handlers execute in one-attempt runner Pods. Legacy direct and scoped jobs execute on shared daemons.

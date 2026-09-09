@@ -10,8 +10,9 @@ import type { Logger } from "pino";
 
 import { resolveModelId } from "../../ai/llm-client";
 import { config } from "../../config";
+import { containsTrigger } from "../../core/trigger";
 import { logger as rootLogger } from "../../logger";
-import { loadRepoPolicy } from "../../repo-config/effective";
+import { type EffectiveRepoPolicy, loadRepoPolicy } from "../../repo-config/effective";
 import { checkRepoGate, type TriggerContext } from "../../repo-config/gate";
 import {
   type CanonicalCommand,
@@ -19,20 +20,41 @@ import {
   type CommandIntent,
   isScopedCommandIntent,
   isShipCommandIntent,
+  isWorkflowCommandIntent,
 } from "../../shared/ship-types";
 import type { WorkflowName } from "../../shared/workflow-types";
 import { getTriageLLMClient } from "../../webhook/triage-client-factory";
+import { dispatchWorkflowByName } from "../dispatcher";
 import { postRefusalComment } from "../tracking-mirror";
 import { runLifecycleCommand } from "./lifecycle-commands";
 import { dispatchScopedCommand, type ScopedCommandDeps } from "./scoped/dispatch-scoped";
 import { runShipFromCommand } from "./session-runner";
-import { routeTrigger } from "./trigger-router";
+import { routeNlTrigger, routeTrigger } from "./trigger-router";
 
 export interface DispatchDeps {
   readonly octokit: Octokit;
   readonly log?: Logger;
   /** Trigger facts for the repo-config filter rules. See `TriggerContext`. */
   readonly trigger?: TriggerContext;
+  /**
+   * Webhook delivery id, required by `dispatchWorkflowByName` for its
+   * idempotent `workflow_runs` insert. The only field the workflow rail needs
+   * that the ship rail did not already carry.
+   */
+  readonly deliveryId: string;
+  /**
+   * Policy the caller already loaded for this repo. `dispatchCommentSurface`
+   * loads one for the pre-classification gate; without threading it, every
+   * classified mention paid a second GitHub round trip for the same file.
+   */
+  readonly repoPolicy?: EffectiveRepoPolicy;
+}
+
+/** Which rail a resolved intent lands on. Observability only. */
+function railFor(intent: CommandIntent): "ship" | "scoped" | "workflow" {
+  if (isShipCommandIntent(intent)) return "ship";
+  if (isScopedCommandIntent(intent)) return "scoped";
+  return "workflow";
 }
 
 /**
@@ -58,10 +80,13 @@ const UNGATED_INTENTS: ReadonlySet<CommandIntent> = new Set<CommandIntent>(["sto
  * Canonical intents that share a name with a registry workflow, so the
  * per-workflow `enabled` rule can be evaluated for them.
  *
- * `ship` and `triage` collide today. Missing an entry is a silent bypass,
- * not a type error: the canonical parser runs first in the event handlers
- * and returns before `dispatchByLabel`, which is the only other place rule 2
- * is evaluated, so a `bot:triage` label would never see the toggle at all.
+ * `ship` and `triage` collide because a rail above owns the word; the five
+ * `WORKFLOW_COMMAND_INTENTS` collide because they ARE registry workflows.
+ * Missing an entry is a silent bypass, not a type error: the canonical parser
+ * runs first in the event handlers and returns before `dispatchByLabel`, so a
+ * `bot:triage` label would never see the toggle at all. For the five workflow
+ * verbs an entry also saves the cost of a run that `dispatchWorkflowByName`
+ * would refuse anyway, and keeps the refusal to exactly one comment.
  * `test/workflows/ship/command-dispatch.test.ts` fails if any `CommandIntent`
  * matching a `WorkflowName` is absent here.
  *
@@ -71,23 +96,34 @@ const UNGATED_INTENTS: ReadonlySet<CommandIntent> = new Set<CommandIntent>(["sto
 export const INTENT_TO_WORKFLOW: Partial<Record<CommandIntent, WorkflowName>> = {
   ship: "ship",
   triage: "triage",
+  plan: "plan",
+  implement: "implement",
+  review: "review",
+  resolve: "resolve",
+  remember: "remember",
 };
 
 /**
  * Gate 1 for the canonical (ship) rail, which bypasses
  * `workflows/dispatcher.ts` entirely and therefore needs its own call.
+ *
+ * Returns the loaded policy alongside the verdict so the workflow rail can
+ * hand it to `dispatchWorkflowByName` instead of paying a second fetch for the
+ * per-workflow re-check.
  */
 async function isBlockedByRepoConfig(
   command: CanonicalCommand,
   deps: DispatchDeps,
   log: Logger,
-): Promise<boolean> {
-  const policy = await loadRepoPolicy({
-    octokit: deps.octokit,
-    owner: command.pr.owner,
-    repo: command.pr.repo,
-    log,
-  });
+): Promise<{ blocked: boolean; policy: EffectiveRepoPolicy }> {
+  const policy =
+    deps.repoPolicy ??
+    (await loadRepoPolicy({
+      octokit: deps.octokit,
+      owner: command.pr.owner,
+      repo: command.pr.repo,
+      log,
+    }));
   const workflowName = INTENT_TO_WORKFLOW[command.intent];
   const verdict = checkRepoGate({
     policy,
@@ -96,14 +132,13 @@ async function isBlockedByRepoConfig(
     senderLogin: command.principal_login,
     ...(deps.trigger !== undefined ? { trigger: deps.trigger } : {}),
   });
-  if (verdict.allowed) return false;
+  if (verdict.allowed) return { blocked: false, policy };
 
-  // A deliberate label or literal command that is refused must be answered,
-  // same as the dispatcher rail. Nothing else can speak for it: the event
-  // handlers return as soon as the canonical parser yields a command, and
-  // `dispatchCommentSurface` returns `true` on the literal branch, so
-  // `dispatchByLabel` / `dispatchByIntent` never run. Without this the user
-  // sees only the 👀 reaction. No double-post for the same reason.
+  // A deliberate label or literal command that is refused must be answered.
+  // Nothing else can speak for it: the event handlers return as soon as the
+  // canonical parser yields a command, and `dispatchCommentSurface` returns
+  // `true` on the literal branch, so `dispatchByLabel` never runs. Without this
+  // the user sees only the 👀 reaction. No double-post for the same reason.
   if (verdict.explain) {
     await postRefusalComment(
       { octokit: deps.octokit, logger: log },
@@ -127,7 +162,7 @@ async function isBlockedByRepoConfig(
     },
     "Ship command blocked by repo config",
   );
-  return true;
+  return { blocked: true, policy };
 }
 
 export function dispatchCanonicalCommand(command: CanonicalCommand, deps: DispatchDeps): void {
@@ -148,20 +183,30 @@ export function dispatchCanonicalCommand(command: CanonicalCommand, deps: Dispat
   // once on both paths.
   void (async (): Promise<void> => {
     let blocked = false;
+    let policy: EffectiveRepoPolicy | undefined;
     try {
-      blocked = await isBlockedByRepoConfig(command, deps, log);
+      const gate = await isBlockedByRepoConfig(command, deps, log);
+      blocked = gate.blocked;
+      policy = gate.policy;
     } catch (err) {
-      // Fail open: a gate failure must not swallow the command.
+      // Fail open: a gate failure must not swallow the command. `policy` stays
+      // undefined, so the workflow rail loads its own.
       log.error(
         { event: "repo_config.gate_error", err },
         "repo-config gate threw, dispatching anyway",
       );
     }
-    if (!blocked) routeToHandler(command, deps, log);
+    if (!blocked) routeToHandler(command, deps, log, policy);
   })();
 }
 
-function routeToHandler(command: CanonicalCommand, deps: DispatchDeps, log: Logger): void {
+function routeToHandler(
+  command: CanonicalCommand,
+  deps: DispatchDeps,
+  log: Logger,
+  /** Policy the gate already loaded, threaded so rule 2 costs no second fetch. */
+  repoPolicy?: EffectiveRepoPolicy,
+): void {
   if (command.intent === "ship") {
     void runShipFromCommand({ command, octokit: deps.octokit, log }).catch((err: unknown) => {
       log.error({ err }, "runShipFromCommand threw");
@@ -184,6 +229,50 @@ function routeToHandler(command: CanonicalCommand, deps: DispatchDeps, log: Logg
     const scopedDeps: ScopedCommandDeps = { octokit: deps.octokit, log };
     void dispatchScopedCommand(command, scopedDeps).catch((err: unknown) => {
       log.error({ err }, "dispatchScopedCommand threw");
+    });
+    return;
+  }
+
+  if (isWorkflowCommandIntent(command.intent)) {
+    // Same primitive the label trigger uses, so a mention and a `bot:<name>`
+    // label share one seven-step protocol: context check, prior-output check,
+    // label mutex, idempotent insert, durable commit, outbox.
+    //
+    // Issue-vs-PR comes from `event_surface`, not from a field on the command:
+    // `pr.number` carries the issue number on issue surfaces (see
+    // `CanonicalCommand`), so the surface is the only honest discriminator.
+    const targetType =
+      command.event_surface === "issue-comment" || command.event_surface === "issue-label"
+        ? "issue"
+        : "pr";
+    void dispatchWorkflowByName({
+      octokit: deps.octokit,
+      logger: log,
+      workflowName: command.intent,
+      target: {
+        type: targetType,
+        owner: command.pr.owner,
+        repo: command.pr.repo,
+        number: command.pr.number,
+      },
+      senderLogin: command.principal_login,
+      deliveryId: deps.deliveryId,
+      // Bounded like every other producer: this is attacker-authored text that
+      // lands in `workflow_runs.trigger_body_preview`, the queue offer, and the
+      // daemon payload.
+      triggerBodyPreview: command.comment_body?.slice(0, 200) ?? "",
+      addRocketReaction: true,
+      ...(repoPolicy !== undefined ? { repoPolicy } : {}),
+      triggerEventType:
+        command.event_surface === "review-comment"
+          ? "pull_request_review_comment"
+          : "issue_comment",
+      ...(command.trigger_comment_id !== undefined
+        ? { triggerCommentId: command.trigger_comment_id }
+        : {}),
+      ...(deps.trigger !== undefined ? { trigger: deps.trigger } : {}),
+    }).catch((err: unknown) => {
+      log.error({ err }, "dispatchWorkflowByName threw");
     });
     return;
   }
@@ -223,6 +312,11 @@ export async function dispatchCommentSurface(input: {
    * without refetching the comment.
    */
   readonly trigger_comment_id?: number;
+  /**
+   * Webhook delivery id, forwarded to `dispatchWorkflowByName` for its
+   * idempotent `workflow_runs` insert.
+   */
+  readonly deliveryId: string;
   readonly octokit: Octokit;
   readonly log?: Logger;
   /** Trigger facts for the repo-config filter rules. See `TriggerContext`. */
@@ -230,6 +324,7 @@ export async function dispatchCommentSurface(input: {
 }): Promise<boolean> {
   const deps: DispatchDeps = {
     octokit: input.octokit,
+    deliveryId: input.deliveryId,
     ...(input.log ? { log: input.log } : {}),
     ...(input.trigger !== undefined ? { trigger: input.trigger } : {}),
   };
@@ -259,13 +354,11 @@ export async function dispatchCommentSurface(input: {
       return true;
     }
 
-    // Cheap local pre-check, mirroring the classifier's own FR-025a rule
-    // (`nl-classifier.ts:86`): a body that does not open with the trigger
-    // phrase is returned as `null` there regardless. Testing it here keeps a
-    // disabled repo's ordinary chatter from costing a config fetch and a
-    // gate_blocked log line per comment. `trimStart`, not `trim`, to match the
-    // classifier exactly.
-    if (!input.commentBody.trimStart().startsWith(config.triggerPhrase)) return false;
+    // Cheap local pre-check, and it must be the SAME predicate the classifier
+    // and the 👀 reaction use, or a mention is acknowledged then dropped.
+    // Testing it here keeps a disabled repo's ordinary chatter from costing a
+    // config fetch and a gate_blocked log line per comment.
+    if (!containsTrigger(input.commentBody)) return false;
 
     // Repo-wide gate, between the two parsers on purpose. The literal parser
     // above is local, so running it first preserves the `stop`/`abort`
@@ -275,9 +368,9 @@ export async function dispatchCommentSurface(input: {
     // blocks it before the intent is known. Ungating the NL path would mean
     // paying an LLM call for every comment in a disabled repo.
     //
-    // Returns `false`, not `true`: the caller falls through to
-    // `dispatchByIntent`, which re-runs the same gate and owns the
-    // user-facing refusal comment. Deciding that here would duplicate it.
+    // This branch also owns the user-facing refusal. It used to return `false`
+    // and let `dispatchByIntent` re-run the gate and post it; with that path
+    // retired, deciding here is the only place left.
     const policy = await loadRepoPolicy({
       octokit: input.octokit,
       owner: input.pr.owner,
@@ -290,11 +383,23 @@ export async function dispatchCommentSurface(input: {
       ...(input.trigger !== undefined ? { trigger: input.trigger } : {}),
     });
     if (!verdict.allowed) {
+      // Only the three deliberate refusals earn a comment; the four passive
+      // `triggers.*` filters stay silent, or every Renovate event would draw a
+      // public reply. `explain` is the gate's own split, so honour it rather
+      // than re-deriving the rule here.
+      if (verdict.explain) {
+        await postRefusalComment(
+          { octokit: input.octokit, logger: input.log ?? rootLogger },
+          { owner: input.pr.owner, repo: input.pr.repo, number: input.pr.number },
+          "unknown",
+          verdict.reason,
+        );
+      }
       (input.log ?? rootLogger).info(
         {
           event: "repo_config.gate_blocked",
           reason: verdict.reason,
-          explained: false,
+          explained: verdict.explain,
           owner: input.pr.owner,
           repo: input.pr.repo,
           pr_number: input.pr.number,
@@ -302,10 +407,12 @@ export async function dispatchCommentSurface(input: {
         },
         "Comment surface blocked by repo config before NL classification",
       );
-      return false;
+      // `true`: this branch has now handled the comment. Returning `false`
+      // used to mean "fall through to the legacy rail"; there is none.
+      return true;
     }
 
-    // 2. NL fallback. Mention-prefix gate (FR-025a) lives in classifier.
+    // 2. NL classification. Mention-prefix gate (FR-025a) lives in classifier.
     const llm = getTriageLLMClient();
     const modelId = resolveModelId(config.triageModel, llm.provider);
     const callLlm = async (params: {
@@ -316,39 +423,106 @@ export async function dispatchCommentSurface(input: {
         model: modelId,
         system: params.systemPrompt,
         messages: [{ role: "user", content: params.userPrompt }],
-        maxTokens: 256,
+        // Was a hardcoded 256, identical to this default. Named so an operator
+        // can widen the classifier budget without a code change.
+        maxTokens: config.triageMaxTokens,
       });
       return res.text;
     };
 
-    const nl = await routeTrigger({
-      surface: "nl",
-      payload: {
-        commentBody: input.commentBody,
-        triggerPhrase: config.triggerPhrase,
-        principal_login: input.principal_login,
-        pr: input.pr,
-        callLlm,
-        ...(input.event_surface !== undefined ? { event_surface: input.event_surface } : {}),
-        ...(input.thread_id !== undefined ? { thread_id: input.thread_id } : {}),
-        comment_body: input.commentBody,
-        ...(input.trigger_comment_id !== undefined
-          ? { trigger_comment_id: input.trigger_comment_id }
-          : {}),
-      },
+    const nl = await routeNlTrigger({
+      commentBody: input.commentBody,
+      triggerPhrase: config.triggerPhrase,
+      principal_login: input.principal_login,
+      pr: input.pr,
+      callLlm,
+      ...(input.event_surface !== undefined ? { event_surface: input.event_surface } : {}),
+      ...(input.thread_id !== undefined ? { thread_id: input.thread_id } : {}),
+      comment_body: input.commentBody,
+      ...(input.trigger_comment_id !== undefined
+        ? { trigger_comment_id: input.trigger_comment_id }
+        : {}),
     });
-    if (nl !== null) {
-      dispatchCanonicalCommand(nl, deps);
+
+    const log = input.log ?? rootLogger;
+
+    if (nl.kind === "unsupported") {
+      log.info(
+        {
+          event: "nl.intent.resolved",
+          intent: "unsupported",
+          classified_intent: "unsupported",
+          confidence: nl.confidence,
+          rail: "refusal",
+        },
+        "NL intent resolved",
+      );
+      await postRefusalComment(
+        { octokit: input.octokit, logger: log },
+        { owner: input.pr.owner, repo: input.pr.repo, number: input.pr.number },
+        "unknown",
+        "that ask is outside what I can do on this repository",
+      );
       return true;
     }
-    return false;
+
+    if (nl.kind === "none") {
+      // The model answering `none` for an ask the user meant seriously is the
+      // misroute with no other trace, so it earns the same line as every other
+      // verdict. `classified: false` means the mention gate declined before any
+      // LLM call, which is not a classification and would only add noise.
+      if (nl.classified) {
+        log.info(
+          {
+            event: "nl.intent.resolved",
+            intent: "none",
+            classified_intent: nl.classified_intent,
+            confidence: nl.confidence,
+            rail: "none",
+          },
+          "NL intent resolved",
+        );
+      }
+      return false;
+    }
+
+    // A workflow verb starts an expensive isolated run, so an uncertain guess
+    // is worse than a conversation. Below the threshold, hand it to
+    // chat-thread, which can ask rather than assume. Ship and scoped verbs are
+    // left alone: `stop` must land even when the model is unsure.
+    const command =
+      isWorkflowCommandIntent(nl.command.intent) && nl.confidence < config.intentConfidenceThreshold
+        ? ({ ...nl.command, intent: "chat-thread" } as CanonicalCommand)
+        : nl.command;
+
+    log.info(
+      {
+        event: "nl.intent.resolved",
+        intent: command.intent,
+        classified_intent: nl.command.intent,
+        confidence: nl.confidence,
+        // `event_surface` is deliberately absent: both webhook handlers bind it
+        // on the child logger they pass in, and repeating it here emitted the
+        // key twice in one JSON line, which is ambiguous to a log collector.
+        rail: railFor(command.intent),
+      },
+      "NL intent resolved",
+    );
+
+    // Reuse the policy the pre-classification gate already loaded: the
+    // per-workflow re-check reads the same file.
+    dispatchCanonicalCommand(command, { ...deps, repoPolicy: policy });
+    return true;
   } catch (err) {
     // Pass `err` directly so pino's serializer captures the stack and
     // structured properties; `String(err)` would discard both.
     (input.log ?? rootLogger).error(
       { event: "ship.dispatch_comment_surface_failed", err },
-      "ship dispatchCommentSurface threw, swallowed",
+      "ship dispatchCommentSurface threw",
     );
-    return false;
+    // Rethrow: the caller already acknowledged the comment with 👀, and its
+    // `catch` is what posts the user-facing failure reply. Returning `false`
+    // here made that reply unreachable and restored the silent drop.
+    throw err;
   }
 }

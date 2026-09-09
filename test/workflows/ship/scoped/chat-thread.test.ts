@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it, mock } from "bun:test";
 import type { Octokit } from "octokit";
 
@@ -104,5 +107,39 @@ describe("findReviewThreadByCommentId", () => {
     const result = await findReviewThreadByCommentId(octokit, "owner", "repo", 113, 1001);
 
     expect(result).toBeNull();
+  });
+});
+
+/**
+ * `runChatThread` needs a database, GitHub, and an LLM to drive end to end, so
+ * the branch order is asserted against the source instead. The ordering IS the
+ * behaviour: an empty body reaching `parseStructuredResponse` produces
+ * "I couldn't parse my own response", which blames the wrong thing and tells
+ * the user to rephrase an ask that rephrasing cannot fix.
+ */
+describe("runChatThread empty-response branch (source order)", () => {
+  const src = ((): string => {
+    const path = join(import.meta.dir, "../../../../src/workflows/ship/scoped/chat-thread.ts");
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed path to the module under test
+    return readFileSync(path, "utf8");
+  })();
+
+  it("checks for empty text BEFORE calling parseStructuredResponse", () => {
+    const emptyCheck = src.indexOf('if (raw.trim() === "")');
+    const parseCall = src.indexOf("parseStructuredResponse(raw,");
+
+    expect(emptyCheck, "empty-response guard missing").toBeGreaterThan(-1);
+    expect(parseCall, "parseStructuredResponse call missing").toBeGreaterThan(-1);
+    expect(emptyCheck).toBeLessThan(parseCall);
+  });
+
+  it("tells the user the budget ran out, not that parsing failed", () => {
+    const emptyCheck = src.indexOf('if (raw.trim() === "")');
+    const parseCall = src.indexOf("parseStructuredResponse(raw,");
+    const branch = src.slice(emptyCheck, parseCall);
+
+    expect(branch).toContain("ran out of investigation budget");
+    expect(branch).not.toContain("couldn't parse");
+    expect(branch).toContain("chat_thread.empty_response");
   });
 });

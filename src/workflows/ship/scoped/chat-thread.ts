@@ -420,6 +420,19 @@ export async function runChatThread(input: RunChatThreadInput): Promise<RunChatT
     return { mode: "skipped", reason: "llm-error" };
   }
 
+  // An empty body is not a parse failure. `runWithTools` returns empty text
+  // when the loop ends on tool_use without a follow-up turn, including on the
+  // `maxIterations` fail-open, so rephrasing cannot help and saying so misleads.
+  if (raw.trim() === "") {
+    log.warn({ event: "chat_thread.empty_response" }, "chat-thread: model returned no text");
+    await postReply({
+      input,
+      log,
+      body: "_I ran out of investigation budget before I could answer. Try narrowing the ask to one question._",
+    });
+    return { mode: "skipped", reason: "empty-response" };
+  }
+
   // Parse + validate via the structured-output pipeline.
   const result = parseStructuredResponse(raw, ChatThreadOutputSchema, { site: "chat-thread", log });
   if (!result.ok) {

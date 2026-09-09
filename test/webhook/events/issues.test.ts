@@ -36,6 +36,9 @@ const mockDispatchByLabel = mock(() =>
 );
 void mock.module("../../../src/workflows/dispatcher", () => ({
   dispatchByLabel: mockDispatchByLabel,
+  // `command-dispatch.ts` imports this for the mention rail. Absent from the
+  // mock, the module graph fails to load rather than failing an assertion.
+  dispatchWorkflowByName: mock(() => Promise.resolve({ status: "ignored", reason: "test" })),
 }));
 
 // Keep `isOwnerAllowed` real, the handler depends on its behaviour via
@@ -46,6 +49,9 @@ void mock.module("../../../src/config", () => ({
     allowedOwners: ["acme"],
     logLevel: "silent",
     nodeEnv: "test",
+    // `command-dispatch` pulls in `core/trigger`, which builds its regex from
+    // this at import time. A partial mock crashed the module load.
+    triggerPhrase: "@chrisleekr-bot",
   },
 }));
 

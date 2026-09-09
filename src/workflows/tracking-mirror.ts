@@ -658,8 +658,8 @@ function truncateForComposite(text: string): string {
  * Best-effort: `createComment` failures are logged as warnings and swallowed,
  * mirroring the compensating-delete pattern above. The refusal comment is
  * purely cosmetic: the DB is already authoritative, so a transient GitHub
- * API blip must not bubble up into `dispatchByLabel` / `dispatchByIntent` and
- * surface as a webhook 500.
+ * API blip must not bubble up into `dispatchByLabel` / `dispatchWorkflowByName`
+ * and surface as a webhook 500.
  *
  * `label` names what the user asked for. The dispatcher passes a registry
  * workflow name; the canonical ship rail passes a `CommandIntent`, since most

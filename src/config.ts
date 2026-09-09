@@ -664,10 +664,11 @@ const configSchema = z
     // call itself still runs; only the github-state tool surface is suppressed.
     triageToolsEnabled: z.boolean().default(true),
 
-    // Minimum model confidence to accept an intent-classifier verdict. Below
-    // this threshold the dispatcher treats the comment as ambiguous and posts
-    // a clarification request instead of dispatching (FR-009). 0.75 matches
-    // the SC-005 target accuracy band.
+    // Minimum classifier confidence to start a registry workflow from a
+    // mention. Below it, `command-dispatch.ts` hands the comment to chat-thread
+    // rather than guessing, so an ambiguous ask becomes a conversation instead
+    // of an unattended run (FR-009). Ship and scoped verbs are not gated on it.
+    // 0.75 matches the SC-005 target accuracy band.
     intentConfidenceThreshold: z.coerce.number().min(0).max(1).default(0.75),
 
     // --- 10a. chat-thread executor (conversational scoped intent) ---

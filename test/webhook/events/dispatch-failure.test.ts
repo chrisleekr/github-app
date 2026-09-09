@@ -27,12 +27,11 @@ void mock.module("../../../src/logger", () => ({
 const mockDispatchByLabel = mock((_input: unknown) =>
   Promise.resolve({ status: "dispatched", runId: "run-1", workflowName: "triage" }),
 );
-const mockDispatchByIntent = mock((_input: unknown) =>
-  Promise.resolve({ status: "dispatched", runId: "run-2", workflowName: "triage" }),
-);
+// The mention rail's single dispatch entry, replacing the retired
+// `dispatchByIntent`. A throw here must still reach the user.
+const mockDispatchCommentSurface = mock((_input: unknown) => Promise.resolve(false));
 void mock.module("../../../src/workflows/dispatcher", () => ({
   dispatchByLabel: mockDispatchByLabel,
-  dispatchByIntent: mockDispatchByIntent,
   dispatchWorkflowByName: mock(() => Promise.resolve({ status: "ignored", reason: "test" })),
 }));
 
@@ -67,7 +66,7 @@ void mock.module("../../../src/utils/reactions", () => ({
 }));
 void mock.module("../../../src/workflows/ship/command-dispatch", () => ({
   dispatchCanonicalCommand: mock(() => undefined),
-  dispatchCommentSurface: mock(() => Promise.resolve(false)),
+  dispatchCommentSurface: mockDispatchCommentSurface,
 }));
 void mock.module("../../../src/workflows/ship/reactor-bridge", () => ({
   fireReactor: mock(() => undefined),
@@ -165,7 +164,7 @@ async function flushDispatch(): Promise<void> {
 describe("user-triggered dispatch failures", () => {
   beforeEach(() => {
     mockDispatchByLabel.mockClear();
-    mockDispatchByIntent.mockClear();
+    mockDispatchCommentSurface.mockClear();
     mockSafePostToGitHub.mockClear();
     createComment.mockClear();
     testLog.error.mockClear();
@@ -188,14 +187,14 @@ describe("user-triggered dispatch failures", () => {
     },
     {
       surface: "issue mention",
-      dispatch: mockDispatchByIntent,
+      dispatch: mockDispatchCommentSurface,
       fire: (): void => {
         handleIssueComment(octokit, issueCommentPayload(), "delivery-issue-mention");
       },
     },
     {
       surface: "review mention",
-      dispatch: mockDispatchByIntent,
+      dispatch: mockDispatchCommentSurface,
       fire: (): void => {
         handleReviewComment(octokit, reviewCommentPayload(), "delivery-review-mention");
       },

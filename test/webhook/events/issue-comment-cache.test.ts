@@ -190,9 +190,7 @@ describe("handleIssueComment dispatch gate ordering (issue #129)", () => {
     expect(earlyReturn, "early-return guard missing").toBeGreaterThan(-1);
 
     const firstDispatch = Math.min(
-      ...["dispatchByIntent(", "dispatchCommentSurface("]
-        .map((s) => handlerSrc.indexOf(s))
-        .filter((i) => i !== -1),
+      ...["dispatchCommentSurface("].map((s) => handlerSrc.indexOf(s)).filter((i) => i !== -1),
     );
     expect(firstDispatch, "no dispatch call found").toBeGreaterThan(-1);
     expect(

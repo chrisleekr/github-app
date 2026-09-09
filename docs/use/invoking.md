@@ -77,13 +77,13 @@ The bot also writes a single **tracking comment** per run. For workflows that ta
 
 ## What gets refused
 
-| Refusal                  | Cause                                                                                                                |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| Silent skip              | Repository owner is not in `ALLOWED_OWNERS`. No comment is posted.                                                   |
-| "Capacity reached" reply | More than `MAX_CONCURRENT_REQUESTS` agent runs are already in flight. Re-invoke later.                               |
-| Clarification reply      | Mention-driven request whose intent classifier confidence fell below `INTENT_CONFIDENCE_THRESHOLD` (default `0.75`). |
-| "Unsupported" reply      | Mention-driven request whose intent does not map to any registered workflow.                                         |
-| `bot:ship` refusal       | Target branch is in `SHIP_FORBIDDEN_TARGET_BRANCHES`, or the PR head is closed / on a fork without push access.      |
+| Refusal                  | Cause                                                                                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Silent skip              | Repository owner is not in `ALLOWED_OWNERS`. No comment is posted.                                                                                                    |
+| "Capacity reached" reply | More than `MAX_CONCURRENT_REQUESTS` agent runs are already in flight. Re-invoke later.                                                                                |
+| Conversational reply     | Mention-driven workflow request whose classifier confidence fell below `INTENT_CONFIDENCE_THRESHOLD` (default `0.75`). Answered by `chat-thread` rather than refused. |
+| "Unsupported" reply      | Mention-driven request the classifier judged off-topic, out of remit, or unsafe.                                                                                      |
+| `bot:ship` refusal       | Target branch is in `SHIP_FORBIDDEN_TARGET_BRANCHES`, or the PR head is closed / on a fork without push access.                                                       |
 
 See [`use/safety.md`](safety.md) for what the bot will and will not do once a job is accepted.
 
