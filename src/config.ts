@@ -116,21 +116,50 @@ const shipForbiddenTargetBranchesField = z
 const CPU_SHAPE = /^([1-9][0-9]*)(m?)$/;
 const BYTE_SHAPE = /^([1-9][0-9]*)(Mi|Gi)$/;
 
+/**
+ * Millicores, or null when the value is not one this schema accepts, covering
+ * both a wrong shape and a non-canonical spelling.
+ *
+ * One definition of acceptable, used by the field check and by the ordering
+ * rule. They cannot disagree, and a value either side rejects is compared by
+ * neither, so a single bad variable draws a single message.
+ *
+ * Canonicality is Kubernetes' own test, verbatim: `ParseQuantity` reuses the
+ * input string only when the digit run does not end in `000` (apimachinery
+ * `pkg/api/resource/quantity.go`). One rule covers both suffixes, since `2000m`
+ * becomes `2` and `1000` becomes `1k`, and a string test has no numeric range
+ * to overflow.
+ */
+function cpuMillis(value: string): bigint | null {
+  const match = CPU_SHAPE.exec(value);
+  if (match?.[1] === undefined) return null;
+  if (match[1].endsWith("000")) return null;
+  return match[2] === "m" ? BigInt(match[1]) : BigInt(match[1]) * 1000n;
+}
+
+/**
+ * Mebibytes, or null on the same terms as `cpuMillis`. A mantissa divisible by
+ * 1024 is the only binary-suffix bump available, so it is the whole canonicality
+ * rule here. Exact arithmetic because a mantissa past 2^53 would compare equal
+ * to its neighbour under `Number`.
+ */
+function byteMebis(value: string): bigint | null {
+  const match = BYTE_SHAPE.exec(value);
+  if (match?.[1] === undefined) return null;
+  const mantissa = BigInt(match[1]);
+  if (mantissa % 1024n === 0n) return null;
+  return mantissa * (match[2] === "Gi" ? 1024n : 1n);
+}
+
 function cpuQuantity(envVar: string, fallback: string): z.ZodDefault<z.ZodString> {
   return z
     .string()
     .trim()
     .regex(CPU_SHAPE, `${envVar} must be whole cores (e.g. 2) or millicores (e.g. 500m)`)
     .refine(
-      // Kubernetes' own canonicality test for a decimal quantity, verbatim: it
-      // reuses the input string only when the digit run does not end in "000"
-      // (apimachinery pkg/api/resource/quantity.go, ParseQuantity). So the rule
-      // is the same for both suffixes, `2000m` becomes `2` and `1000` becomes
-      // `1k`. A string test also has no numeric range to overflow.
-      //
       // A failed `.regex` above does not stop this check from running, so the
-      // guard keeps a malformed value from being reported twice.
-      (value) => !CPU_SHAPE.test(value) || !value.replace(/m$/, "").endsWith("000"),
+      // shape guard keeps a malformed value from being reported twice.
+      (value) => !CPU_SHAPE.test(value) || cpuMillis(value) !== null,
       `${envVar} must be canonical: Kubernetes rewrites a digit run ending in 000, storing 2000m as 2 and 1000 as 1k`,
     )
     .default(fallback);
@@ -141,32 +170,11 @@ function byteQuantity(envVar: string, fallback: string): z.ZodDefault<z.ZodStrin
     .string()
     .trim()
     .regex(BYTE_SHAPE, `${envVar} must be Mi or Gi (e.g. 512Mi, 4Gi)`)
-    .refine((value) => {
-      // Exact arithmetic: a mantissa past 2^53 would compare equal to its
-      // neighbour under `Number`. Guarded for the same reason as above, and
-      // because `BigInt` throws on a non-numeric string where `Number` did not.
-      const match = BYTE_SHAPE.exec(value);
-      return match?.[1] === undefined || BigInt(match[1]) % 1024n !== 0n;
-    }, `${envVar} must be canonical: Kubernetes rewrites a multiple of 1024 to the next suffix, so use 8Gi rather than 8192Mi`)
+    .refine(
+      (value) => !BYTE_SHAPE.test(value) || byteMebis(value) !== null,
+      `${envVar} must be canonical: Kubernetes rewrites a multiple of 1024 to the next suffix, so use 8Gi rather than 8192Mi`,
+    )
     .default(fallback);
-}
-
-/**
- * Millicores, for comparing a CPU request against its limit. Null when the value
- * is not a shape this schema accepts, which happens because a field-level
- * failure does not stop the object-level `superRefine` from running.
- */
-function cpuMillis(value: string): bigint | null {
-  const match = CPU_SHAPE.exec(value);
-  if (match?.[1] === undefined) return null;
-  return match[2] === "m" ? BigInt(match[1]) : BigInt(match[1]) * 1000n;
-}
-
-/** Mebibytes, for comparing a memory or storage request against its limit. */
-function byteMebis(value: string): bigint | null {
-  const match = BYTE_SHAPE.exec(value);
-  if (match?.[1] === undefined) return null;
-  return BigInt(match[1]) * (match[2] === "Gi" ? 1024n : 1n);
 }
 
 /**
@@ -1087,10 +1095,12 @@ function validateWorkerNamespaces(
  * with nothing naming the two variables that disagree. Both accepted shapes
  * reduce to an exact integer, so the pair is comparable here.
  *
- * A field that failed its own shape check still arrives here, because zod runs
- * an object-level `superRefine` regardless. Such a pair is skipped: the
- * field-level message already names the variable, and comparing it would add a
- * second, misleading issue about an ordering nobody expressed.
+ * A field that failed its own checks still arrives here, because zod runs an
+ * object-level `superRefine` regardless. Such a pair is skipped: the field-level
+ * message already names the variable, and comparing it would add a second,
+ * misleading issue about an ordering nobody expressed. Skipping is automatic
+ * rather than a second guard, because the parse helpers return null for exactly
+ * what the field check rejects.
  */
 function validateRunnerResourceOrdering(
   data: {

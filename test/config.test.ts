@@ -73,6 +73,11 @@ describe("configSchema: workflow runner resource quantities", () => {
     const issue = result.error.issues.find((i) => i.path[0] === key);
     expect(issue?.message).toContain(envVar);
     expect(issue?.message).toContain("canonical");
+    // A rejected value must not also be compared against its limit. Several of
+    // these cases are large enough to exceed the default limit, so without the
+    // parse helpers rejecting on the same terms as the field check, one bad
+    // variable would draw a second message about an ordering nobody expressed.
+    expect(result.error.issues.some((i) => i.message.includes("must not exceed"))).toBe(false);
   });
 
   it.each([

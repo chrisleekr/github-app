@@ -353,7 +353,7 @@ before committing:
 
 ## Prompt cache layout
 
-Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See `src/config.ts:754#promptCacheLayout` for the Zod definition and `src/core/executor.ts:231#useCacheableLayout` for the runtime guard.
+Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See `src/config.ts:762#promptCacheLayout` for the Zod definition and `src/core/executor.ts:231#useCacheableLayout` for the runtime guard.
 
 | Variable              | Default  | Notes                                                                                                        |
 | --------------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
