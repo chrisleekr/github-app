@@ -36,7 +36,7 @@ const ensureCurrentWorkflowRunnerResources = mock((input: { attempt: { attemptId
   events.push(`ensure:${input.attempt.attemptId}`);
   return Promise.resolve({
     state: "ready",
-    startup: { phase: "running" },
+    startup: { phase: "running", terminal: false },
     payloadIssuedAt: null,
   } as const);
 });
@@ -166,7 +166,7 @@ describe("workflow runner reconciliation", () => {
       events.push(`ensure:${input.attempt.attemptId}`);
       return Promise.resolve({
         state: "ready",
-        startup: { phase: "running" },
+        startup: { phase: "running", terminal: false },
         payloadIssuedAt: null,
       });
     });
@@ -404,6 +404,45 @@ describe("workflow runner reconciliation", () => {
     expect(events.indexOf(`postmortem:read:${firstAttempt.attemptId}`)).toBeLessThan(
       events.indexOf("fail"),
     );
+  });
+
+  // Under restartPolicy Never a runner whose process returns 0 without sending
+  // a result lands in phase Succeeded, which startup classifies as running. It
+  // would otherwise stay that way on every pass, and its Pod and log would be
+  // deleted at lease-expiry cleanup, leaving the operator the bare "stopped
+  // renewing" notice this feature exists to replace.
+  it("captures the post-mortem for a runner that exited 0 without a result", async () => {
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "running", terminal: true },
+        payloadIssuedAt: new Date().toISOString(),
+      });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(events).toContain(`postmortem:read:${firstAttempt.attemptId}`);
+    expect(recordWorkflowRunnerPostMortem).toHaveBeenCalled();
+    // Still not a start failure: the payload was issued, so terminalizing here
+    // would replace the inspect-the-repository warning with "could not start".
+    expect(failWorkflowRunnerResourceAttempt).not.toHaveBeenCalled();
+  });
+
+  it("leaves a healthy running Pod alone", async () => {
+    ensureCurrentWorkflowRunnerResources.mockImplementation((input) => {
+      events.push(`ensure:${input.attempt.attemptId}`);
+      return Promise.resolve({
+        state: "ready",
+        startup: { phase: "running", terminal: false },
+        payloadIssuedAt: new Date().toISOString(),
+      });
+    });
+
+    await reconcileWorkflowRunners();
+
+    expect(recordWorkflowRunnerPostMortem).not.toHaveBeenCalled();
   });
 
   it("skips lease work for an attempt that is no longer ready", async () => {

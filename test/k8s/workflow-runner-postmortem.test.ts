@@ -217,11 +217,26 @@ describe("readWorkflowRunnerPostMortem", () => {
     const postMortem = await readWorkflowRunnerPostMortem({ attemptId });
     const tail = postMortem?.logTail ?? "";
 
-    expect(tail.length).toBe(16_384);
     // The real assertion: it survives the round trip the store performs.
     expect(() => JSON.parse(JSON.stringify({ logTail: tail }))).not.toThrow();
     expect(/[\uD800-\uDFFF]/.test(tail)).toBe(false);
     expect(JSON.stringify(tail)).not.toContain("\\ud");
+    // The cap is a byte budget, so a code-unit slice of astral content cannot
+    // quietly store four times it.
+    expect(Buffer.byteLength(tail, "utf8")).toBeLessThanOrEqual(16_384);
+  });
+
+  // `slice` counts UTF-16 code units, and an astral character is two of them
+  // but four bytes, so a code-unit cap would store roughly 4x the budget.
+  it("caps the tail in bytes, not code units", async () => {
+    readNamespacedPod.mockImplementation(() => Promise.resolve(oomKilledPod()));
+    readNamespacedPodLog.mockImplementation(() => Promise.resolve("\u{1F50D}".repeat(20_000)));
+
+    const tail = (await readWorkflowRunnerPostMortem({ attemptId }))?.logTail ?? "";
+
+    expect(Buffer.byteLength(tail, "utf8")).toBeLessThanOrEqual(16_384);
+    expect(Buffer.byteLength(tail, "utf8")).toBeGreaterThan(16_000);
+    expect(/[\uD800-\uDFFF]/.test(tail.replace(/\u{1F50D}/gu, ""))).toBe(false);
   });
 
   // `limitBytes` stops the server partway through a window that starts at the

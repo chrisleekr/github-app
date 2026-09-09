@@ -116,9 +116,23 @@ async function reconcileActiveResources(): Promise<void> {
       // only moment the controller holds both the evidence and a live Pod: the
       // lease has minutes left and neither the terminalization below nor its
       // cleanup has deleted anything yet.
-      if (result.startup.phase === "stalled") {
+      //
+      // `Succeeded` counts as dead here even though startup calls it running.
+      // Under `restartPolicy: Never` a runner whose process returns 0 without
+      // ever sending a result lands there, stays classified running on every
+      // pass, and has its Pod and log deleted at lease-expiry cleanup. That is
+      // the one silent death the expiry notice could not explain, and reaching
+      // this attempt at all means no result was reported: an attempt that
+      // finished normally is no longer active.
+      const dead =
+        result.startup.phase === "stalled"
+          ? result.startup.reason
+          : result.startup.phase === "running" && result.startup.terminal
+            ? "PodSucceeded without a reported result"
+            : null;
+      if (dead !== null) {
         // eslint-disable-next-line no-await-in-loop -- one post-mortem per attempt, in order
-        await capturePodPostMortem(attempt, result.startup.reason);
+        await capturePodPostMortem(attempt, dead);
       }
 
       // Startup handling only. Once the payload is issued the runner holds its

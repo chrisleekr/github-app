@@ -11,7 +11,9 @@ const attempt = {
   workflowName: "review" as const,
   attemptDeadlineAt: new Date("2026-08-23T04:10:00Z"),
 };
-const ensureWorkflowRunnerResources = mock(() => Promise.resolve({ phase: "running" as const }));
+const ensureWorkflowRunnerResources = mock(() =>
+  Promise.resolve({ phase: "running" as const, terminal: false }),
+);
 const deleteWorkflowRunnerResources = mock(() => Promise.resolve(true));
 const getWorkflowRunnerRegistrationState = mock(() =>
   Promise.resolve({ state: "ready" as const, attempt, payloadIssuedAt: null }),
@@ -44,7 +46,7 @@ describe("workflow runner resource operation ordering", () => {
   beforeEach(() => {
     resetWorkflowRunnerResourceChainsForTests();
     ensureWorkflowRunnerResources.mockReset();
-    ensureWorkflowRunnerResources.mockResolvedValue({ phase: "running" });
+    ensureWorkflowRunnerResources.mockResolvedValue({ phase: "running", terminal: false });
     deleteWorkflowRunnerResources.mockReset();
     deleteWorkflowRunnerResources.mockResolvedValue(true);
     getWorkflowRunnerRegistrationState.mockReset();

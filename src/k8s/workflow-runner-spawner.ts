@@ -57,7 +57,16 @@ interface WorkflowRunnerResourceIdentity {
  */
 export type RunnerPodStartup =
   | { readonly phase: "starting" }
-  | { readonly phase: "running" }
+  | {
+      readonly phase: "running";
+      /**
+       * The Pod already reached `Succeeded`. Startup treats that as running,
+       * because a container that exited cleanly did start, but for anything
+       * watching for a silent death it is terminal: nothing more will come from
+       * this Pod, and if no result was reported none ever will.
+       */
+      readonly terminal: boolean;
+    }
   | { readonly phase: "stalled"; readonly reason: string };
 
 // Waiting reasons no retry resolves: a malformed image reference, and a
@@ -95,7 +104,8 @@ function startupBlocker(pod: V1Pod, waiting: string | undefined): string {
 
 export function classifyPodStartup(pod: V1Pod, now: number = Date.now()): RunnerPodStartup {
   const phase = pod.status?.phase;
-  if (phase === "Running" || phase === "Succeeded") return { phase: "running" };
+  if (phase === "Running") return { phase: "running", terminal: false };
+  if (phase === "Succeeded") return { phase: "running", terminal: true };
   if (phase === "Failed") return { phase: "stalled", reason: "PodFailed" };
 
   const waiting = pod.status?.containerStatuses?.[0]?.state?.waiting?.reason;
