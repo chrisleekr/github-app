@@ -1489,6 +1489,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#workflow-runner-pod-post-mortem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow runner Pod post-mortem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#workspace-lifecycle-events" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2366,6 +2377,17 @@
     <span class="md-ellipsis">
       
         Workflow runner startup fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-runner-pod-post-mortem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow runner Pod post-mortem
       
     </span>
   </a>
@@ -3722,7 +3744,7 @@ daemon executor.</p>
 <tr>
 <td><code>startupPhase</code></td>
 <td><code>stalled</code></td>
-<td>The attempt is terminalized on this pass rather than waiting out the lease.</td>
+<td>The Pod is dead or permanently blocked. Terminalized on this pass <strong>only before the payload is issued</strong>; after that the attempt is left to lease expiry, and in both cases the pass captures a Pod post-mortem first (see below).</td>
 </tr>
 <tr>
 <td><code>startupReason</code></td>
@@ -3733,6 +3755,57 @@ daemon executor.</p>
 </table>
 <p>A run of consecutive <code>startupPhase=starting</code> lines for one <code>attemptId</code> measures total startup delay, not image-pull time alone: scheduling, volume setup and container creation all report the same phase. Before blaming a cold image cache, read the Pod's conditions and events (<code>kubectl describe pod &lt;podName&gt;</code>), which separate <code>Unschedulable</code> from <code>ImagePullBackOff</code> from volume attachment. The <code>startupReason</code> on the eventual <code>stalled</code> line names the blocker the controller last saw.</p>
 <p><code>Workflow runner startup lease extension refused</code> (<code>src/orchestrator/workflow-runner-reconciler.ts#reconcileActiveResources</code>) carries <code>runId</code> and <code>attemptId</code>. It means a <code>starting</code> pass did not actually extend the lease, because the payload was issued in the registration race, the lease lapsed between listing and the update, or the attempt deadline was reached. Without it, an attempt dying mid-startup looks identical to one being kept alive: both keep logging <code>starting</code>.</p>
+<h2 id="workflow-runner-pod-post-mortem">Workflow runner Pod post-mortem<a class="headerlink" href="#workflow-runner-pod-post-mortem" title="Permanent link">&para;</a></h2>
+<p><code>event: "workflow_runner_pod_died"</code> (<code>src/orchestrator/workflow-runner-reconciler.ts#capturePodPostMortem</code>) is logged at <code>error</code> the first time a reconciler pass sees a dead Pod for an attempt, and at most once per attempt. Dead means either a <code>stalled</code> startup phase or a Pod that reached <code>Succeeded</code>: under <code>restartPolicy: Never</code> a runner whose process returns 0 without ever sending a result lands in <code>Succeeded</code>, which startup classifies as <code>running</code>, and reaching an attempt that is still active means no result was reported. It is the answer to "why did the lease expire", which the lease-expiry notice itself cannot give.</p>
+<p>It exists because everything else is gone by the time anyone asks. Cleanup deletes the Pod, and with it the terminated container status and the container log, within seconds of the run being terminalized. A cluster log pipeline is not a dependable second copy: on this deployment the Datadog Logs <strong>aggregate</strong> API counted 547 lines for a dead runner while the <strong>search</strong> API returned zero retrievable events, and no container metrics were collected at all.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>podName</code>, <code>podPhase</code></td>
+<td>Which Pod, and its phase at capture. <code>Failed</code> is a non-zero exit under <code>restartPolicy: Never</code>; <code>Succeeded</code> is a clean exit that never reported a result; <code>Pending</code> is a container that never ran.</td>
+</tr>
+<tr>
+<td><code>reason</code></td>
+<td>Kubelet's <strong>container</strong> termination reason. <code>OOMKilled</code> is the memory limit; <code>Error</code> is a non-zero exit.</td>
+</tr>
+<tr>
+<td><code>podReason</code>, <code>podMessage</code></td>
+<td>The <strong>Pod</strong>-level verdict, which is where a node decision lands: <code>Evicted</code> for node pressure such as a filled ephemeral-storage limit, <code>DeadlineExceeded</code> for <code>activeDeadlineSeconds</code>. A container that never ran leaves <code>reason</code> null and only these set.</td>
+</tr>
+<tr>
+<td><code>runId</code>, <code>attemptId</code>, <code>workflowName</code>, <code>startupReason</code></td>
+<td>Attempt identity plus the blocker the reconciler last saw, so the line joins to the <code>startupPhase</code> trail above.</td>
+</tr>
+<tr>
+<td><code>exitCode</code>, <code>signal</code></td>
+<td><code>137</code> with <code>OOMKilled</code> is the kernel OOM killer. A bare <code>137</code> without that reason is an external <code>SIGKILL</code>.</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>The container's termination message, when the runtime set one.</td>
+</tr>
+<tr>
+<td><code>startedAt</code>, <code>finishedAt</code></td>
+<td>Container lifetime. <code>finishedAt</code> should match the abnormal WebSocket close, see below.</td>
+</tr>
+<tr>
+<td><code>logTail</code></td>
+<td>Last 200 lines of runner stdout, secret-stripped and capped at 16 KB, measured in UTF-8 bytes. The cut starts on a character boundary, because a partial character would make the row unwritable as <code>jsonb</code>. Empty when <code>pods/log</code> RBAC is missing.</td>
+</tr>
+<tr>
+<td><code>logError</code></td>
+<td>Why <code>logTail</code> is not the whole story. A <code>403</code> means the Role is missing <code>pods/log</code> <code>get</code>, see the deployment RBAC. A <code>transfer ceiling</code> message means the 200-line window exceeded 256 KB, so the server stopped sending before the runner's final lines.</td>
+</tr>
+</tbody>
+</table>
+<p>The same record is persisted to <code>workflow_runs.state._runnerPostMortem</code>, so it survives log rotation and is queryable per run. Both failure comments quote it, the lease/deadline expiry notice and the runner-start-failure notice, since a Pod that dies before registering is terminalized by the second. Each quotes only the kubelet reason (<code>reason</code>, falling back to <code>podReason</code>) and <code>exitCode</code>, and shape-checks the reason against <code>^[A-Za-z][A-Za-z0-9]{0,63}$</code> first; <code>message</code>, <code>podMessage</code> and <code>logTail</code> are repository or node content and stay in the controller log. An all-null reading is discarded rather than recorded, so a pass that catches the Pod before kubelet wrote its status does not spend the one-shot slot.</p>
+<p>Correlate with the socket: <code>WebSocket connection closed</code> carries <code>kind</code>, plus <code>runId</code> and <code>attemptId</code> for a <code>workflow-runner</code> socket. Close code <code>1006</code> (abnormal, no close frame) at the same second as <code>finishedAt</code> is the signature of a runner killed outright rather than one shutting down.</p>
 <h2 id="workspace-lifecycle-events">Workspace lifecycle events<a class="headerlink" href="#workspace-lifecycle-events" title="Permanent link">&para;</a></h2>
 <p>The <code>workspace.*</code> family makes the non-success workspace-cleanup paths greppable, complementing the success-path <code>pipeline.stage stage=workspace.cleanup</code> row and the startup <code>workspace.sweep</code> reaper. Schema pinned by <code>WorkspaceLogFieldsSchema</code> (<code>src/core/workspace-events.ts#WorkspaceLogFieldsSchema</code>). <code>workDir</code> is a process-local temp path and safe to log; the authenticated clone URL embeds the install token and is never logged (clone events carry the <code>owner/repo</code> slug and branch only). All <code>err</code> fields routed through <code>redactErrorMessage</code>.</p>
 <table>
