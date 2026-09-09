@@ -313,6 +313,12 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["create", "get", "delete"]
+  # Post-mortem only. Without it a dead runner's last output is unrecoverable,
+  # because cleanup deletes the Pod minutes after it dies. The controller
+  # degrades to recording the terminated container status alone.
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create", "get", "update", "delete"]

@@ -294,7 +294,21 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve<WsConnection
       },
 
       close(ws: ServerWebSocket<WsConnectionData>, code: number, reason: string) {
-        logger.info({ daemonId: ws.data.daemonId, code, reason }, "WebSocket connection closed");
+        logger.info(
+          {
+            daemonId: ws.data.daemonId,
+            kind: ws.data.kind,
+            // A workflow-runner socket carries no daemonId, so without these an
+            // abnormal close (1006, the shape a killed runner produces) cannot
+            // be tied to the run it ended.
+            ...(ws.data.kind === "workflow-runner"
+              ? { runId: ws.data.runnerRunId, attemptId: ws.data.runnerAttemptId }
+              : {}),
+            code,
+            reason,
+          },
+          "WebSocket connection closed",
+        );
         if (ws.data.kind === "workflow-runner") handleWorkflowRunnerClose(ws);
         else handleWsClose(ws, code, reason);
       },

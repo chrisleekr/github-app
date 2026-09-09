@@ -131,6 +131,92 @@ describe("workflow expiry notifier", () => {
     expect(call[1].humanMessage).not.toContain("Inspect the repository");
   });
 
+  it("names the Pod's cause of death in the lease-expiry notice", async () => {
+    // "The runner stopped renewing" is a symptom shared by an OOMKill, a crash
+    // and a node eviction. Without the captured reason the reader has nothing
+    // to act on: the Pod is deleted before they read the comment.
+    testConfig.githubPersonalAccessToken = undefined;
+    const expired = row("solo", null, "workflow execution lease expired");
+    expired["runner_payload_issued_at"] = new Date();
+    expired["state"] = {
+      failedReason: "workflow execution lease expired",
+      _runnerPostMortem: {
+        reason: "OOMKilled",
+        exitCode: 137,
+        message: "secret-bearing container message",
+        logTail: "secret-bearing log tail",
+      },
+    };
+    findById.mockImplementation((id: string) => Promise.resolve(id === "solo" ? expired : null));
+
+    await notifyExpiredWorkflowAttempts([expired] as never);
+
+    const call = setState.mock.calls[0] as unknown as [unknown, { humanMessage: string }];
+    expect(call[1].humanMessage).toContain("The runner Pod terminated: OOMKilled, exit code 137.");
+    // Repository content stays in the controller log, never on a public comment.
+    expect(call[1].humanMessage).not.toContain("secret-bearing");
+  });
+
+  // Node-pressure eviction is a Pod-level verdict, so the container reason is
+  // null. Without the fallback the comment would say nothing at all, which is
+  // the case an ephemeral-storage limit actually produces.
+  it("names a node-pressure eviction from the Pod-level reason", async () => {
+    testConfig.githubPersonalAccessToken = undefined;
+    const expired = row("solo", null, "workflow execution lease expired");
+    expired["runner_payload_issued_at"] = new Date();
+    expired["state"] = {
+      failedReason: "workflow execution lease expired",
+      _runnerPostMortem: {
+        reason: null,
+        podReason: "Evicted",
+        podMessage: "The node was low on resource: ephemeral-storage.",
+        exitCode: null,
+      },
+    };
+    findById.mockImplementation((id: string) => Promise.resolve(id === "solo" ? expired : null));
+
+    await notifyExpiredWorkflowAttempts([expired] as never);
+
+    const call = setState.mock.calls[0] as unknown as [unknown, { humanMessage: string }];
+    expect(call[1].humanMessage).toContain("The runner Pod terminated: Evicted.");
+    expect(call[1].humanMessage).not.toContain("ephemeral-storage");
+  });
+
+  // The key is reserved on the runner protocol, so this is the second lock: a
+  // reason that ever reached the row from elsewhere still cannot carry markdown
+  // or an arbitrary-length body onto a public comment.
+  it("drops a reason that is not shaped like a kubelet reason", async () => {
+    testConfig.githubPersonalAccessToken = undefined;
+    const expired = row("solo", null, "workflow execution lease expired");
+    expired["runner_payload_issued_at"] = new Date();
+    expired["state"] = {
+      failedReason: "workflow execution lease expired",
+      _runnerPostMortem: {
+        reason: "OOMKilled](https://evil.example) **do this instead**",
+        exitCode: 137,
+      },
+    };
+    findById.mockImplementation((id: string) => Promise.resolve(id === "solo" ? expired : null));
+
+    await notifyExpiredWorkflowAttempts([expired] as never);
+
+    const call = setState.mock.calls[0] as unknown as [unknown, { humanMessage: string }];
+    expect(call[1].humanMessage).toContain("The runner Pod terminated: exit code 137.");
+    expect(call[1].humanMessage).not.toContain("evil.example");
+  });
+
+  it("omits the cause-of-death line when no post-mortem was captured", async () => {
+    testConfig.githubPersonalAccessToken = undefined;
+    const expired = row("solo", null, "workflow execution lease expired");
+    expired["runner_payload_issued_at"] = new Date();
+    findById.mockImplementation((id: string) => Promise.resolve(id === "solo" ? expired : null));
+
+    await notifyExpiredWorkflowAttempts([expired] as never);
+
+    const call = setState.mock.calls[0] as unknown as [unknown, { humanMessage: string }];
+    expect(call[1].humanMessage).not.toContain("The runner Pod terminated");
+  });
+
   it("keeps the inspect-the-repository warning once the runner held a token", async () => {
     testConfig.githubPersonalAccessToken = undefined;
     const expired = row("solo", null, "workflow execution lease expired");
