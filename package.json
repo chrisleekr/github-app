@@ -36,7 +36,7 @@
   "engines": {
     "bun": ">=1.4.1"
   },
-  "packageManager": "bun@1.4.1",
+  "packageManager": "bun@1.4.2",
   "scripts": {
     "prepublishOnly": "bun run clean && NODE_ENV=production bun run build",
     "clean": "rm -rf dist",
