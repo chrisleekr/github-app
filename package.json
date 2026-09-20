@@ -136,7 +136,7 @@
     "@hono/node-server": "2.1.1",
     "adm-zip": "0.6.1",
     "express-rate-limit": "8.5.2",
-    "fast-uri": "3.1.6",
+    "fast-uri": "3.1.7",
     "fast-xml-builder": "1.2.0",
     "fast-xml-parser": "5.7.0",
     "flatted": "3.4.4",
