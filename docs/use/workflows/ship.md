@@ -98,7 +98,12 @@ stateDiagram-v2
 | Mark a draft PR ready-for-review on terminal `ready`                | Cancel a foreign push, manual push wins; the session terminates |
 | Self-remove the `bot:ship` label after acting                       | Take any mutating action after `bot:abort-ship`                 |
 
-If the target branch matches `SHIP_FORBIDDEN_TARGET_BRANCHES` (e.g. `main,production`), the trigger is refused before any session is created.
+The trigger is refused before any session is created (`src/workflows/ship/eligibility.ts`) when:
+
+- `ALLOWED_OWNERS` is set and the triggering user is not in it (`unauthorized`).
+- The PR is already merged (`merged`), or is closed or cannot be found (`closed`).
+- The PR head is on a fork, or its head repository was deleted (`fork`), since the bot cannot push there.
+- The target branch matches `SHIP_FORBIDDEN_TARGET_BRANCHES`, e.g. `main,production` (`forbidden_target_branch`).
 
 ## Iteration-0 reroute
 
