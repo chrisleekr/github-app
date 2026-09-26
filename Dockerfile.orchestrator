@@ -10,7 +10,7 @@
 # enforces this in CI.
 
 # --- SHARED-BASE-BEGIN ---
-FROM oven/bun:1.4.1 AS base
+FROM oven/bun:1.4.2 AS base
 WORKDIR /app
 
 # Node.js required by Claude Code CLI; git required for repo checkout.
@@ -61,13 +61,14 @@ RUN apt-get update && \
 # behind to ship CVE-2026-55607 (arbitrary code execution via git directory
 # confusion, fixed in 2.1.163).
 #
-# Value tracks the vendor's `stable` dist-tag, not `latest`/`next`. This CLI
-# runs under bypassPermissions holding a GitHub installation token, so it takes
-# the conservative channel. A hand-picked version must also clear the 7-day
-# soak renovate.json enforces via minimumReleaseAge (that setting only governs
-# Renovate-raised PRs, not a manual edit), and must be >= 2.1.163.
+# Value must equal the `claudeCodeVersion` in the installed
+# @anthropic-ai/claude-agent-sdk package.json. CLAUDE_CODE_PATH makes the SDK
+# drive this CLI instead of the one it bundles, so an SDK bump alone leaves the
+# old CLI running (2.1.236 under SDK 0.3.283 rejected claude-opus-5-5).
+# `bun run check:claude-code-version` enforces the match in CI, and
+# renovate.json groups the two packages into one PR.
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.236
+ARG CLAUDE_CODE_VERSION=2.1.283
 
 # Tracks 11.x major (unlike the exact pins elsewhere).
 # The version is validated before it reaches npm: `--build-arg

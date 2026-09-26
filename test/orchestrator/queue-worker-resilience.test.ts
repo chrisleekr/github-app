@@ -20,9 +20,7 @@ const workflowJob: Extract<QueuedJob, { kind: "workflow-run" }> = {
 const raw = JSON.stringify(workflowJob);
 
 const leaseJob = mock(() => Promise.resolve(null as { job: QueuedJob; raw: string } | null));
-const deferLeasedWorkflowJob = mock(() =>
-  Promise.resolve({ status: "moved" as "moved" | "already-moved" | "missing" }),
-);
+const deferLeasedWorkflowJob = mock(() => Promise.resolve({ status: "moved" }));
 const ensureWorkflowJobQueued = mock(() => Promise.resolve(true));
 const releaseLeasedJob = mock(() => Promise.resolve());
 const requeueLeasedJob = mock(() => Promise.resolve(1));

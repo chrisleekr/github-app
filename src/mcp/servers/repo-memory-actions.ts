@@ -42,10 +42,7 @@ export interface DeleteReviewLearningAction {
 }
 
 export type DaemonAction =
-  | SaveAction
-  | DeleteAction
-  | SaveReviewLearningAction
-  | DeleteReviewLearningAction;
+  SaveAction | DeleteAction | SaveReviewLearningAction | DeleteReviewLearningAction;
 
 /**
  * Read all actions from an absolute path. Returns `[]` on missing or

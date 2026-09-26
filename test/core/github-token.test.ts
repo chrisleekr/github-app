@@ -19,7 +19,7 @@ function makeOctokit(token: string): Pick<Octokit, "auth"> {
     auth: mock((params: unknown): Promise<unknown> => {
       expect(params).toEqual({ type: "installation" });
       return Promise.resolve({ token });
-    }) as unknown as Octokit["auth"],
+    }),
   };
 }
 

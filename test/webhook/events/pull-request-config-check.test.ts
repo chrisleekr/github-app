@@ -204,7 +204,7 @@ describe("handlePullRequestConfigCheck", () => {
     await flushMicrotasks();
 
     expect(mockRunPrConfigCheck).toHaveBeenCalledTimes(1);
-    const keys = mockClaimDelivery.mock.calls.map((c) => (c as unknown as [string])[0]);
+    const keys = mockClaimDelivery.mock.calls.map((c) => c[0]);
     expect(keys).toContain("delivery-shared");
     expect(keys).toContain("delivery-shared:config-check");
   });

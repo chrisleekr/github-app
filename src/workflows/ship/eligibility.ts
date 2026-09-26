@@ -16,11 +16,7 @@ import type { Octokit } from "octokit";
 import { config } from "../../config";
 
 export type IneligibleReason =
-  | "fork"
-  | "closed"
-  | "merged"
-  | "unauthorized"
-  | "forbidden_target_branch";
+  "fork" | "closed" | "merged" | "unauthorized" | "forbidden_target_branch";
 
 export type EligibilityVerdict =
   | { readonly eligible: true }

@@ -58,12 +58,7 @@ beforeEach(cleanup);
 afterAll(cleanup);
 
 type PrAction =
-  | "opened"
-  | "edited"
-  | "closed"
-  | "reopened"
-  | "converted_to_draft"
-  | "ready_for_review";
+  "opened" | "edited" | "closed" | "reopened" | "converted_to_draft" | "ready_for_review";
 
 function basePayload(
   action: PrAction,

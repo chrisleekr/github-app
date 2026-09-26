@@ -200,12 +200,12 @@ function toIssues(issues: readonly z.core.$ZodIssue[]): ConfigCheckIssue[] {
 async function touchesConfigFile(input: RunPrConfigCheckInput, path: string): Promise<boolean> {
   let files: { filename: string }[];
   try {
-    files = (await input.octokit.paginate(input.octokit.rest.pulls.listFiles, {
+    files = await input.octokit.paginate(input.octokit.rest.pulls.listFiles, {
       owner: input.owner,
       repo: input.repo,
       pull_number: input.prNumber,
       per_page: 100,
-    })) as { filename: string }[];
+    });
   } catch (err) {
     // Degrade like every other GitHub call on this path: a secondary rate
     // limit, a 5xx, or a revoked `pull_requests: read` must no-op the check,

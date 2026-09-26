@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
-const readNamespacedPod = mock(
-  (_input: { name: string; namespace: string }): Promise<unknown> => Promise.resolve({}),
+const readNamespacedPod = mock((_input: { name: string; namespace: string }): Promise<unknown> =>
+  Promise.resolve({}),
 );
 const readNamespacedPodLog = mock(
   (_input: {

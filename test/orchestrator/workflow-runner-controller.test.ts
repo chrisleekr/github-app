@@ -66,9 +66,8 @@ const recordWorkflowExecution = mock(() => Promise.resolve());
 const publishWorkflowRunById = mock(() => Promise.resolve());
 const getByName = mock(() => ({ steps: [] as string[] }));
 const transactionQuery = mock(() => Promise.resolve([{ delivery_id: executionDeliveryId }]));
-const begin = mock(
-  (callback: (tx: typeof transactionQuery) => Promise<void>): Promise<void> =>
-    callback(transactionQuery),
+const begin = mock((callback: (tx: typeof transactionQuery) => Promise<void>): Promise<void> =>
+  callback(transactionQuery),
 );
 const findWorkflowRunnerCommandReceipt = mock(() =>
   Promise.resolve(
@@ -318,6 +317,17 @@ async function storedAfter(gate: ReturnType<typeof deferred>): Promise<"stored">
 
 function hasMessage(socket: FakeSocket, type: string): boolean {
   return socket.messages.some((message) => (message as { type?: string }).type === type);
+}
+
+function countMessages(socket: FakeSocket, type: string): number {
+  return socket.messages.filter((message) => (message as { type?: string }).type === type).length;
+}
+
+function hasCommandError(socket: FakeSocket, code: string): boolean {
+  return socket.messages.some((message) => {
+    const { type, payload } = message as { type?: string; payload?: { code?: string } };
+    return type === "workflow-runner:command-result" && payload?.code === code;
+  });
 }
 
 async function expectRejectedResultPolicyClose(error: Error): Promise<void> {
@@ -597,12 +607,7 @@ describe("workflow runner controller", () => {
       response: { trackingCommentId: 42 },
     });
     handleWorkflowRunnerMessage(socket as never, message);
-    await waitUntil(
-      () =>
-        socket.messages.filter(
-          (entry) => (entry as { type?: string }).type === "workflow-runner:command-result",
-        ).length === 2,
-    );
+    await waitUntil(() => countMessages(socket, "workflow-runner:command-result") === 2);
     expect(setState).toHaveBeenCalledTimes(1);
     expect(insertWorkflowRunnerCommandReceipt).toHaveBeenCalledTimes(1);
   });
@@ -706,7 +711,7 @@ describe("workflow runner controller", () => {
     mockReadyWithPayloadReceipt();
     prepareWorkflowRunnerControllerOctokit.mockResolvedValueOnce({
       request: octokitRequest,
-    } as never);
+    });
     const socket = new FakeSocket();
     await register(socket, false);
     const command = deferred();
@@ -843,14 +848,7 @@ describe("workflow runner controller", () => {
     );
 
     handleWorkflowRunnerMessage(socket as never, message);
-    await waitUntil(() =>
-      socket.messages.some(
-        (entry) =>
-          (entry as { type?: string; payload?: { code?: string } }).type ===
-            "workflow-runner:command-result" &&
-          (entry as { payload?: { code?: string } }).payload?.code === "INVALID_COMMAND",
-      ),
-    );
+    await waitUntil(() => hasCommandError(socket, "INVALID_COMMAND"));
 
     expect(sanitizeWorkflowRunnerCommand).toHaveBeenCalledWith(message.payload.command);
     expect(findWorkflowRunnerCommandReceipt).not.toHaveBeenCalled();

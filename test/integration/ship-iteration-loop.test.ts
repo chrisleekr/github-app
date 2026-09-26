@@ -207,9 +207,7 @@ describe.skipIf(skipSuite)("integration: ship-iteration loop end-to-end", () => 
     // Bun's RedisClient returns ZSCORE as a number; some Valkey/Redis builds
     // surface it as a string. Normalise so the assertion holds on either.
     const scoreRaw = (await valkey.send("ZSCORE", ["ship:tickle", intent.id])) as
-      | string
-      | number
-      | null;
+      string | number | null;
     expect(scoreRaw).not.toBeNull();
     expect(Number(scoreRaw)).toBe(0);
   });

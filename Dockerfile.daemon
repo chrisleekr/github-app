@@ -11,7 +11,7 @@
 # scripts/check-dockerfile-base-sync.ts in CI.
 
 # --- SHARED-BASE-BEGIN ---
-FROM oven/bun:1.4.1 AS base
+FROM oven/bun:1.4.2 AS base
 WORKDIR /app
 
 # Node.js required by Claude Code CLI; git required for repo checkout.
@@ -62,13 +62,14 @@ RUN apt-get update && \
 # behind to ship CVE-2026-55607 (arbitrary code execution via git directory
 # confusion, fixed in 2.1.163).
 #
-# Value tracks the vendor's `stable` dist-tag, not `latest`/`next`. This CLI
-# runs under bypassPermissions holding a GitHub installation token, so it takes
-# the conservative channel. A hand-picked version must also clear the 7-day
-# soak renovate.json enforces via minimumReleaseAge (that setting only governs
-# Renovate-raised PRs, not a manual edit), and must be >= 2.1.163.
+# Value must equal the `claudeCodeVersion` in the installed
+# @anthropic-ai/claude-agent-sdk package.json. CLAUDE_CODE_PATH makes the SDK
+# drive this CLI instead of the one it bundles, so an SDK bump alone leaves the
+# old CLI running (2.1.236 under SDK 0.3.283 rejected claude-opus-5-5).
+# `bun run check:claude-code-version` enforces the match in CI, and
+# renovate.json groups the two packages into one PR.
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.236
+ARG CLAUDE_CODE_VERSION=2.1.283
 
 # Tracks 11.x major (unlike the exact pins elsewhere).
 # The version is validated before it reaches npm: `--build-arg
@@ -110,19 +111,19 @@ ARG INSTALL_LANGS="go rust"
 # at the repo root for the custom manager that parses these annotations, the
 # weekly schedule, and the auto-merge policy (minor/patch/digest only).
 # renovate: datasource=github-releases depName=kubernetes/kubernetes
-ARG KUBECTL_VERSION=v1.36.2
+ARG KUBECTL_VERSION=v1.37.0
 # renovate: datasource=github-releases depName=helm/helm
-ARG HELM_VERSION=v4.2.1
+ARG HELM_VERSION=v4.3.0
 # renovate: datasource=github-releases depName=hashicorp/terraform
-ARG TERRAFORM_VERSION=1.15.6
+ARG TERRAFORM_VERSION=1.16.3
 # renovate: datasource=github-releases depName=aws/aws-cli
-ARG AWSCLI_VERSION=2.34.32
+ARG AWSCLI_VERSION=2.36.49
 # renovate: datasource=github-releases depName=mikefarah/yq
-ARG YQ_VERSION=v4.53.3
+ARG YQ_VERSION=v4.53.6
 # renovate: datasource=github-releases depName=asdf-vm/asdf
-ARG ASDF_VERSION=v0.19.0
+ARG ASDF_VERSION=v0.20.0
 # renovate: datasource=github-releases depName=nvm-sh/nvm
-ARG NVM_VERSION=v0.40.5
+ARG NVM_VERSION=v0.40.7
 # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize
 ARG KUSTOMIZE_VERSION=v5.8.1
 # renovate: datasource=github-releases depName=derailed/k9s
@@ -130,19 +131,19 @@ ARG K9S_VERSION=v0.51.0
 # renovate: datasource=github-releases depName=stern/stern
 ARG STERN_VERSION=v1.34.0
 # renovate: datasource=github-releases depName=argoproj/argo-cd
-ARG ARGOCD_VERSION=v3.4.3
+ARG ARGOCD_VERSION=v3.5.3
 # renovate: datasource=github-releases depName=fluxcd/flux2
-ARG FLUX_VERSION=v2.8.8
+ARG FLUX_VERSION=v2.9.5
 # renovate: datasource=github-releases depName=terraform-linters/tflint
-ARG TFLINT_VERSION=v0.63.1
+ARG TFLINT_VERSION=v0.64.0
 # renovate: datasource=github-releases depName=koalaman/shellcheck
 ARG SHELLCHECK_VERSION=v0.11.0
 # renovate: datasource=github-releases depName=hadolint/hadolint
-ARG HADOLINT_VERSION=v2.14.0
+ARG HADOLINT_VERSION=v2.15.1
 # renovate: datasource=golang-version depName=golang
-ARG GO_VERSION=1.26.4
+ARG GO_VERSION=1.27.1
 # renovate: datasource=pypi depName=poetry
-ARG POETRY_VERSION=2.4.1
+ARG POETRY_VERSION=2.4.3
 
 # 1. Debian apt staples + language runtimes + data clients.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -238,12 +239,12 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true \
   PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 RUN apt-get update && apt-get install -y --no-install-recommends chromium && \
   rm -rf /var/lib/apt/lists/* && \
-  npm install -g @mermaid-js/mermaid-cli@11.14.0 && \
+  npm install -g @mermaid-js/mermaid-cli@11.17.0 && \
   printf '{"args":["--no-sandbox"]}\n' > /etc/mmdc-puppeteer.json && \
   chmod 0444 /etc/mmdc-puppeteer.json
 
 # 6. uv (astral-sh) + poetry via pipx. Redirect installer output to /usr/local
-#   : /root is mode 700 in oven/bun:1.4.1, unreadable to the final USER bun
+#   : /root is mode 700 in oven/bun:1.4.2, unreadable to the final USER bun
 #    (UID 1000), so default $HOME/.local/bin targets would land dead-on-arrival.
 ENV PIPX_HOME=/usr/local/pipx \
   PIPX_BIN_DIR=/usr/local/bin \

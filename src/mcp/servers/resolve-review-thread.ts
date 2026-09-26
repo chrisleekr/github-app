@@ -121,11 +121,7 @@ interface ResolveResponse {
 }
 
 type ErrorCode =
-  | "thread_not_found"
-  | "permission_denied"
-  | "rate_limited"
-  | "network_error"
-  | "graphql_error";
+  "thread_not_found" | "permission_denied" | "rate_limited" | "network_error" | "graphql_error";
 
 function classifyError(err: unknown): ErrorCode {
   // Inspect the message before the status branch: GitHub secondary

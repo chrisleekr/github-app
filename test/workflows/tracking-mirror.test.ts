@@ -416,8 +416,7 @@ describe("tracking-mirror.setState: first-touch create/adopt path", () => {
     expect(deletedIds).toEqual([1010]);
     // Final updateComment targets the canonical (racer-reserved) id.
     const updateArgs = calls.updateComment.mock.calls.at(-1)?.[0] as
-      | { comment_id: number }
-      | undefined;
+      { comment_id: number } | undefined;
     expect(updateArgs?.comment_id).toBe(1011);
     expect(result.tracking_comment_id).toBe(1011);
   });
@@ -548,8 +547,7 @@ describe("tracking-mirror.setState: first-touch create/adopt path", () => {
     expect(calls.listComments).not.toHaveBeenCalled();
     expect(calls.updateComment).toHaveBeenCalledTimes(1);
     const updateArgs = calls.updateComment.mock.calls[0]?.[0] as
-      | { comment_id: number; body: string }
-      | undefined;
+      { comment_id: number; body: string } | undefined;
     expect(updateArgs?.comment_id).toBe(4242);
     expect(updateArgs?.body).toContain(MARKER);
     expect(result.tracking_comment_id).toBe(4242);

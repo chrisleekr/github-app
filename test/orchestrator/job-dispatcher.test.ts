@@ -466,8 +466,7 @@ describe("dispatchJob", () => {
     const fakeWs = { sendText: mock(() => {}) };
     mockGetActiveDaemons.mockImplementation(() => Promise.resolve(["d1"]));
     daemonInfoStore.set("d1", makeDaemonInfo("d1"));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockConnections.set("d1", fakeWs as any);
+    mockConnections.set("d1", fakeWs);
 
     const job = makeQueuedJob({ deliveryId: "dispatch-test" });
     const result = await dispatchJob(job);
@@ -555,8 +554,7 @@ describe("dispatchJob", () => {
     const fakeWs = { sendText: mock(() => {}) };
     mockGetActiveDaemons.mockImplementation(() => Promise.resolve(["d1"]));
     daemonInfoStore.set("d1", makeDaemonInfo("d1"));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockConnections.set("d1", fakeWs as any);
+    mockConnections.set("d1", fakeWs);
 
     const job = makeQueuedJob({
       deliveryId: "meta-test",
@@ -607,8 +605,7 @@ describe("getPendingOffer / removePendingOffer", () => {
     const fakeWs = { sendText: mock(() => {}) };
     mockGetActiveDaemons.mockImplementation(() => Promise.resolve(["d1"]));
     daemonInfoStore.set("d1", makeDaemonInfo("d1"));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockConnections.set("d1", fakeWs as any);
+    mockConnections.set("d1", fakeWs);
 
     await dispatchJob(makeQueuedJob());
 
@@ -627,8 +624,7 @@ describe("getPendingOffer / removePendingOffer", () => {
 describe("handleJobAccept", () => {
   it("sends job:payload to the daemon", () => {
     const fakeWs = { sendText: mock(() => {}) };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockConnections.set("d1", fakeWs as any);
+    mockConnections.set("d1", fakeWs);
 
     handleJobAccept({
       offerId: "offer-1",
@@ -664,8 +660,7 @@ describe("handleJobAccept", () => {
 
   it("omits envVars when empty", () => {
     const fakeWs = { sendText: mock(() => {}) };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockConnections.set("d2", fakeWs as any);
+    mockConnections.set("d2", fakeWs);
 
     handleJobAccept({
       offerId: "offer-2",
@@ -687,8 +682,7 @@ describe("handleJobAccept", () => {
 
   it("forwards the resolved per-repo policy onto the wire (Gate 2)", () => {
     const fakeWs = { sendText: mock(() => {}) };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockConnections.set("d-policy", fakeWs as any);
+    mockConnections.set("d-policy", fakeWs);
 
     handleJobAccept({
       offerId: "offer-policy",
@@ -720,8 +714,7 @@ describe("handleJobAccept", () => {
 
   it("emits the pre-Gate-2 key set verbatim when no policy is supplied (C8)", () => {
     const fakeWs = { sendText: mock(() => {}) };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockConnections.set("d-nopolicy", fakeWs as any);
+    mockConnections.set("d-nopolicy", fakeWs);
 
     handleJobAccept({
       offerId: "offer-nopolicy",
@@ -772,8 +765,7 @@ describe("handleJobReject", () => {
     const fakeWs = { sendText: mock(() => {}) };
     mockGetActiveDaemons.mockImplementation(() => Promise.resolve(["d1"]));
     daemonInfoStore.set("d1", makeDaemonInfo("d1"));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockConnections.set("d1", fakeWs as any);
+    mockConnections.set("d1", fakeWs);
 
     await dispatchJob(makeQueuedJob({ deliveryId: "reject-test" }));
 
@@ -795,8 +787,7 @@ describe("handleJobReject", () => {
     const fakeWs = { sendText: mock(() => {}) };
     mockGetActiveDaemons.mockImplementation(() => Promise.resolve(["d1"]));
     daemonInfoStore.set("d1", makeDaemonInfo("d1"));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockConnections.set("d1", fakeWs as any);
+    mockConnections.set("d1", fakeWs);
 
     await dispatchJob(makeQueuedJob({ deliveryId: "reject-max" }));
 
@@ -831,8 +822,7 @@ describe("offer timeout", () => {
       const fakeWs = { sendText: mock(() => {}) };
       mockGetActiveDaemons.mockImplementation(() => Promise.resolve(["d1"]));
       daemonInfoStore.set("d1", makeDaemonInfo("d1"));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockConnections.set("d1", fakeWs as any);
+      mockConnections.set("d1", fakeWs);
 
       await dispatchJob(makeQueuedJob({ deliveryId: "timeout-test" }));
 
@@ -856,8 +846,7 @@ describe("offer timeout", () => {
       const fakeWs = { sendText: mock(() => {}) };
       mockGetActiveDaemons.mockImplementation(() => Promise.resolve(["d1"]));
       daemonInfoStore.set("d1", makeDaemonInfo("d1"));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockConnections.set("d1", fakeWs as any);
+      mockConnections.set("d1", fakeWs);
 
       await dispatchJob(makeQueuedJob({ deliveryId: "timeout-noop" }));
 
@@ -887,8 +876,7 @@ describe("offer timeout", () => {
       const fakeWs = { sendText: mock(() => {}) };
       mockGetActiveDaemons.mockImplementation(() => Promise.resolve(["d1"]));
       daemonInfoStore.set("d1", makeDaemonInfo("d1"));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      mockConnections.set("d1", fakeWs as any);
+      mockConnections.set("d1", fakeWs);
 
       await dispatchJob(makeQueuedJob({ deliveryId: "timeout-maxretry" }));
 

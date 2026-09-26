@@ -146,7 +146,7 @@ export function installRateLimitHooks(octokit: Pick<Octokit, "hook">): void {
     try {
       const response = await request(options);
       const durationMs = Date.now() - start;
-      emitResponseLines(response.status, response.headers as Headers, route, durationMs);
+      emitResponseLines(response.status, response.headers, route, durationMs);
       return response;
     } catch (error) {
       const durationMs = Date.now() - start;

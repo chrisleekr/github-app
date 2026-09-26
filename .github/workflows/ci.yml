@@ -111,6 +111,12 @@ jobs:
         # workflow from reintroducing the drift closed in issue #173.
         run: bun run check:runner-pins
 
+      - name: Claude Code CLI pin guard
+        # Fails if a Dockerfile's CLAUDE_CODE_VERSION differs from the Agent
+        # SDK's claudeCodeVersion. CLAUDE_CODE_PATH makes the SDK drive that
+        # CLI, so bumping the SDK alone leaves the old CLI running.
+        run: bun run check:claude-code-version
+
       - name: Test-glob drift guard
         # Fails if any `*.test.ts` file is outside the canonical `test/` tree
         # consumed by scripts/test-isolated.sh.

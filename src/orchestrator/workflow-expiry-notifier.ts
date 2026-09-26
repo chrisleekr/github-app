@@ -69,7 +69,7 @@ export async function getNotificationOctokit(
     log: logger,
   });
   return {
-    octokit: minted.octokit as unknown as Octokit,
+    octokit: minted.octokit,
     ownsInstallationToken: true,
   };
 }

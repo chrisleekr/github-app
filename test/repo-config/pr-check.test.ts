@@ -151,7 +151,7 @@ function runCheck(h: OctokitHarness): Promise<unknown> {
     headSha: HEAD_SHA,
     deliveryId: "delivery-1",
     log,
-  }) as Promise<unknown>;
+  });
 }
 
 /** Body argument of the first call to a comment-write mock. */

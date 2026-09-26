@@ -56,7 +56,7 @@ function octokitReturning(files: unknown): OctokitArg {
   return {
     paginate: mock(() => (files instanceof Error ? Promise.reject(files) : Promise.resolve(files))),
     rest: { pulls: { listFiles: () => undefined } },
-  } as unknown as OctokitArg;
+  };
 }
 
 function file(filename: string, sha: string, status = "modified") {

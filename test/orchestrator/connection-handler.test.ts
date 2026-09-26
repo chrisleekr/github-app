@@ -28,21 +28,20 @@ import {
 // job-dispatcher, or ws-server here, because mock.module() is process-wide.
 
 // daemon-registry
-const mockRegisterDaemon = mock(
-  (): Promise<DaemonInfo> =>
-    Promise.resolve({
-      id: "daemon-1",
-      hostname: "host-1",
-      platform: "linux",
-      osVersion: "6.1",
-      capabilities: makeFakeCapabilities(),
-      status: "active",
-      protocolVersion: PROTOCOL_VERSION,
-      appVersion: "0.1.0",
-      activeJobs: 0,
-      lastSeenAt: Date.now(),
-      firstSeenAt: Date.now(),
-    }),
+const mockRegisterDaemon = mock((): Promise<DaemonInfo> =>
+  Promise.resolve({
+    id: "daemon-1",
+    hostname: "host-1",
+    platform: "linux",
+    osVersion: "6.1",
+    capabilities: makeFakeCapabilities(),
+    status: "active",
+    protocolVersion: PROTOCOL_VERSION,
+    appVersion: "0.1.0",
+    activeJobs: 0,
+    lastSeenAt: Date.now(),
+    firstSeenAt: Date.now(),
+  }),
 );
 const mockDeregisterDaemon = mock(() => Promise.resolve());
 const mockRefreshDaemonTtl = mock(() => Promise.resolve());
@@ -62,8 +61,8 @@ void mock.module("../../src/orchestrator/daemon-registry", () => ({
 }));
 
 // history
-const mockGetOrphanedExecutions = mock(
-  (): Promise<{ deliveryId: string; status: string }[]> => Promise.resolve([]),
+const mockGetOrphanedExecutions = mock((): Promise<{ deliveryId: string; status: string }[]> =>
+  Promise.resolve([]),
 );
 const mockMarkExecutionFailed = mock(() => Promise.resolve());
 const mockMarkExecutionRunning = mock(() => Promise.resolve());
@@ -732,8 +731,7 @@ describe("handleDaemonMessage - daemon:register", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getConnections().set("daemon-race", oldWs as any);
     let releaseCleanup:
-      | ((value: { executionDeliveryIds: string[]; workflowRunIds: string[] }) => void)
-      | undefined;
+      ((value: { executionDeliveryIds: string[]; workflowRunIds: string[] }) => void) | undefined;
     mockFailDisconnectedDaemon.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -758,25 +756,24 @@ describe("handleDaemonMessage - daemon:register", () => {
   });
 
   it("serializes simultaneous registrations for the same daemon ID", async () => {
-    const releases: (() => void)[] = [];
+    const releases: ((daemon: DaemonInfo) => void)[] = [];
+    const registeredDaemon = (): DaemonInfo => ({
+      id: "daemon-simultaneous",
+      hostname: "host-1",
+      platform: "linux",
+      osVersion: "6.1",
+      capabilities: makeFakeCapabilities(),
+      status: "active",
+      protocolVersion: PROTOCOL_VERSION,
+      appVersion: "0.1.0",
+      activeJobs: 0,
+      lastSeenAt: Date.now(),
+      firstSeenAt: Date.now(),
+    });
     mockRegisterDaemon.mockImplementation(
       () =>
         new Promise((resolve) => {
-          releases.push(() => {
-            resolve({
-              id: "daemon-simultaneous",
-              hostname: "host-1",
-              platform: "linux",
-              osVersion: "6.1",
-              capabilities: makeFakeCapabilities(),
-              status: "active",
-              protocolVersion: PROTOCOL_VERSION,
-              appVersion: "0.1.0",
-              activeJobs: 0,
-              lastSeenAt: Date.now(),
-              firstSeenAt: Date.now(),
-            });
-          });
+          releases.push(resolve);
         }),
     );
 
@@ -789,12 +786,12 @@ describe("handleDaemonMessage - daemon:register", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(mockRegisterDaemon).toHaveBeenCalledTimes(1);
-    releases[0]?.();
+    releases[0]?.(registeredDaemon());
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(mockRegisterDaemon).toHaveBeenCalledTimes(2);
     expect(firstWs.close).toHaveBeenCalled();
 
-    releases[1]?.();
+    releases[1]?.(registeredDaemon());
     await drainDisconnectCleanups();
     expect(firstWs.data.daemonId).toBeUndefined();
     expect(secondWs.data.daemonId).toBe("daemon-simultaneous");
@@ -1804,7 +1801,7 @@ describe("handleDaemonMessage - job:accept resolves the per-repo policy", () => 
       kind: "legacy" as const,
       ...base,
     };
-    await realDispatch(job as Parameters<typeof realDispatch>[0]);
+    await realDispatch(job);
 
     const acceptMsg: DaemonMessage = {
       type: "job:accept",
@@ -1883,9 +1880,9 @@ describe("handleDaemonMessage - job:accept resolves the per-repo policy", () => 
    */
   function capturePolicyLogs(): { lines: Record<string, unknown>[]; restore: () => void } {
     const lines: Record<string, unknown>[] = [];
-    const spy = spyOn(realLogger, "info").mockImplementation(((obj: unknown) => {
+    const spy = spyOn(realLogger, "info").mockImplementation((obj: unknown) => {
       if (obj !== null && typeof obj === "object") lines.push(obj as Record<string, unknown>);
-    }) as typeof realLogger.info);
+    });
     return {
       lines,
       restore: () => {

@@ -31,7 +31,7 @@ import { config } from "../../../config";
 import { getDb } from "../../../db";
 import { logger as rootLogger } from "../../../logger";
 import { enqueueJob } from "../../../orchestrator/job-queue";
-import type { CanonicalCommand } from "../../../shared/ship-types";
+import { type CanonicalCommand, isScopedCommandIntent } from "../../../shared/ship-types";
 import { getTriageLLMClient } from "../../../webhook/triage-client-factory";
 import { postRefusalComment } from "../../tracking-mirror";
 import { SHIP_LOG_EVENTS } from "../log-fields";
@@ -447,11 +447,12 @@ async function runScopedCommand(command: CanonicalCommand, deps: ScopedCommandDe
       return;
     }
     default: {
-      // Defensive, exhaustiveness guard. A new scoped intent added to
-      // SCOPED_COMMAND_INTENTS without a case here will fail the type
-      // check.
-      const _exhaustive: never = command.intent as never;
-      void _exhaustive;
+      // command.intent is the wider CommandIntent, so narrow to the scoped
+      // subset first: a scoped verb without a case above then fails to
+      // compile here. Non-scoped intents reach the runtime warn below.
+      if (isScopedCommandIntent(command.intent)) {
+        command.intent satisfies never;
+      }
       deps.log?.warn({ intent: command.intent }, "dispatchScopedCommand: unhandled scoped intent");
     }
   }
