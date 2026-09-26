@@ -62,7 +62,7 @@
       "groupName": "dockerfile tool versions"
     },
     {
-      "description": "Move the Agent SDK and the Dockerfile Claude Code CLI pin together. CLAUDE_CODE_PATH makes the SDK drive the Dockerfile CLI, and check:claude-code-version fails CI unless the ARG equals the SDK's claudeCodeVersion. Placed after the broader groups so this groupName wins.",
+      "description": "Put Agent SDK and Dockerfile Claude Code CLI bumps in one PR. CLAUDE_CODE_PATH makes the SDK drive the Dockerfile CLI. Grouping does not make the versions match: Renovate picks each one independently, so a grouped PR can pair an SDK whose claudeCodeVersion differs from the CLI it picked. check:claude-code-version is what enforces the match, and fails that PR until the ARG is fixed by hand. Placed after the broader groups so this groupName wins.",
       "matchDepNames": ["@anthropic-ai/claude-agent-sdk", "@anthropic-ai/claude-code"],
       "groupName": "claude code"
     },
