@@ -11,10 +11,10 @@ import {
 function captureStdout(fn: () => Promise<void>): Promise<string> {
   const chunks: string[] = [];
   const original = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: unknown): boolean => {
+  process.stdout.write = (chunk: unknown): boolean => {
     chunks.push(String(chunk));
     return true;
-  }) as unknown as typeof process.stdout.write;
+  };
   return fn()
     .then(() => chunks.join(""))
     .finally(() => {

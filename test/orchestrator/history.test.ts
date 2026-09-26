@@ -50,8 +50,8 @@ let mockDbResult: unknown[] = [];
 const mockDbFn = mock((_strings: TemplateStringsArray, ..._values: unknown[]) =>
   Promise.resolve(mockDbResult),
 );
-const mockDbBegin = mock(
-  (callback: (tx: typeof mockDbFn) => Promise<unknown>): Promise<unknown> => callback(mockDbFn),
+const mockDbBegin = mock((callback: (tx: typeof mockDbFn) => Promise<unknown>): Promise<unknown> =>
+  callback(mockDbFn),
 );
 Object.assign(mockDbFn, { begin: mockDbBegin });
 let dbEnabled = true;

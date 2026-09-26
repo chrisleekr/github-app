@@ -127,7 +127,7 @@ export async function mintInstallationToken({
   app.octokit.hook.before("request", probe);
   try {
     if (repositoryName === undefined) {
-      const octokit = (await app.getInstallationOctokit(installationId)) as unknown as Octokit;
+      const octokit = await app.getInstallationOctokit(installationId);
       const token = await resolveGithubToken(octokit);
       logMintSuccess(log, installationId, via, networkMint, start);
       return { octokit, token };

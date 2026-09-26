@@ -38,7 +38,7 @@ export async function* enumerateScheduledRepos(
         const owner = repository.owner.login;
         const repo = repository.name;
         if (!isOwnerAllowed(owner, log).allowed) continue;
-        yield { installationId, owner, repo, octokit: octokit as unknown as Octokit };
+        yield { installationId, owner, repo, octokit };
       }
     } catch (err) {
       log.warn({ err, installationId }, "scheduler: repo enumeration failed for installation");

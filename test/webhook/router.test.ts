@@ -19,12 +19,13 @@
 
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
+import type { EphemeralSpawnVerdict } from "../../src/orchestrator/ephemeral-daemon-scaler";
 import type { BotContext } from "../../src/types";
 import { makeBotContext, makeOctokit } from "../factories";
 
 // ─── Mocked downstream surfaces (persist across this process run) ─────────
 
-const mockGetDb = mock(() => null as unknown);
+const mockGetDb = mock(() => null);
 void mock.module("../../src/db", () => ({
   getDb: mockGetDb,
 }));
@@ -52,12 +53,10 @@ void mock.module("../../src/orchestrator/daemon-registry", () => ({
   getPersistentPoolFreeSlots: mockGetPersistentPoolFreeSlots,
 }));
 
-const mockDecideEphemeralSpawn = mock(
-  () =>
-    ({ spawn: false, skipReason: "no-signal" }) as
-      | { spawn: true; trigger: "triage-heavy" | "queue-overflow" }
-      | { spawn: false; skipReason: "no-signal" | "cooldown" },
-);
+const mockDecideEphemeralSpawn = mock((): EphemeralSpawnVerdict => ({
+  spawn: false,
+  skipReason: "no-signal",
+}));
 const mockMarkSpawn = mock(() => {});
 const mockRollbackSpawn = mock(() => {});
 void mock.module("../../src/orchestrator/ephemeral-daemon-scaler", () => ({
@@ -97,7 +96,7 @@ void mock.module("../../src/orchestrator/valkey", () => ({
   isValkeyHealthy: mockIsValkeyHealthy,
 }));
 
-const mockGetTriageLLMClient = mock(() => ({}) as unknown);
+const mockGetTriageLLMClient = mock(() => ({}));
 void mock.module("../../src/webhook/triage-client-factory", () => ({
   getTriageLLMClient: mockGetTriageLLMClient,
 }));

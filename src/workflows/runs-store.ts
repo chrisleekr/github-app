@@ -56,8 +56,8 @@ export interface WorkflowRunRow {
  * up through the rest of the codebase.
  */
 function normalizeRow(row: WorkflowRunRow): WorkflowRunRow {
-  const tracking_comment_id = coerceBigintId(row.tracking_comment_id as unknown);
-  const trigger_comment_id = coerceBigintId(row.trigger_comment_id as unknown);
+  const tracking_comment_id = coerceBigintId(row.tracking_comment_id);
+  const trigger_comment_id = coerceBigintId(row.trigger_comment_id);
   return { ...row, tracking_comment_id, trigger_comment_id };
 }
 

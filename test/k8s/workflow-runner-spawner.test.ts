@@ -861,9 +861,7 @@ describe("workflow runner Pod drift check against a real client response", () =>
       const spec = admitted["spec"] as { tolerations: Record<string, unknown>[] };
       const rehomed: Record<string, unknown>[] = [];
       for (const entry of spec.tolerations) {
-        rehomed.push(
-          Object.assign(new DeserializedModel(), entry) as unknown as Record<string, unknown>,
-        );
+        rehomed.push(Object.assign(new DeserializedModel(), entry));
       }
       spec.tolerations = rehomed;
       return Promise.resolve(admitted);

@@ -9,7 +9,7 @@
  * validation. `src/logger.ts` re-exports `REDACT_PATHS` and `errSerializer` for
  * back-compat with existing importers.
  */
-import pino, { type SerializedError } from "pino";
+import pino from "pino";
 
 import { redactGitHubTokens, redactSecrets } from "./sanitize";
 
@@ -190,7 +190,7 @@ function scrubRequest(request: object): Record<string, unknown> {
   const reqObj = request as { headers?: unknown } & Record<string, unknown>;
   const headers = reqObj.headers;
   if (headers !== null && typeof headers === "object") {
-    return { ...reqObj, headers: scrubStructured(headers) as Record<string, unknown> };
+    return { ...reqObj, headers: scrubStructured(headers) };
   }
   return { ...reqObj };
 }
@@ -236,7 +236,7 @@ export function errSerializer(err: unknown): unknown {
     return typeof serialized === "string" ? scrubString(serialized) : serialized;
   }
 
-  const out: Record<string, unknown> = { ...(serialized as unknown as SerializedError) };
+  const out: Record<string, unknown> = { ...serialized };
   // `@octokit/webhooks` attaches the whole inbound event to its errors as an
   // enumerable `event = { id, name, payload, signature }`. pino's std err
   // serializer copies every enumerable own prop (its `for (const key in err)`

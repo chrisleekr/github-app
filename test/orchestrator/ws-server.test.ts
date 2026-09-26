@@ -518,8 +518,7 @@ describe("WebSocket message handler (integration via real server)", () => {
 
       // Create a WebSocket client
       const ws = new WebSocket(`ws://localhost:${srv.port}/ws`, {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        headers: { Authorization: "Bearer msg-test-token" } as any,
+        headers: { Authorization: "Bearer msg-test-token" },
       });
 
       const opened = new Promise<void>((resolve) => {
@@ -600,8 +599,7 @@ describe("WebSocket message handler (integration via real server)", () => {
       const srv = startWebSocketServer();
 
       const ws = new WebSocket(`ws://localhost:${srv.port}/ws`, {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        headers: { Authorization: "Bearer json-test-token" } as any,
+        headers: { Authorization: "Bearer json-test-token" },
       });
 
       const opened = new Promise<void>((resolve) => {
@@ -647,8 +645,7 @@ describe("WebSocket message handler (integration via real server)", () => {
       const srv = startWebSocketServer();
 
       const ws = new WebSocket(`ws://localhost:${srv.port}/ws`, {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        headers: { Authorization: "Bearer schema-test-token" } as any,
+        headers: { Authorization: "Bearer schema-test-token" },
       });
 
       const opened = new Promise<void>((resolve) => {
@@ -696,8 +693,7 @@ describe("WebSocket message handler (integration via real server)", () => {
       const srv = startWebSocketServer();
 
       const ws = new WebSocket(`ws://localhost:${srv.port}/ws`, {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        headers: { Authorization: "Bearer corr-test-token" } as any,
+        headers: { Authorization: "Bearer corr-test-token" },
       });
 
       const opened = new Promise<void>((resolve) => {

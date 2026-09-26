@@ -122,7 +122,7 @@ describe("githubAppConfigSchema", () => {
 
   it("rejects an unsupported version", () => {
     const r = githubAppConfigSchema.safeParse(
-      base({ name: "a", cron: "0 3 * * *", prompt: { inline: "x" } }) as { version: number },
+      base({ name: "a", cron: "0 3 * * *", prompt: { inline: "x" } }),
     );
     expect(r.success).toBe(true); // version 1 in base()
     const r2 = githubAppConfigSchema.safeParse({

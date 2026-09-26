@@ -68,12 +68,7 @@ export interface TriageResult extends TriageResponse {
 }
 
 export type TriageFallbackReason =
-  | "disabled"
-  | "circuit-open"
-  | "timeout"
-  | "llm-error"
-  | "parse-error"
-  | "sub-threshold";
+  "disabled" | "circuit-open" | "timeout" | "llm-error" | "parse-error" | "sub-threshold";
 
 export type TriageOutcome =
   | { readonly outcome: "result"; readonly result: TriageResult }

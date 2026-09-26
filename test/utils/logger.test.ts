@@ -23,7 +23,7 @@ function buildCapturingLogger(): { logger: pino.Logger; lines: Record<string, un
       redact: { paths: [...REDACT_PATHS] },
       serializers: { err: errSerializer },
     },
-    dest as pino.DestinationStream,
+    dest,
   );
   return { logger, lines };
 }

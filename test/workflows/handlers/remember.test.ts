@@ -83,8 +83,7 @@ describe("remember handler: per-repo policy forwarding", () => {
     expect(result.status).toBe("succeeded");
     expect(mockRunPipeline).toHaveBeenCalledTimes(1);
     const overrides = mockRunPipeline.mock.calls[0]?.[1] as
-      | { policy?: Record<string, unknown>; maxTurns?: number }
-      | undefined;
+      { policy?: Record<string, unknown>; maxTurns?: number } | undefined;
     expect(overrides?.policy).toEqual(policy);
     expect(overrides?.maxTurns).toBe(12);
   });

@@ -483,8 +483,7 @@ describe("runPipeline: policy.warning (C7, direct-pipeline rail)", () => {
 
     expect(mockFinalizeTrackingComment).toHaveBeenCalled();
     const opts = mockFinalizeTrackingComment.mock.calls[0]?.[2] as
-      | { configWarning?: string }
-      | undefined;
+      { configWarning?: string } | undefined;
     expect(opts?.configWarning).toBe(warning);
   });
 

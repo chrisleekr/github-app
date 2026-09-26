@@ -46,8 +46,7 @@ describe("executeScopedFixThread", () => {
     expect(outcome.threadReplyId).toBe(9001);
     expect(mockCreateReply).toHaveBeenCalledTimes(1);
     const args = mockCreateReply.mock.calls[0]?.[0] as
-      | { body?: string; comment_id?: number }
-      | undefined;
+      { body?: string; comment_id?: number } | undefined;
     expect(args?.body).toContain("src/foo.ts:10-15");
     // Reply MUST be posted against threadRef.commentId, never triggerCommentId.
     expect(args?.comment_id).toBe(7777);

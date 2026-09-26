@@ -384,7 +384,7 @@ A scenario in this section requires _two_ runs against the same repo: a poison r
 
 ### K4. NUL byte / row-shape desync
 
-- **Payload skeleton:** run-1 saves `content = "real DROP TABLE repo_memory"`.
+- **Payload skeleton:** run-1 saves `content = "real\0DROP TABLE repo_memory"`, where `\0` is a literal NUL byte (U+0000).
 - **Expected defense:** `sanitizeRepoMemoryContent` strips NUL bytes. Postgres `TEXT` columns can store NUL but downstream JSON readers (the daemon scratch reader, the `REPO_MEMORY` env serializer) cannot, so a stripped guarantee is required at the source.
 - **Observable signal:** Postgres row content contains no NUL byte; daemon scratch JSON parses cleanly on every run.
 

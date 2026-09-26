@@ -490,9 +490,9 @@ describe("dispatchCommentSurface NL routing", () => {
     });
     const lines: Record<string, unknown>[] = [];
     const log = silentLog();
-    log.info = ((obj: Record<string, unknown>) => {
+    log.info = (obj: Record<string, unknown>) => {
       lines.push(obj);
-    }) as typeof log.info;
+    };
 
     const handled = await dispatchCommentSurface({ ...surfaceInput(), log });
     await settle();
@@ -508,9 +508,9 @@ describe("dispatchCommentSurface NL routing", () => {
     mockRouteNlTrigger.mockResolvedValue({ kind: "none", classified: false });
     const lines: Record<string, unknown>[] = [];
     const log = silentLog();
-    log.info = ((obj: Record<string, unknown>) => {
+    log.info = (obj: Record<string, unknown>) => {
       lines.push(obj);
-    }) as typeof log.info;
+    };
 
     await dispatchCommentSurface({ ...surfaceInput(), log });
     await settle();

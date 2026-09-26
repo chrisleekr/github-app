@@ -54,7 +54,9 @@ const _kindParity = undefined as unknown as z.infer<
 const _kindParityReverse = undefined as unknown as EphemeralSpawnErrorKind satisfies z.infer<
   typeof errorKind
 >;
+// eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- reads the locals for noUnusedLocals
 void _kindParity;
+// eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- reads the locals for noUnusedLocals
 void _kindParityReverse;
 
 const apiCallMs = z.number().int().nonnegative();

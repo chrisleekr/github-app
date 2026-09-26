@@ -156,9 +156,7 @@ describe.skipIf(skipSuite)("integration: ship tickle-scheduler resume", () => {
 
       // Boot reconcile should have ZADD'd from `ship_continuations`.
       const reconciledScore = (await valkey.send("ZSCORE", ["ship:tickle", intent.id])) as
-        | string
-        | number
-        | null;
+        string | number | null;
       expect(reconciledScore).not.toBeNull();
 
       // Wait for one tick window (intervalMs * 4 to absorb scheduler jitter).
@@ -171,9 +169,7 @@ describe.skipIf(skipSuite)("integration: ship tickle-scheduler resume", () => {
 
     // After dispatch the scheduler ZREM'd the intent before invoking onDue.
     const postScore = (await valkey.send("ZSCORE", ["ship:tickle", intent.id])) as
-      | string
-      | number
-      | null;
+      string | number | null;
     expect(postScore).toBeNull();
   });
 });

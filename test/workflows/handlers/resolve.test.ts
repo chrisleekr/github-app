@@ -375,8 +375,7 @@ describe("resolve handler: per-repo policy forwarding", () => {
 
     expect(mockRunPipeline).toHaveBeenCalledTimes(1);
     const overrides = mockRunPipeline.mock.calls[0]?.[1] as
-      | { policy?: Record<string, unknown> }
-      | undefined;
+      { policy?: Record<string, unknown> } | undefined;
     expect(overrides?.policy).toEqual(policy);
   });
 

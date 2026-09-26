@@ -138,8 +138,7 @@ export async function matchesLastReviewed(
   if (client === null || !isValkeyHealthy()) return false;
   try {
     const stored = (await client.send("GET", [fingerprintKey(owner, repo, prNumber)])) as
-      | string
-      | null;
+      string | null;
     return stored === fingerprint;
   } catch (err) {
     log.warn(

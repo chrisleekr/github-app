@@ -53,7 +53,7 @@ const fakePendingOffer: PendingOffer = {
   daemonId: FAKE_DAEMON_ID,
   deliveryId: FAKE_DELIVERY_ID,
   // Required by PendingOffer; the real value is irrelevant for this contract test.
-  timer: setTimeout(() => {}, 0) as unknown as PendingOffer["timer"],
+  timer: setTimeout(() => {}, 0),
   job: {} as unknown as PendingOffer["job"],
   offeredAt: Date.now(),
 };
@@ -200,10 +200,7 @@ describe("T028: scoped-rebase WS contract round-trip", () => {
 
     // 5. Drive the parsed completion through the orchestrator's WS router.
     const { ws } = makeMockServerSocket(FAKE_DAEMON_ID);
-    handleDaemonMessage(
-      ws as unknown as Parameters<typeof handleDaemonMessage>[0],
-      completionParsed.data,
-    );
+    handleDaemonMessage(ws, completionParsed.data);
 
     // handleDaemonMessage queues the async completion handler with `void`;
     // wait one microtask so its awaits settle before asserting.

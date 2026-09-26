@@ -306,7 +306,7 @@ The reactor (`fanOut`) writes `wake_at = now()` and `ZADD ship:tickle 0 <intent_
 
 ## System/user trust boundary
 
-The agent executor (`src/core/executor.ts:231#useCacheableLayout`) supports two prompt-layout strategies, selected by `PROMPT_CACHE_LAYOUT`. The legacy layout passes a single user-role string and the unmodified `claude_code` preset systemPrompt: simple, but the preset embeds dynamic sections (`cwd`, platform, shell, OS) that vary per delivery, so the prompt cache key churns and every job pays the 1-hour TTL cache-write surcharge with zero compensating reads.
+The agent executor (`src/core/executor.ts:226#useCacheableLayout`) supports two prompt-layout strategies, selected by `PROMPT_CACHE_LAYOUT`. The legacy layout passes a single user-role string and the unmodified `claude_code` preset systemPrompt: simple, but the preset embeds dynamic sections (`cwd`, platform, shell, OS) that vary per delivery, so the prompt cache key churns and every job pays the 1-hour TTL cache-write surcharge with zero compensating reads.
 
 The `cacheable` layout splits the prompt by trust:
 

@@ -59,7 +59,7 @@ const config = {
 const loadRepoPolicy = mock(() =>
   Promise.resolve({ reviewLearnings: { enabled: false }, warning: undefined }),
 );
-const policyForWorkflow = mock(() => ({}) as Record<string, unknown>);
+const policyForWorkflow = mock(() => ({}));
 const toAgentPolicy = mock(() => undefined as undefined | Record<string, unknown>);
 const mergeAttemptState = mock(() => Promise.resolve());
 

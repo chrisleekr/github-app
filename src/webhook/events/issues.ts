@@ -176,7 +176,7 @@ export async function writeIssueTargetCacheThrough(payload: IssuesEvent): Promis
       // is optional-chained because partial test fixtures and rare
       // ghost-user payloads can lack it, matching `backfillFromGitHub`.
       body: i.body ?? "",
-      state: (i.state ?? "open") as string,
+      state: i.state ?? "open",
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- schema marks user non-nullable but partial fixtures omit it
       authorLogin: i.user?.login ?? "",
       isDraft: null,

@@ -783,23 +783,29 @@ process.on("SIGINT", () => {
 function buildMockOctokit(): BotContext["octokit"] {
   type MockApiMethod = (...args: unknown[]) => Promise<{ data: unknown[] }>;
 
-  const methodProxy = new Proxy({} as Record<string, MockApiMethod>, {
-    get(_t, method: string): MockApiMethod {
-      return (...args: unknown[]): Promise<{ data: unknown[] }> => {
-        logger.info(
-          { method, args: JSON.stringify(args).slice(0, 200) },
-          "[test-webhook] Mock Octokit call",
-        );
-        return Promise.resolve({ data: [] });
-      };
+  const methodProxy = new Proxy(
+    {},
+    {
+      get(_t, method: string): MockApiMethod {
+        return (...args: unknown[]): Promise<{ data: unknown[] }> => {
+          logger.info(
+            { method, args: JSON.stringify(args).slice(0, 200) },
+            "[test-webhook] Mock Octokit call",
+          );
+          return Promise.resolve({ data: [] });
+        };
+      },
     },
-  });
+  );
 
-  const restProxy = new Proxy({} as Record<string, typeof methodProxy>, {
-    get(): typeof methodProxy {
-      return methodProxy;
+  const restProxy = new Proxy(
+    {},
+    {
+      get(): typeof methodProxy {
+        return methodProxy;
+      },
     },
-  });
+  );
 
   return {
     rest: restProxy,

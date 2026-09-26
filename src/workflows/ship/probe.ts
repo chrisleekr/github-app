@@ -25,7 +25,7 @@ import {
   triggerTargetedRerun,
 } from "./flake-tracker";
 import { resyncBaseSha } from "./intent";
-import { type BarrierProbeShape, shouldDeferOnReviewLatency } from "./review-barrier";
+import { shouldDeferOnReviewLatency } from "./review-barrier";
 import { computeVerdict, type MergeReadiness, type ProbeResponseShape } from "./verdict";
 
 // Probe queries live in src/github/queries.ts so the github-state MCP
@@ -145,7 +145,7 @@ async function ensureFullReviewThreads(
         },
       },
     },
-  } as ProbeResponseShape;
+  };
 }
 
 export async function runProbe(input: RunProbeInput): Promise<ProbeResult> {
@@ -267,13 +267,8 @@ export async function runProbeIntegrated(
 
   // T044, review-barrier: gate `ready` verdicts.
   if (verdict.ready && input.applyReviewBarrier !== undefined) {
-    // The barrier shape is declared narrowly in `review-barrier.ts` and
-    // doesn't fully overlap with `ProbeResponseShape`'s nested types
-    // (e.g. `reviews` is barrier-only). Both fixtures and the runtime
-    // GraphQL response satisfy both shapes; cast through `unknown` so
-    // the intent is explicit rather than silenced via `as never`.
     const defer = shouldDeferOnReviewLatency({
-      probeResponse: result.response as unknown as BarrierProbeShape,
+      probeResponse: result.response,
       ourAppLogin: input.botAppLogin,
       safetyMarginMs: input.applyReviewBarrier.safetyMarginMs,
     });

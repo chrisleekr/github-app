@@ -12,12 +12,7 @@ import { createForbiddenBashHook } from "./hooks/forbidden-bash";
 import { CORE_AGENT_LOG_EVENTS, type PendingToolCall } from "./log-fields";
 
 function isResultMessage(msg: unknown): msg is SDKResultMessage {
-  return (
-    typeof msg === "object" &&
-    msg !== null &&
-    "type" in msg &&
-    (msg as { type: unknown }).type === "result"
-  );
+  return typeof msg === "object" && msg !== null && "type" in msg && msg.type === "result";
 }
 
 /**

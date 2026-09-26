@@ -73,7 +73,7 @@ function baseParams(
   return {
     ctx: makeBotContext(),
     prompt: "test prompt",
-    mcpServers: {} as McpServerConfig,
+    mcpServers: {},
     workDir: "/tmp/fake-workdir",
     allowedTools: [],
     ...extra,

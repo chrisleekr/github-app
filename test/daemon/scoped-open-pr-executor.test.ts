@@ -36,8 +36,7 @@ describe("executeScopedOpenPr", () => {
     expect(outcome.reason).toContain("agent-sdk invocation");
     expect(mockCreateComment).toHaveBeenCalledTimes(1);
     const args = mockCreateComment.mock.calls[0]?.[0] as
-      | { issue_number?: number; body?: string }
-      | undefined;
+      { issue_number?: number; body?: string } | undefined;
     expect(args?.issue_number).toBe(1234);
     expect(args?.body).toContain("Add caching layer");
   });

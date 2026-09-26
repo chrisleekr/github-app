@@ -268,8 +268,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
 
     expect(mockEnqueueJob).toHaveBeenCalledTimes(1);
     const call0 = mockEnqueueJob.mock.calls[0]?.[0] as
-      | { workflowRun: { workflowName: string; parentStepIndex: number; runId: string } }
-      | undefined;
+      { workflowRun: { workflowName: string; parentStepIndex: number; runId: string } } | undefined;
     expect(call0?.workflowRun.workflowName).toBe("plan");
     expect(call0?.workflowRun.parentStepIndex).toBe(1);
     const child1RunId = call0?.workflowRun.runId ?? "";
@@ -286,8 +285,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     expect(parentRow?.state["stepRuns"]).toEqual([child0.id, child1RunId]);
 
     const call1 = mockEnqueueJob.mock.calls[1]?.[0] as
-      | { workflowRun: { workflowName: string; parentStepIndex: number; runId: string } }
-      | undefined;
+      { workflowRun: { workflowName: string; parentStepIndex: number; runId: string } } | undefined;
     expect(call1?.workflowRun.workflowName).toBe("implement");
     expect(call1?.workflowRun.parentStepIndex).toBe(2);
     const child2RunId = call1?.workflowRun.runId ?? "";
@@ -302,8 +300,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     expect(parentRow?.state["currentStepIndex"]).toBe(3);
 
     const call2 = mockEnqueueJob.mock.calls[2]?.[0] as
-      | { workflowRun: { workflowName: string; parentStepIndex: number; runId: string } }
-      | undefined;
+      { workflowRun: { workflowName: string; parentStepIndex: number; runId: string } } | undefined;
     expect(call2?.workflowRun.workflowName).toBe("review");
     expect(call2?.workflowRun.parentStepIndex).toBe(3);
     const child3RunId = call2?.workflowRun.runId ?? "";
@@ -432,8 +429,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     });
 
     const child1Enqueue = mockEnqueueJob.mock.calls[0]?.[0] as
-      | { workflowRun: { runId: string } }
-      | undefined;
+      { workflowRun: { runId: string } } | undefined;
     const child1RunId = child1Enqueue?.workflowRun.runId ?? "";
     await markTestSucceeded(child1RunId, {}, requireSql());
     await onStepComplete({ octokit: {} as never, logger: silentLogger() }, child1RunId, {
@@ -441,8 +437,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     });
 
     const child2Enqueue = mockEnqueueJob.mock.calls[1]?.[0] as
-      | { workflowRun: { runId: string; workflowName: string; parentStepIndex: number } }
-      | undefined;
+      { workflowRun: { runId: string; workflowName: string; parentStepIndex: number } } | undefined;
     expect(child2Enqueue?.workflowRun.workflowName).toBe("implement");
     const child2RunId = child2Enqueue?.workflowRun.runId ?? "";
 
@@ -788,8 +783,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
 
     // Loop-back inserted a review child at step index 3.
     const loopBackCall = mockEnqueueJob.mock.calls.at(-1)?.[0] as
-      | { workflowRun: { workflowName: string; parentStepIndex: number; runId: string } }
-      | undefined;
+      { workflowRun: { workflowName: string; parentStepIndex: number; runId: string } } | undefined;
     expect(loopBackCall?.workflowRun.workflowName).toBe("review");
     expect(loopBackCall?.workflowRun.parentStepIndex).toBe(3);
     const review2Id = loopBackCall?.workflowRun.runId ?? "";
@@ -807,8 +801,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
     // review_iterations is now 2 (== cap), so the next resolve must run
     // (cascade as normal), and after THAT, the cap-reached branch fires.
     const resolve2Call = mockEnqueueJob.mock.calls.at(-1)?.[0] as
-      | { workflowRun: { workflowName: string; runId: string } }
-      | undefined;
+      { workflowRun: { workflowName: string; runId: string } } | undefined;
     expect(resolve2Call?.workflowRun.workflowName).toBe("resolve");
     const resolve2Id = resolve2Call?.workflowRun.runId ?? "";
 
@@ -824,8 +817,7 @@ describe.skipIf(sql === null)("orchestrator.onStepComplete", () => {
 
     // setState was called with the manual-re-review warning message.
     const lastSetStateCall = mockSetState.mock.calls.at(-1) as
-      | [unknown, { humanMessage?: string } | undefined]
-      | undefined;
+      [unknown, { humanMessage?: string } | undefined] | undefined;
     const humanMessage = lastSetStateCall?.[1]?.humanMessage ?? "";
     expect(humanMessage).toContain("review-2");
     expect(humanMessage).toContain("Manual re-review recommended");

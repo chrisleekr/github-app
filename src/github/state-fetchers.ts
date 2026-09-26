@@ -251,12 +251,7 @@ export async function getBranchProtection(deps: GithubStateDeps, branch: string)
           branch,
         });
       } catch (err) {
-        if (
-          err !== null &&
-          typeof err === "object" &&
-          "status" in err &&
-          (err as { status: unknown }).status === 404
-        ) {
+        if (err !== null && typeof err === "object" && "status" in err && err.status === 404) {
           return null;
         }
         throw err;

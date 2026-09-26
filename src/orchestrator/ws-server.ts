@@ -279,7 +279,7 @@ export function startWebSocketServer(): ReturnType<typeof Bun.serve<WsConnection
         if (!result.success) {
           const correlationId =
             typeof parsed === "object" && parsed !== null && "id" in parsed
-              ? String((parsed as { id: unknown }).id)
+              ? String(parsed.id)
               : crypto.randomUUID();
           sendError(
             ws,

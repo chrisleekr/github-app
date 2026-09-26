@@ -282,7 +282,7 @@ describe("computeVerdict", () => {
 
   it("returns human_took_over when the PR is missing from the response", () => {
     const v = computeVerdict({
-      response: { repository: { pullRequest: null } } as ProbeResponseShape,
+      response: { repository: { pullRequest: null } },
       ...SHARED,
     });
     expectReason(v, "human_took_over");

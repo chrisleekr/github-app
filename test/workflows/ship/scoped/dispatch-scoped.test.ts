@@ -97,7 +97,7 @@ describe("runChatThreadFromCommand: inline-mode guard", () => {
     dbHandle = {};
     const { comment_body: _body, ...withoutBody } = chatCommand();
 
-    await runChatThreadFromCommand(withoutBody as CanonicalCommand, {
+    await runChatThreadFromCommand(withoutBody, {
       octokit: fakeOctokit,
       log: silentLog(),
     });

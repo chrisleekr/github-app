@@ -7,10 +7,10 @@ import { createMcpLogger } from "../../src/mcp/mcp-logger";
 function captureStderr(fn: () => void): string {
   const chunks: string[] = [];
   const original = process.stderr.write.bind(process.stderr);
-  process.stderr.write = ((chunk: unknown): boolean => {
+  process.stderr.write = (chunk: unknown): boolean => {
     chunks.push(String(chunk));
     return true;
-  }) as unknown as typeof process.stderr.write;
+  };
   try {
     fn();
   } finally {
@@ -68,14 +68,14 @@ describe("createMcpLogger (#172)", () => {
     const stdoutChunks: string[] = [];
     const origErr = process.stderr.write.bind(process.stderr);
     const origOut = process.stdout.write.bind(process.stdout);
-    process.stderr.write = ((chunk: unknown): boolean => {
+    process.stderr.write = (chunk: unknown): boolean => {
       stderrChunks.push(String(chunk));
       return true;
-    }) as unknown as typeof process.stderr.write;
-    process.stdout.write = ((chunk: unknown): boolean => {
+    };
+    process.stdout.write = (chunk: unknown): boolean => {
       stdoutChunks.push(String(chunk));
       return true;
-    }) as unknown as typeof process.stdout.write;
+    };
     try {
       createMcpLogger("comment").info({ marker: "to-stderr" }, "log line");
     } finally {

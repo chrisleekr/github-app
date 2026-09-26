@@ -160,6 +160,7 @@ guards:
     - bun run check:dockerfile-base-sync
     - bun run check:action-pins
     - bun run check:runner-pins
+    - bun run check:claude-code-version
     - bun run check:test-globs
     - bun run check:no-destructive
     - bun run check:env-contract

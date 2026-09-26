@@ -74,12 +74,10 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
-        # Snippet base paths resolve against the working directory at build time,
-        # so always invoke `mkdocs build` / `mkdocs serve` from the repo root.
-        # Running from a subdirectory will fail strict mode on missing snippets
-        # (e.g. docs/CHANGELOG.md includes the root CHANGELOG.md via "--8<-- ").
-
-
+  # Snippet base paths resolve against the working directory at build time,
+  # so always invoke `mkdocs build` / `mkdocs serve` from the repo root.
+  # Running from a subdirectory will fail strict mode on missing snippets
+  # (e.g. docs/CHANGELOG.md includes the root CHANGELOG.md via "--8<-- ").
   - pymdownx.snippets:
       base_path:
         - .
