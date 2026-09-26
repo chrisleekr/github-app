@@ -2308,7 +2308,7 @@
 <tbody>
 <tr>
 <td><code>base</code></td>
-<td><code>oven/bun:1.4.1</code></td>
+<td><code>oven/bun:1.4.2</code></td>
 <td>Installs Node.js from NodeSource (major pinned in the Dockerfile, currently 25) for the Claude Code CLI, npm 11, <code>curl</code>, <code>git</code>, <code>@anthropic-ai/claude-code</code> globally (pinned via the <code>CLAUDE_CODE_VERSION</code> ARG), plus targeted OS CVE upgrades.</td>
 </tr>
 <tr>
@@ -2393,7 +2393,7 @@
 <tr>
 <td><code>CLAUDE_CODE_VERSION</code></td>
 <td>pinned in the Dockerfile, never passed by CI</td>
-<td>Global <code>@anthropic-ai/claude-code</code> CLI pin, tracking the vendor <code>stable</code> dist-tag. Carries a <code># renovate:</code> marker so <code>renovate.json</code>'s custom regex manager bumps it. Deliberately not restated as a literal here: Renovate moves it and no CI gate compares this page against the Dockerfile.</td>
+<td>Global <code>@anthropic-ai/claude-code</code> CLI pin. Must equal the <code>claudeCodeVersion</code> of the installed <code>@anthropic-ai/claude-agent-sdk</code>, because <code>CLAUDE_CODE_PATH</code> makes the SDK drive this CLI rather than its bundled one; <code>check:claude-code-version</code> fails CI on a mismatch. Carries a <code># renovate:</code> marker, and <code>renovate.json</code> groups it with the SDK so both move in one PR. Deliberately not restated as a literal here: Renovate moves it and no CI gate compares this page against the Dockerfile.</td>
 </tr>
 </tbody>
 </table>
@@ -2443,14 +2443,44 @@
 </thead>
 <tbody>
 <tr>
-<td><code>js-yaml</code></td>
-<td><code>4.3.2</code></td>
-<td>CVE-2026-59869 (fixed 4.3.0), GHSA-5p4m-2wfm-xmqj (fixed 4.3.1), GHSA-2883-xcg3-v3hh (fixed 4.3.2). Reached via <code>@kubernetes/client-node</code> and <code>cosmiconfig</code>, both declaring <code>^4.1.0</code>.</td>
-<td><code>@kubernetes/client-node</code> declares <code>js-yaml &gt;= 4.3.2</code>.</td>
+<td><code>@anthropic-ai/sdk</code></td>
+<td><code>0.128.0</code></td>
+<td>No advisory requires it: GHSA-5474-4w2j-mq4c / CVE-2026-34451 (fixed 0.81.0) and GHSA-p7fg-763f-g4gf / CVE-2026-41686 (fixed 0.91.1) are already excluded by both parents. Reason not recorded when pinned; held for a single deduplicated copy shared by <code>@anthropic-ai/claude-agent-sdk</code> (peer <code>&gt;=0.93.0</code>) and <code>@anthropic-ai/bedrock-sdk</code> (<code>&gt;=0.115.1 &lt;1</code>).</td>
+<td>A review confirms no advisory needs it.</td>
+</tr>
+<tr>
+<td><code>adm-zip</code></td>
+<td><code>0.6.1</code></td>
+<td>GHSA-7q85-xj36-vmfc / CVE-2026-77301 memory-allocation DoS (fixed 0.6.1) and GHSA-vwc7-r8mq-g2x9 / CVE-2026-76845 symlink overwrite (affects 0.5.9 to 0.6.0, no patched version listed). Reached via <code>onnxruntime-node</code> (<code>^0.6.0</code>).</td>
+<td><code>onnxruntime-node</code> declares <code>adm-zip &gt;= 0.6.1</code>.</td>
+</tr>
+<tr>
+<td><code>express-rate-limit</code></td>
+<td><code>8.7.0</code></td>
+<td>GHSA-46wh-pxpv-q5gq / CVE-2026-30827 IPv4-mapped IPv6 rate-limit bypass (fixed 8.2.2). Reached via <code>@modelcontextprotocol/sdk</code> (<code>^8.2.1</code>).</td>
+<td><code>@modelcontextprotocol/sdk</code> declares <code>express-rate-limit &gt;= 8.2.2</code>.</td>
+</tr>
+<tr>
+<td><code>fast-uri</code></td>
+<td><code>3.1.8</code></td>
+<td>GHSA-5jgf-p345-68v8 / CVE-2026-75931, GHSA-f65p-4m7j-42xc / CVE-2026-75975, GHSA-fph4-wmhf-6fwf / CVE-2026-75899, GHSA-jqff-g426-hqxp / CVE-2026-76172 host confusion and SSRF (fixed 3.1.6), plus earlier 3.x fixes. Reached via <code>ajv</code> (<code>^3.0.1</code>), three copies under <code>@modelcontextprotocol/sdk</code>, <code>ajv-formats</code> and <code>@commitlint/config-validator</code>.</td>
+<td><code>ajv</code> declares <code>fast-uri &gt;= 3.1.6</code>.</td>
+</tr>
+<tr>
+<td><code>fast-xml-parser</code></td>
+<td><code>5.11.1</code></td>
+<td>GHSA-gh4j-gqv2-49f6 / CVE-2026-41650 XMLBuilder comment and CDATA injection (fixed 5.7.0) and GHSA-8r6m-32jq-jx6q / CVE-2026-73569 repeated-DOCTYPE entity-limit reset (fixed 5.10.1). Reached via <code>@aws-sdk/xml-builder</code> (exact <code>5.5.8</code>).</td>
+<td><code>@aws-sdk/xml-builder</code> declares <code>fast-xml-parser &gt;= 5.10.1</code>.</td>
+</tr>
+<tr>
+<td><code>hono</code></td>
+<td><code>4.13.9</code></td>
+<td>GHSA-gqvv-2mrq-wpjv / CVE-2026-84365, GHSA-g6gw-c38x-mqfc / CVE-2026-84364, GHSA-crvj-82cr-hjcx / CVE-2026-84363 (fixed 4.13.5), plus earlier 4.12.x fixes. Reached via <code>@modelcontextprotocol/sdk</code> (<code>^4.11.4</code>) and <code>@hono/node-server</code> (peer <code>^4</code>).</td>
+<td>Both parents declare <code>hono &gt;= 4.13.5</code>.</td>
 </tr>
 <tr>
 <td><code>ip-address</code></td>
-<td><code>10.7.0</code></td>
+<td><code>10.7.2</code></td>
 <td>CVE-2026-69192 SSRF (fixed 10.3.1). Reached via <code>express-rate-limit</code> (<code>^10.2.0</code>) and <code>socks</code> (<code>^10.0.1</code>), which resolved two separate copies before the pin.</td>
 <td>Both parents declare <code>ip-address &gt;= 10.3.1</code>.</td>
 </tr>

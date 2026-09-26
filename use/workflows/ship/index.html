@@ -1977,7 +1977,13 @@
 </tr>
 </tbody>
 </table>
-<p>If the target branch matches <code>SHIP_FORBIDDEN_TARGET_BRANCHES</code> (e.g. <code>main,production</code>), the trigger is refused before any session is created.</p>
+<p>The trigger is refused before any session is created (<code>src/workflows/ship/eligibility.ts</code>) when:</p>
+<ul>
+<li><code>ALLOWED_OWNERS</code> is set and the triggering user is not in it (<code>unauthorized</code>).</li>
+<li>The PR is already merged (<code>merged</code>), or is closed or cannot be found (<code>closed</code>).</li>
+<li>The PR head is on a fork, or its head repository was deleted (<code>fork</code>), since the bot cannot push there.</li>
+<li>The target branch matches <code>SHIP_FORBIDDEN_TARGET_BRANCHES</code>, e.g. <code>main,production</code> (<code>forbidden_target_branch</code>).</li>
+</ul>
 <h2 id="iteration-0-reroute">Iteration-0 reroute<a class="headerlink" href="#iteration-0-reroute" title="Permanent link">&para;</a></h2>
 <p>Some merge-readiness probe verdicts cannot be recovered by ship at iteration 0, no amount of further work would change them. When the first probe returns one of these, the workflow skips intent creation entirely (no <code>ship_intents</code> row, no session-tracker tracking comment) and reroutes the trigger:</p>
 <table>

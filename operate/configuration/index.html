@@ -2252,7 +2252,7 @@
 <tr>
 <td><code>DEFAULT_MAXTURNS</code></td>
 <td>unset</td>
-<td>Process-wide turn cap. Set only if ops needs a hard ceiling. It reaches the agent as the job payload's <code>maxTurns</code>, which the workflow rail previously ignored, so before the Gate-2 wiring this value only took effect on the direct-pipeline rail. It now reaches the <code>review</code>, <code>resolve</code>, <code>implement</code>, and <code>remember</code> handlers too. <code>AGENT_MAX_TURNS</code> is unchanged: the executor still falls back to it when a job carries no cap (<code>src/core/executor.ts:366#resolvedMaxTurns</code>).</td>
+<td>Process-wide turn cap. Set only if ops needs a hard ceiling. It reaches the agent as the job payload's <code>maxTurns</code>, which the workflow rail previously ignored, so before the Gate-2 wiring this value only took effect on the direct-pipeline rail. It now reaches the <code>review</code>, <code>resolve</code>, <code>implement</code>, and <code>remember</code> handlers too. <code>AGENT_MAX_TURNS</code> is unchanged: the executor still falls back to it when a job carries no cap (<code>src/core/executor.ts:361#resolvedMaxTurns</code>).</td>
 </tr>
 <tr>
 <td><code>CLAUDE_CODE_PATH</code></td>
@@ -2982,7 +2982,7 @@ before committing:</p>
    no schema change needed.</li>
 </ol>
 <h2 id="prompt-cache-layout">Prompt cache layout<a class="headerlink" href="#prompt-cache-layout" title="Permanent link">&para;</a></h2>
-<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:763#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:231#useCacheableLayout</code> for the runtime guard.</p>
+<p>Selects the system/user prompt split the agent executor passes to the Claude Agent SDK. See <code>src/config.ts:763#promptCacheLayout</code> for the Zod definition and <code>src/core/executor.ts:226#useCacheableLayout</code> for the runtime guard.</p>
 <table>
 <thead>
 <tr>
