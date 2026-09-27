@@ -48,12 +48,12 @@ jobs:
         variant: [orchestrator, daemon]
     steps:
       - name: Checkout (for .trivyignore.yaml)
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       # Authenticated pulls only: anonymous Docker Hub rate limits are shared
       # per runner egress IP and would flake this matrix.
       - name: Login to Docker Hub
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -113,7 +113,7 @@ jobs:
       # `if: always()` so the SARIF still lands when the orchestrator leg exits
       # non-zero. That upload is the whole point of a red run.
       - name: Upload Trivy SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always()
         with:
           sarif_file: "trivy-results-${{ matrix.variant }}-${{ matrix.arch }}.sarif"
