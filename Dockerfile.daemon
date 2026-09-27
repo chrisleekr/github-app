@@ -143,7 +143,7 @@ ARG HADOLINT_VERSION=v2.15.1
 # renovate: datasource=golang-version depName=golang
 ARG GO_VERSION=1.27.1
 # renovate: datasource=pypi depName=poetry
-ARG POETRY_VERSION=2.4.3
+ARG POETRY_VERSION=2.5.1
 
 # 1. Debian apt staples + language runtimes + data clients.
 RUN apt-get update && apt-get install -y --no-install-recommends \
