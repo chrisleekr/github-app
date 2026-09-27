@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1](https://github.com/chrisleekr/github-app/compare/v1.18.0...v1.18.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **deps:** update dependency picomatch to v4.0.7 ([#315](https://github.com/chrisleekr/github-app/issues/315)) ([fbb5158](https://github.com/chrisleekr/github-app/commit/fbb5158ee79ed12eb7c1cc86ef742332b07aa098))
+
 ## [1.18.0](https://github.com/chrisleekr/github-app/compare/v1.17.2...v1.18.0) (2026-09-09)
 
 
