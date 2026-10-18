@@ -6,7 +6,7 @@
 bun install             # Install dependencies
 bun run dev             # Run in watch mode (development)
 bun run start           # Run in production
-bun test                # Run tests
+bun run test            # Run tests, one Bun process per file (plain `bun test` skips that isolation and hangs)
 bun run test:watch      # Run tests in watch mode
 bun run test:coverage   # Run tests with coverage
 bun run typecheck       # TypeScript type checking
