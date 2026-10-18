@@ -9,6 +9,7 @@ import { waitFor } from "../utils/assertions";
 class TestStaleWorkflowAttemptError extends Error {}
 class TestWorkflowRunnerCommandConflictError extends Error {}
 class TestWorkflowRunnerOutputRejectedError extends Error {}
+class TestWorkflowRunnerLifetimeExhaustedError extends Error {}
 
 const runId = crypto.randomUUID();
 const attemptId = crypto.randomUUID();
@@ -44,6 +45,7 @@ const prepareWorkflowRunnerPayload = mock(() =>
   }),
 );
 const prepareWorkflowRunnerControllerOctokit = mock(() => Promise.resolve({}));
+const failWorkflowRunnerResourceAttempt = mock(() => Promise.resolve());
 const recordWorkflowRunnerPayloadIssued = mock(() => Promise.resolve(true));
 const octokitRequest = mock(() => Promise.resolve());
 const revokeInstallationToken = mock((octokit: { request: typeof octokitRequest }) => {
@@ -133,6 +135,10 @@ void mock.module("../../src/workflows/dispatch-outbox", () => ({
 void mock.module("../../src/orchestrator/workflow-runner-payload", () => ({
   prepareWorkflowRunnerControllerOctokit,
   prepareWorkflowRunnerPayload,
+  WorkflowRunnerLifetimeExhaustedError: TestWorkflowRunnerLifetimeExhaustedError,
+}));
+void mock.module("../../src/orchestrator/workflow-runner-dispatch", () => ({
+  failWorkflowRunnerResourceAttempt,
 }));
 void mock.module("../../src/orchestrator/installation-token", () => ({
   revokeInstallationToken,
@@ -362,6 +368,7 @@ describe("workflow runner controller", () => {
     );
     prepareWorkflowRunnerPayload.mockClear();
     prepareWorkflowRunnerControllerOctokit.mockClear();
+    failWorkflowRunnerResourceAttempt.mockClear();
     recordWorkflowRunnerPayloadIssued.mockReset();
     recordWorkflowRunnerPayloadIssued.mockResolvedValue(true);
     octokitRequest.mockClear();
@@ -416,6 +423,75 @@ describe("workflow runner controller", () => {
     await waitUntil(() => stale.closes.length === 1);
     expect(stale.closes).toEqual([{ code: 1008, reason: "stale workflow runner attempt" }]);
     expect(prepareWorkflowRunnerPayload).not.toHaveBeenCalled();
+  });
+
+  it("fails the attempt and policy-closes when it is too late to mint a token", async () => {
+    prepareWorkflowRunnerPayload.mockRejectedValueOnce(
+      new TestWorkflowRunnerLifetimeExhaustedError("insufficient lifetime"),
+    );
+    const socket = new FakeSocket();
+    handleWorkflowRunnerOpen(socket as never);
+    handleWorkflowRunnerMessage(socket as never, registerMessage());
+    await waitUntil(() => socket.closes.length === 1);
+
+    expect(failWorkflowRunnerResourceAttempt).toHaveBeenCalledWith(
+      attempt,
+      "insufficient lifetime",
+    );
+    // 1008 makes the runner abort; 1011 would reconnect until the deadline.
+    expect(socket.closes).toEqual([
+      { code: 1008, reason: "workflow runner attempt lifetime exhausted" },
+    ]);
+    expect(recordWorkflowRunnerPayloadIssued).not.toHaveBeenCalled();
+    expect(loggerError).not.toHaveBeenCalled();
+  });
+
+  it("still policy-closes once when the attempt was already failed elsewhere", async () => {
+    prepareWorkflowRunnerPayload.mockRejectedValueOnce(
+      new TestWorkflowRunnerLifetimeExhaustedError("insufficient lifetime"),
+    );
+    failWorkflowRunnerResourceAttempt.mockRejectedValueOnce(
+      new TestStaleWorkflowAttemptError("already failed"),
+    );
+    const socket = new FakeSocket();
+    handleWorkflowRunnerOpen(socket as never);
+    handleWorkflowRunnerMessage(socket as never, registerMessage());
+    await waitUntil(() => socket.closes.length === 1);
+    // Let a would-be outer 1011 close land before asserting there is none.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(socket.closes).toEqual([
+      { code: 1008, reason: "workflow runner attempt lifetime exhausted" },
+    ]);
+    expect(loggerError).not.toHaveBeenCalled();
+  });
+
+  it("closes retryably when failing the attempt hits an unexpected error", async () => {
+    prepareWorkflowRunnerPayload.mockRejectedValueOnce(
+      new TestWorkflowRunnerLifetimeExhaustedError("insufficient lifetime"),
+    );
+    failWorkflowRunnerResourceAttempt.mockRejectedValueOnce(new Error("database unavailable"));
+    const socket = new FakeSocket();
+    handleWorkflowRunnerOpen(socket as never);
+    handleWorkflowRunnerMessage(socket as never, registerMessage());
+    await waitUntil(() => socket.closes.length === 1);
+    // Let a would-be extra close land before asserting there is none.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // The attempt is still running, so the runner must reconnect and retry the fail.
+    expect(socket.closes).toEqual([{ code: 1011, reason: "workflow runner registration failed" }]);
+    expect(loggerError).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps other payload failures retryable without failing the attempt", async () => {
+    prepareWorkflowRunnerPayload.mockRejectedValueOnce(new Error("GitHub unavailable"));
+    const socket = new FakeSocket();
+    handleWorkflowRunnerOpen(socket as never);
+    handleWorkflowRunnerMessage(socket as never, registerMessage());
+    await waitUntil(() => socket.closes.length === 1);
+
+    expect(failWorkflowRunnerResourceAttempt).not.toHaveBeenCalled();
+    expect(socket.closes).toEqual([{ code: 1011, reason: "workflow runner registration failed" }]);
   });
 
   it("supersedes the old socket on reconnect", async () => {

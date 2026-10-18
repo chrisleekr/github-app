@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
+import {
+  GITHUB_INSTALLATION_TOKEN_LIFETIME_MS,
+  WORKFLOW_RUNNER_STARTUP_BUDGET_MS,
+} from "../../src/orchestrator/workflow-runner-lifetime";
 import type { WorkflowRunnerAttempt } from "../../src/orchestrator/workflow-runner-store";
 import { FORBIDDEN_RUNNER_ENV } from "../../src/runner/process-boundary";
 import { expectToReject } from "../utils/assertions";
@@ -86,7 +90,6 @@ void mock.module("../../src/logger", () => ({
 const {
   buildWorkflowRunnerPod,
   classifyPodStartup,
-  WORKFLOW_RUNNER_STARTUP_BUDGET_MS,
   deleteWorkflowRunnerResources,
   ensureWorkflowRunnerResources,
   WorkflowRunnerResourceError,
@@ -956,7 +959,7 @@ describe("workflow runner Pod startup classification", () => {
         },
         now,
       ),
-    ).toEqual({ phase: "stalled", reason: "not ready within 900s (Unschedulable)" });
+    ).toEqual({ phase: "stalled", reason: "not ready within 540s (Unschedulable)" });
 
     expect(
       classifyPodStartup(
@@ -969,7 +972,7 @@ describe("workflow runner Pod startup classification", () => {
         },
         now,
       ),
-    ).toEqual({ phase: "stalled", reason: "not ready within 900s (ImagePullBackOff)" });
+    ).toEqual({ phase: "stalled", reason: "not ready within 540s (ImagePullBackOff)" });
   });
 
   it("keeps a Pod inside the budget starting even when it has been up a while", () => {
@@ -983,5 +986,82 @@ describe("workflow runner Pod startup classification", () => {
         created.getTime() + WORKFLOW_RUNNER_STARTUP_BUDGET_MS - 1,
       ),
     ).toEqual({ phase: "starting" });
+  });
+
+  it("stalls a young Pod once the token cutoff has passed", () => {
+    // A Pod created late, e.g. after a transient create failure, is inside its
+    // own budget but can no longer receive a token, so extending is pointless.
+    const created = new Date("2026-01-01T00:00:00Z");
+    const now = created.getTime() + 1_000;
+    const deadline = new Date(now + GITHUB_INSTALLATION_TOKEN_LIFETIME_MS);
+    expect(
+      classifyPodStartup(
+        {
+          metadata: { creationTimestamp: created },
+          status: {
+            phase: "Pending",
+            containerStatuses: [{ state: { waiting: { reason: "ContainerCreating" } } }],
+          },
+        },
+        now,
+        deadline,
+      ),
+    ).toEqual({
+      phase: "stalled",
+      reason: "not ready before the token cutoff (ContainerCreating)",
+    });
+  });
+
+  it("keeps a young Pod starting before the token cutoff", () => {
+    const created = new Date("2026-01-01T00:00:00Z");
+    const now = created.getTime() + 1_000;
+    const deadline = new Date(now + GITHUB_INSTALLATION_TOKEN_LIFETIME_MS + 1);
+    expect(
+      classifyPodStartup(
+        { metadata: { creationTimestamp: created }, status: { phase: "Pending" } },
+        now,
+        deadline,
+      ),
+    ).toEqual({ phase: "starting" });
+  });
+
+  it("ignores the token cutoff when no deadline is given", () => {
+    const created = new Date("2026-01-01T00:00:00Z");
+    expect(
+      classifyPodStartup(
+        { metadata: { creationTimestamp: created }, status: { phase: "Pending" } },
+        created.getTime() + 1_000,
+      ),
+    ).toEqual({ phase: "starting" });
+  });
+
+  // Through ensureWorkflowRunnerResources, so dropping the deadline at the call
+  // site fails here and not only in the direct classifyPodStartup tests.
+  it("stalls a freshly created Pod past the token cutoff when reconciling resources", async () => {
+    const attemptDeadlineAt = new Date(Date.now() + GITHUB_INSTALLATION_TOKEN_LIFETIME_MS - 1_000);
+
+    expect(
+      await ensureWorkflowRunnerResources({ ...input, attempt: { ...attempt, attemptDeadlineAt } }),
+    ).toEqual({
+      phase: "stalled",
+      reason: "not ready before the token cutoff (no status reported)",
+    });
+  });
+
+  it("keeps a freshly created Pod starting before the token cutoff when reconciling", async () => {
+    const attemptDeadlineAt = new Date(
+      Date.now() + GITHUB_INSTALLATION_TOKEN_LIFETIME_MS + 600_000,
+    );
+
+    expect(
+      await ensureWorkflowRunnerResources({ ...input, attempt: { ...attempt, attemptDeadlineAt } }),
+    ).toEqual({ phase: "starting" });
+  });
+
+  it("does not apply the token cutoff to a running Pod", () => {
+    expect(classifyPodStartup({ status: { phase: "Running" } }, 1_000, new Date(0))).toEqual({
+      phase: "running",
+      terminal: false,
+    });
   });
 });

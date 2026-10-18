@@ -58,7 +58,7 @@ Paste the smee.io channel URL into the GitHub App webhook settings.
 ## Testing
 
 ```bash
-bun test                  # run all tests once (with coverage by default via bunfig.toml)
+bun run test              # run all tests once, one Bun process per file (coverage via bunfig.toml)
 bun run test:watch        # re-run on file changes
 bun run test:coverage     # explicit coverage report (output in coverage/)
 ```
@@ -69,7 +69,12 @@ runner globs `test/**/*.test.ts`, and `bun run check:test-globs` fails CI if any
 
 **Coverage threshold**: `bunfig.toml` enforces a per-file minimum of **90%
 lines and 90% functions** via Bun's native `coverageThreshold`. Any PR that
-drops a file below either threshold will fail `bun test` locally and in CI.
+drops a file below either threshold will fail `bun run test` locally and in CI.
+
+Use `bun run test`, not bare `bun test`. `bun test` is Bun's built-in runner and
+loads every file into one process, where `mock.module()` mocks bleed across files
+and the run can hang without finishing.
+`bun run test` runs `scripts/test-isolated.sh`, one process per file.
 
 **Mocking**: External dependencies (GitHub API, Claude Agent SDK, git CLI)
 MUST be mocked in tests, no real API calls in the test suite. See the
@@ -82,10 +87,16 @@ Some suites run against a real Postgres + Valkey instance instead of
 mocks. They are identified by **a `describe.skipIf(sql === null)` (or
 equivalent) gate against `process.env["TEST_DATABASE_URL"]`**: that is
 the contract, not the file list below. Locate every current opt-in suite
-with `grep -rn 'TEST_DATABASE_URL' test/`. Each suite skips cleanly when
-the services are unreachable, so a default `bun test` works without
-local infrastructure, but those suites only **exercise** their
-assertions when both services are running.
+with `grep -rn 'TEST_DATABASE_URL' test/`. Each suite skips when
+Postgres is unreachable, and `test/integration/repo-knowledge.test.ts`
+also skips unless the variable is explicitly set. `bun run test` counts
+any skipped test as a failure, so a full local run needs the services up
+and the variable set:
+
+```bash
+bun run dev:deps
+TEST_DATABASE_URL=postgres://bot:bot@localhost:55432/github_app_test bun run test
+```
 
 Today's suites covered by this contract:
 
@@ -110,16 +121,6 @@ makes the next file's migration re-run fail with `relation … already
 exists`. There is no need to update this section's table when adding a
 new suite: the contract above is what readers should follow.
 
-To run them locally:
-
-```bash
-# 1. Bring up Postgres + Valkey via Docker Compose
-bun run dev:deps
-
-# 2. Run the suite: defaults match docker-compose.dev.yml
-bun test
-```
-
 The defaults baked into the test files are:
 
 - `TEST_DATABASE_URL=postgres://bot:bot@localhost:55432/github_app_test`
@@ -133,7 +134,7 @@ Override either env var if you point the suites at a different host.
 > `triage_results`, `executions`, `daemons`, and `workflow_runs` tables.
 > To prevent accidental data loss against a development DB, this suite
 > is opt-in: it only runs when `TEST_DATABASE_URL` is **explicitly
-> set**. Set it on the CLI (`TEST_DATABASE_URL=… bun test`) and aim it
+> set**. Set it on the CLI (`TEST_DATABASE_URL=… bun run test`) and aim it
 > at a throwaway database, never your `DATABASE_URL` target.
 
 CI provisions Postgres-17 and Valkey-9 as service containers and exports
@@ -161,7 +162,7 @@ Equivalent to running these four commands in order:
 bun run typecheck     # TypeScript strict type check (no emit)
 bun run lint          # ESLint check
 bun run format        # Prettier format check
-bun test              # Tests with coverage threshold enforcement
+bun run test          # Tests with coverage threshold enforcement
 ```
 
 Auto-fix helpers (run individually as needed):
@@ -245,7 +246,7 @@ chore: upgrade @anthropic-ai/claude-agent-sdk to 0.3.0
 - Keep each PR focused on a single concern.
 - Fill in the PR template (`.github/PULL_REQUEST_TEMPLATE.md`).
 - All checks must pass before requesting review:
-  - `bun test`: all tests green
+  - `bun run test`: all tests green
   - `bun run typecheck`: no type errors
   - `bun run lint`: no lint errors
   - `bun run format`: no formatting violations

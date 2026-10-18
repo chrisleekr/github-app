@@ -467,6 +467,104 @@ describe("WorkflowRunnerClient attempt fence", () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 
+  it("keeps backing off when sockets open but registration keeps failing", () => {
+    jest.useFakeTimers();
+    const client = makeClient();
+    client.connect();
+    const first = FakeWebSocket.instances[0];
+    if (first === undefined) throw new Error("Expected workflow runner socket");
+    first.fireOpen();
+    first.fireClose(1011, "workflow runner registration failed");
+
+    jest.advanceTimersByTime(1_000);
+    const second = FakeWebSocket.instances[1];
+    if (second === undefined) throw new Error("Expected first reconnect after 1s");
+    second.fireOpen();
+    second.fireClose(1011, "workflow runner registration failed");
+
+    // An open alone must not reset the delay, or this would reconnect after 1s.
+    jest.advanceTimersByTime(1_999);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    jest.advanceTimersByTime(1);
+    expect(FakeWebSocket.instances).toHaveLength(3);
+    client.close();
+  });
+
+  it("resets the backoff after a successful registration", () => {
+    jest.useFakeTimers();
+    const client = makeClient();
+    client.connect();
+    const first = FakeWebSocket.instances[0];
+    if (first === undefined) throw new Error("Expected workflow runner socket");
+    first.fireOpen();
+    first.fireClose(1011, "workflow runner registration failed");
+    jest.advanceTimersByTime(1_000);
+    const second = FakeWebSocket.instances[1];
+    if (second === undefined) throw new Error("Expected reconnect");
+    second.fireOpen();
+    second.fireMessage(readyMessage(60_000, 30_000));
+    second.fireClose(1006, "abnormal closure");
+
+    jest.advanceTimersByTime(1_000);
+    expect(FakeWebSocket.instances).toHaveLength(3);
+    client.close();
+  });
+
+  it("caps the reconnect delay once the job is held so retries fit inside the fence", async () => {
+    jest.useFakeTimers();
+    const client = makeClient();
+    client.connect();
+    const first = FakeWebSocket.instances[0];
+    if (first === undefined) throw new Error("Expected workflow runner socket");
+    first.fireOpen();
+    first.fireMessage(readyMessage(60_000, 30_000));
+    expect(await client.waitForJob()).not.toBeNull();
+    first.fireClose(1011, "workflow runner registration failed");
+
+    // Delays 1s, 2s, 4s, then capped at 5s: about 32s total, inside the 60s fence.
+    for (const delay of [1_000, 2_000, 4_000, 5_000, 5_000, 5_000, 5_000, 5_000]) {
+      const count = FakeWebSocket.instances.length;
+      jest.advanceTimersByTime(delay - 1);
+      expect(FakeWebSocket.instances).toHaveLength(count);
+      jest.advanceTimersByTime(1);
+      const socket = FakeWebSocket.instances.at(count);
+      if (socket === undefined) throw new Error(`Expected reconnect after ${String(delay)}ms`);
+      socket.fireOpen();
+      expect(sentMessage(socket, "workflow-runner:register").payload["needsJob"]).toBe(false);
+      socket.fireClose(1011, "workflow runner registration failed");
+    }
+
+    expect(client.signal.aborted).toBe(false);
+    client.close();
+  });
+
+  it("keeps the 30s backoff ceiling before the job is held", () => {
+    jest.useFakeTimers();
+    const client = makeClient();
+    client.connect();
+    const first = FakeWebSocket.instances[0];
+    if (first === undefined) throw new Error("Expected workflow runner socket");
+    first.fireOpen();
+    first.fireClose(1011, "workflow runner registration failed");
+
+    // The 8s and 16s steps would fire at 5s under the held-job cap, and the two
+    // 30s steps pin the ceiling. Each socket closes well inside the 60s
+    // registration watchdog, which close clears.
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]) {
+      const count = FakeWebSocket.instances.length;
+      jest.advanceTimersByTime(delay - 1);
+      expect(FakeWebSocket.instances).toHaveLength(count);
+      jest.advanceTimersByTime(1);
+      const socket = FakeWebSocket.instances.at(count);
+      if (socket === undefined) throw new Error(`Expected reconnect after ${String(delay)}ms`);
+      socket.fireOpen();
+      socket.fireClose(1011, "workflow runner registration failed");
+    }
+
+    expect(client.signal.aborted).toBe(false);
+    client.close();
+  });
+
   it("rejects pending callers and stops activity on a permanent abort", async () => {
     jest.useFakeTimers();
     const client = makeClient();

@@ -66,7 +66,7 @@ bun run lint:fix        # ESLint auto-fix
 bun run format          # Prettier check
 bun run format:fix      # Prettier auto-fix
 
-bun test                # Run tests via scripts/test-isolated.sh (Bun mock isolation)
+bun run test            # Run tests via scripts/test-isolated.sh (Bun mock isolation)
 bun run test:fast       # Direct bun test (no isolation)
 bun run test:watch      # Watch mode
 bun run test:coverage   # With coverage report

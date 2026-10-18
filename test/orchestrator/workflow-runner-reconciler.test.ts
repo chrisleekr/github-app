@@ -259,7 +259,7 @@ describe("workflow runner reconciliation", () => {
       events.push(`ensure:${input.attempt.attemptId}`);
       return Promise.resolve({
         state: "ready",
-        startup: { phase: "stalled", reason: "not ready within 900s (ImagePullBackOff)" },
+        startup: { phase: "stalled", reason: "not ready within 540s (ImagePullBackOff)" },
         payloadIssuedAt: null,
       });
     });
@@ -268,7 +268,7 @@ describe("workflow runner reconciliation", () => {
 
     expect(failWorkflowRunnerResourceAttempt).toHaveBeenCalledWith(
       firstAttempt,
-      "Runner Pod could not start: not ready within 900s (ImagePullBackOff)",
+      "Runner Pod could not start: not ready within 540s (ImagePullBackOff)",
     );
     expect(extendWorkflowRunnerStartupLease).not.toHaveBeenCalledWith(firstAttempt, 360_000);
     // The stalled attempt must not stop the pass.
