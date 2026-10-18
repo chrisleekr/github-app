@@ -547,9 +547,10 @@ describe("WorkflowRunnerClient attempt fence", () => {
     first.fireOpen();
     first.fireClose(1011, "workflow runner registration failed");
 
-    // The 8s and 16s steps would fire at 5s under the held-job cap. Each socket
-    // closes well inside the 60s registration watchdog, which close clears.
-    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+    // The 8s and 16s steps would fire at 5s under the held-job cap, and the two
+    // 30s steps pin the ceiling. Each socket closes well inside the 60s
+    // registration watchdog, which close clears.
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]) {
       const count = FakeWebSocket.instances.length;
       jest.advanceTimersByTime(delay - 1);
       expect(FakeWebSocket.instances).toHaveLength(count);
