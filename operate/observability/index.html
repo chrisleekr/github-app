@@ -3765,7 +3765,7 @@ daemon executor.</p>
 <tr>
 <td><code>startupPhase</code></td>
 <td><code>starting</code></td>
-<td>Pod is not up yet: unscheduled, pulling, initialising volumes, or read back before it reported any status. The pass extends the startup lease, bounded by the attempt deadline and by <code>WORKFLOW_RUNNER_STARTUP_BUDGET_MS</code>.</td>
+<td>Pod is not up yet: unscheduled, pulling, initialising volumes, or read back before it reported any status. The pass extends the startup lease, bounded by the attempt deadline, by <code>WORKFLOW_RUNNER_STARTUP_BUDGET_MS</code>, and by the token cutoff (one installation-token lifetime before the attempt deadline).</td>
 </tr>
 <tr>
 <td><code>startupPhase</code></td>
@@ -3779,7 +3779,7 @@ daemon executor.</p>
 </tr>
 <tr>
 <td><code>startupReason</code></td>
-<td><code>InvalidImageName</code>, <code>ErrImageNeverPull</code>, <code>PodFailed</code>, or <code>not ready within 900s (&lt;blocker&gt;)</code></td>
+<td><code>InvalidImageName</code>, <code>ErrImageNeverPull</code>, <code>PodFailed</code>, <code>not ready within 540s (&lt;blocker&gt;)</code>, or <code>not ready before the token cutoff (&lt;blocker&gt;)</code></td>
 <td>Present only when <code>startupPhase</code> is <code>stalled</code>. Also appears in the failure comment as <code>Runner Pod could not start: &lt;reason&gt;</code>.</td>
 </tr>
 </tbody>
