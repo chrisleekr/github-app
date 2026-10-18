@@ -116,7 +116,7 @@ void mock.module("../../src/orchestrator/review-learnings", () => ({
   searchReviewLearningsByEmbedding: mock(() => Promise.resolve([])),
 }));
 
-const { prepareWorkflowRunnerPayload } =
+const { prepareWorkflowRunnerPayload, WorkflowRunnerLifetimeExhaustedError } =
   await import("../../src/orchestrator/workflow-runner-payload");
 
 describe("workflow runner payload", () => {
@@ -174,12 +174,14 @@ describe("workflow runner payload", () => {
   });
 
   it("rejects a late payload request before minting a token", async () => {
-    await expectToReject(
-      prepareWorkflowRunnerPayload(
-        workflowAttempt("implement", new Date(Date.now() + 59 * 60 * 1_000)),
-      ),
-      "insufficient lifetime",
+    const pending = prepareWorkflowRunnerPayload(
+      workflowAttempt("implement", new Date(Date.now() + 59 * 60 * 1_000)),
     );
+    // The class is what makes the controller fail the attempt instead of looping on 1011.
+    expect(await pending.catch((err: unknown) => err)).toBeInstanceOf(
+      WorkflowRunnerLifetimeExhaustedError,
+    );
+    await expectToReject(pending, "insufficient lifetime");
 
     expect(mintInstallationToken).not.toHaveBeenCalled();
   });
@@ -192,10 +194,11 @@ describe("workflow runner payload", () => {
       expiresAt: new Date(attemptDeadlineAt.getTime() + 1_000).toISOString(),
     });
 
-    await expectToReject(
-      prepareWorkflowRunnerPayload(workflowAttempt("implement", attemptDeadlineAt)),
-      "expiry exceeds",
+    const pending = prepareWorkflowRunnerPayload(workflowAttempt("implement", attemptDeadlineAt));
+    expect(await pending.catch((err: unknown) => err)).toBeInstanceOf(
+      WorkflowRunnerLifetimeExhaustedError,
     );
+    await expectToReject(pending, "expiry exceeds");
 
     expect(revokeToken).toHaveBeenCalledWith("DELETE /installation/token");
   });

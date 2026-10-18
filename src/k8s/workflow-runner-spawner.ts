@@ -12,9 +12,11 @@ import { config } from "../config";
 import { logger } from "../logger";
 import { workflowRunnerUrl } from "../orchestrator/workflow-runner-capability";
 import {
+  GITHUB_INSTALLATION_TOKEN_LIFETIME_MS,
   WORKFLOW_RUNNER_ATTEMPT_DEADLINE_MS,
-  type WorkflowRunnerAttempt,
-} from "../orchestrator/workflow-runner-store";
+  WORKFLOW_RUNNER_STARTUP_BUDGET_MS,
+} from "../orchestrator/workflow-runner-lifetime";
+import type { WorkflowRunnerAttempt } from "../orchestrator/workflow-runner-store";
 import {
   WorkflowRunnerProviderConfigurationError,
   workflowRunnerProviderEnv,
@@ -80,20 +82,6 @@ export type RunnerPodStartup =
 // budget below rather than dying on first sighting.
 const PERMANENT_WAITING_REASONS = new Set(["ErrImageNeverPull", "InvalidImageName"]);
 
-/**
- * How long a Pod may take to reach `Running` before the attempt is failed.
- *
- * Extension cannot run to the attempt deadline. A Pod that never starts still
- * holds one of `MAX_CONCURRENT_REQUESTS` for as long as its lease is renewed
- * (the capacity count filters on `lease_expires_at > now()`), and an
- * unschedulable Pod is produced by exactly the full-cluster condition where
- * those slots matter most, so unbounded extension lets attempts that will never
- * run starve the ones that could. Anchored on the Pod's own
- * `creationTimestamp`, so it needs no extra controller state, and generous
- * enough to clear a cold pull of the daemon image.
- */
-export const WORKFLOW_RUNNER_STARTUP_BUDGET_MS = 900_000;
-
 /** What is holding the Pod back, for the budget-exceeded failure reason. */
 function startupBlocker(pod: V1Pod, waiting: string | undefined): string {
   if (waiting !== undefined) return waiting;
@@ -102,7 +90,17 @@ function startupBlocker(pod: V1Pod, waiting: string | undefined): string {
   return pod.status?.phase ?? "no status reported";
 }
 
-export function classifyPodStartup(pod: V1Pod, now: number = Date.now()): RunnerPodStartup {
+/** The payload gate refuses a token once one token lifetime or less remains. */
+function pastTokenCutoff(now: number, attemptDeadlineAt: Date | undefined): boolean {
+  if (attemptDeadlineAt === undefined) return false;
+  return now >= attemptDeadlineAt.getTime() - GITHUB_INSTALLATION_TOKEN_LIFETIME_MS;
+}
+
+export function classifyPodStartup(
+  pod: V1Pod,
+  now: number = Date.now(),
+  attemptDeadlineAt?: Date,
+): RunnerPodStartup {
   const phase = pod.status?.phase;
   if (phase === "Running") return { phase: "running", terminal: false };
   if (phase === "Succeeded") return { phase: "running", terminal: true };
@@ -116,7 +114,10 @@ export function classifyPodStartup(pod: V1Pod, now: number = Date.now()): Runner
   // Unschedulable, ImagePullBackOff and a Pod with no status at all are all
   // "not up yet" here. They are separated by how long they persist, not by the
   // reason string: each is routinely transient, and each is fatal if it never
-  // clears.
+  // clears. The budget cannot run to the attempt deadline: a Pod that never
+  // starts still holds one of `MAX_CONCURRENT_REQUESTS` while its lease is
+  // renewed, and an unschedulable Pod appears exactly when those slots are
+  // scarce. Anchored on `creationTimestamp`, so it needs no controller state.
   const created = pod.metadata?.creationTimestamp;
   const ageMs = created === undefined ? 0 : now - new Date(created).getTime();
   if (ageMs > WORKFLOW_RUNNER_STARTUP_BUDGET_MS) {
@@ -124,6 +125,15 @@ export function classifyPodStartup(pod: V1Pod, now: number = Date.now()): Runner
     return {
       phase: "stalled",
       reason: `not ready within ${String(seconds)}s (${startupBlocker(pod, waiting)})`,
+    };
+  }
+  // The budget is anchored on Pod creation, but the token gate is anchored on
+  // the attempt deadline. A Pod created late (create retried on a later pass, or
+  // deleted and recreated) can be young yet already unable to get a token.
+  if (pastTokenCutoff(now, attemptDeadlineAt)) {
+    return {
+      phase: "stalled",
+      reason: `not ready before the token cutoff (${startupBlocker(pod, waiting)})`,
     };
   }
   // A Pod read back immediately after creation carries no status yet. Absent
@@ -643,7 +653,7 @@ export async function ensureWorkflowRunnerResources(input: {
     throw new WorkflowRunnerResourceError("transient", "Runner Pod UID missing after reconcile");
   }
   await ensureSecret(input.attempt, input.capability, podUid);
-  const startup = classifyPodStartup(pod);
+  const startup = classifyPodStartup(pod, Date.now(), input.attempt.attemptDeadlineAt);
   logger.info(
     {
       runId: input.attempt.runId,

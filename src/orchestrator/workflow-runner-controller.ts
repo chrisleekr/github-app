@@ -26,6 +26,7 @@ import {
 } from "../workflows/runs-store";
 import { setState } from "../workflows/tracking-mirror";
 import { revokeInstallationToken, revokeInstallationTokenValue } from "./installation-token";
+import { failWorkflowRunnerResourceAttempt } from "./workflow-runner-dispatch";
 import {
   sanitizeWorkflowRunnerCommand,
   sanitizeWorkflowRunnerResult,
@@ -34,6 +35,7 @@ import {
 import {
   prepareWorkflowRunnerControllerOctokit,
   prepareWorkflowRunnerPayload,
+  WorkflowRunnerLifetimeExhaustedError,
 } from "./workflow-runner-payload";
 import {
   cleanupWorkflowRunnerAttempt,
@@ -128,6 +130,26 @@ function identityMatches(
 
 function closePolicy(ws: ServerWebSocket<WsConnectionData>, reason: string): void {
   ws.close(1008, reason);
+}
+
+/**
+ * A retryable close would loop until the deadline while holding a concurrency
+ * slot. Fail now so the slot frees and the user is told.
+ */
+async function failExhaustedAttempt(
+  ws: ServerWebSocket<WsConnectionData>,
+  attempt: WorkflowRunnerAttempt,
+  reason: string,
+): Promise<void> {
+  try {
+    await failWorkflowRunnerResourceAttempt(attempt, reason);
+  } catch (err) {
+    // Stale: another path already failed it. Anything else leaves it running,
+    // so rethrow for a retryable 1011 that re-enters this gate on reconnect.
+    if (!(err instanceof StaleWorkflowAttemptError)) throw err;
+  }
+  // Only abort the runner once the attempt is terminal.
+  closePolicy(ws, "workflow runner attempt lifetime exhausted");
 }
 
 export function handleWorkflowRunnerOpen(ws: ServerWebSocket<WsConnectionData>): void {
@@ -246,7 +268,13 @@ async function registerRunner(
         closePolicy(ws, "workflow runner payload was already issued");
         return;
       }
-      job = await prepareWorkflowRunnerPayload(state.attempt);
+      try {
+        job = await prepareWorkflowRunnerPayload(state.attempt);
+      } catch (err) {
+        if (!(err instanceof WorkflowRunnerLifetimeExhaustedError)) throw err;
+        await failExhaustedAttempt(ws, state.attempt, err.message);
+        return;
+      }
       const recorded = await recordWorkflowRunnerPayloadIssued(
         attempt,
         new Date(job.installationTokenExpiresAt),

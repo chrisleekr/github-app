@@ -25,10 +25,13 @@ import {
   type ReviewLearning,
   searchReviewLearningsByEmbedding,
 } from "./review-learnings";
+import { GITHUB_INSTALLATION_TOKEN_LIFETIME_MS } from "./workflow-runner-lifetime";
 import type { WorkflowRunnerAttempt } from "./workflow-runner-store";
 
 let runnerApp: InstanceType<typeof App> | null = null;
-export const GITHUB_INSTALLATION_TOKEN_LIFETIME_MS = 60 * 60 * 1_000;
+
+/** The attempt can no longer receive a token, so retrying the registration cannot succeed. */
+export class WorkflowRunnerLifetimeExhaustedError extends Error {}
 
 function getRunnerApp(): InstanceType<typeof App> {
   if (runnerApp !== null) return runnerApp;
@@ -236,13 +239,18 @@ export async function prepareWorkflowRunnerPayload(
   }
 
   if (attempt.attemptDeadlineAt.getTime() - Date.now() <= GITHUB_INSTALLATION_TOKEN_LIFETIME_MS) {
-    throw new Error("Workflow runner attempt has insufficient lifetime for a GitHub token");
+    throw new WorkflowRunnerLifetimeExhaustedError(
+      "Workflow runner attempt has insufficient lifetime for a GitHub token",
+    );
   }
 
   const { context, octokit, token, expiresAt } = await mintWorkflowRunnerRepositoryToken(attempt);
   try {
     if (new Date(expiresAt).getTime() > attempt.attemptDeadlineAt.getTime()) {
-      throw new Error("GitHub token expiry exceeds the workflow runner attempt deadline");
+      // Clock skew against GitHub will not resolve on retry.
+      throw new WorkflowRunnerLifetimeExhaustedError(
+        "GitHub token expiry exceeds the workflow runner attempt deadline",
+      );
     }
     const repoPolicy = await loadRepoPolicy({
       octokit,

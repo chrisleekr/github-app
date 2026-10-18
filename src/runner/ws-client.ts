@@ -127,7 +127,6 @@ export class WorkflowRunnerClient {
     socket.onopen = (): void => {
       if (this.ws !== socket) return;
       this.registered = false;
-      this.reconnectMs = 1_000;
       this.send({
         type: "workflow-runner:register",
         ...createMessageEnvelope(),
@@ -332,6 +331,9 @@ export class WorkflowRunnerClient {
     }
 
     this.registered = true;
+    // Reset only here: a socket that opens and is then rejected must keep
+    // backing off, or a persistent rejection reconnects once a second.
+    this.reconnectMs = 1_000;
     this.retryMs = Math.max(1_000, Math.min(message.payload.heartbeatIntervalMs, 10_000));
     this.clientFenceMs = message.payload.clientFenceMs;
     this.startHeartbeat(message.payload.heartbeatIntervalMs, message.payload.clientFenceMs);
@@ -451,7 +453,10 @@ export class WorkflowRunnerClient {
   private scheduleReconnect(): void {
     if (this.closed || this.reconnectTimer !== null) return;
     const delay = this.reconnectMs;
-    this.reconnectMs = Math.min(this.reconnectMs * 2, 30_000);
+    // Once the job is held the lease fence keeps running across reconnects, so
+    // retries stay dense enough to re-register before it aborts the runner.
+    const maxMs = this.jobSettled ? 5_000 : 30_000;
+    this.reconnectMs = Math.min(this.reconnectMs * 2, maxMs);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();

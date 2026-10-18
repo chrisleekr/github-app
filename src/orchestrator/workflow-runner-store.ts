@@ -17,9 +17,9 @@ import {
   type WorkflowRunRow,
 } from "../workflows/runs-store";
 import type { WorkflowRunQueuedJob } from "./job-queue";
+import { WORKFLOW_RUNNER_ATTEMPT_DEADLINE_MS } from "./workflow-runner-lifetime";
 
 const RUNNER_ID_PREFIX = "workflow-runner:";
-export const WORKFLOW_RUNNER_ATTEMPT_DEADLINE_MS = 4_200_000;
 
 export { workflowRunnerId };
 
