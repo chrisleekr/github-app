@@ -5,7 +5,7 @@ The repo enforces conventions through tooling, not docs, every rule below is che
 ## Runtime and language
 
 - **Runtime.** Bun for the application; Node.js 25 for the Claude Code CLI subprocess. Both are installed in the Docker `base` stage.
-- **Bun version.** Pinned in `.tool-versions` (`bun 1.4.2`). All workflows use `oven-sh/setup-bun` with `bun-version-file: .tool-versions`. `.gitlab-ci.yml`'s `oven/bun:<ver>` pins are also verified by `check:docs-versions`, which additionally asserts the two digest-pinned references agree with each other and that the file yields at least one reference to check.
+- **Bun version.** Pinned in `.tool-versions` (`bun 1.4.3`). All workflows use `oven-sh/setup-bun` with `bun-version-file: .tool-versions`. `.gitlab-ci.yml`'s `oven/bun:<ver>` pins are also verified by `check:docs-versions`, which additionally asserts the two digest-pinned references agree with each other and that the file yields at least one reference to check.
 - **TypeScript.** Strict mode plus the strictest flags: `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `useUnknownInCatchVariables`, `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`, `noPropertyAccessFromIndexSignature`. Module resolution is `bundler`, imports do not need `.js` extensions.
 
 ## ESLint
@@ -105,16 +105,19 @@ Notes:
 
 When a PR touches any of these surfaces, update the matching page under `docs/`:
 
-| Source                                          | Doc                                                                    |
-| ----------------------------------------------- | ---------------------------------------------------------------------- |
-| `src/config.ts` env schema                      | `docs/operate/configuration.md`                                        |
-| `src/shared/dispatch-types.ts`                  | `docs/operate/observability.md` + `docs/build/architecture.md`         |
-| `src/orchestrator/triage.ts`                    | `docs/operate/runbooks/triage.md`                                      |
-| `src/webhook/` routing or idempotency           | `docs/build/architecture.md`                                           |
-| `src/k8s/ephemeral-daemon-spawner.ts`           | `docs/operate/runbooks/daemon-fleet.md` + `docs/operate/deployment.md` |
-| `src/daemon/` lifecycle                         | `docs/operate/runbooks/daemon-fleet.md`                                |
-| `src/workflows/` registry, dispatcher, handlers | `docs/use/workflows/*.md`                                              |
-| New MCP server in `src/mcp/`                    | `docs/build/extending.md`                                              |
-| New Pino field or metric                        | `docs/operate/observability.md`                                        |
+| Source                                          | Doc                                                                                                                                                        |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/config.ts` env schema                      | `docs/operate/configuration.md`                                                                                                                            |
+| `src/shared/dispatch-types.ts`                  | `docs/operate/observability.md` + `docs/build/architecture.md`                                                                                             |
+| `src/orchestrator/triage.ts`                    | `docs/operate/runbooks/triage.md`                                                                                                                          |
+| `src/webhook/` routing or idempotency           | `docs/build/architecture.md`                                                                                                                               |
+| `src/k8s/ephemeral-daemon-spawner.ts`           | `docs/operate/runbooks/daemon-fleet.md` + `docs/operate/deployment.md`                                                                                     |
+| `src/daemon/` lifecycle                         | `docs/operate/runbooks/daemon-fleet.md`                                                                                                                    |
+| `src/workflows/` registry, dispatcher, handlers | `docs/use/workflows/*.md`                                                                                                                                  |
+| `src/scheduler/`                                | `docs/use/scheduled-actions.md` + `docs/operate/runbooks/scheduled-actions.md`                                                                             |
+| `src/repo-config/` or `.github-app.yaml` schema | `docs/use/repo-config.md` + the per-repo config sections of `docs/build/architecture.md`, `docs/operate/observability.md`, `docs/operate/configuration.md` |
+| `src/orchestrator/review-learnings.ts`          | `docs/use/review-learnings.md` + `docs/operate/configuration.md`                                                                                           |
+| New MCP server in `src/mcp/`                    | `docs/build/extending.md`                                                                                                                                  |
+| New Pino field or metric                        | `docs/operate/observability.md`                                                                                                                            |
 
 `bun run docs:build` (strict) runs in CI. `check:docs-sync` blocks PRs that touch `src/workflows/**` without an accompanying docs change.
