@@ -1791,7 +1791,7 @@
 <h2 id="runtime-and-language">Runtime and language<a class="headerlink" href="#runtime-and-language" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Runtime.</strong> Bun for the application; Node.js 25 for the Claude Code CLI subprocess. Both are installed in the Docker <code>base</code> stage.</li>
-<li><strong>Bun version.</strong> Pinned in <code>.tool-versions</code> (<code>bun 1.4.2</code>). All workflows use <code>oven-sh/setup-bun</code> with <code>bun-version-file: .tool-versions</code>. <code>.gitlab-ci.yml</code>'s <code>oven/bun:&lt;ver&gt;</code> pins are also verified by <code>check:docs-versions</code>, which additionally asserts the two digest-pinned references agree with each other and that the file yields at least one reference to check.</li>
+<li><strong>Bun version.</strong> Pinned in <code>.tool-versions</code> (<code>bun 1.4.3</code>). All workflows use <code>oven-sh/setup-bun</code> with <code>bun-version-file: .tool-versions</code>. <code>.gitlab-ci.yml</code>'s <code>oven/bun:&lt;ver&gt;</code> pins are also verified by <code>check:docs-versions</code>, which additionally asserts the two digest-pinned references agree with each other and that the file yields at least one reference to check.</li>
 <li><strong>TypeScript.</strong> Strict mode plus the strictest flags: <code>exactOptionalPropertyTypes</code>, <code>noUncheckedIndexedAccess</code>, <code>useUnknownInCatchVariables</code>, <code>noUnusedLocals</code>, <code>noUnusedParameters</code>, <code>noImplicitReturns</code>, <code>noFallthroughCasesInSwitch</code>, <code>noImplicitOverride</code>, <code>noPropertyAccessFromIndexSignature</code>. Module resolution is <code>bundler</code>, imports do not need <code>.js</code> extensions.</li>
 </ul>
 <h2 id="eslint">ESLint<a class="headerlink" href="#eslint" title="Permanent link">&para;</a></h2>
@@ -1974,6 +1974,18 @@
 <tr>
 <td><code>src/workflows/</code> registry, dispatcher, handlers</td>
 <td><code>docs/use/workflows/*.md</code></td>
+</tr>
+<tr>
+<td><code>src/scheduler/</code></td>
+<td><code>docs/use/scheduled-actions.md</code> + <code>docs/operate/runbooks/scheduled-actions.md</code></td>
+</tr>
+<tr>
+<td><code>src/repo-config/</code> or <code>.github-app.yaml</code> schema</td>
+<td><code>docs/use/repo-config.md</code> + the per-repo config sections of <code>docs/build/architecture.md</code>, <code>docs/operate/observability.md</code>, <code>docs/operate/configuration.md</code></td>
+</tr>
+<tr>
+<td><code>src/orchestrator/review-learnings.ts</code></td>
+<td><code>docs/use/review-learnings.md</code> + <code>docs/operate/configuration.md</code></td>
 </tr>
 <tr>
 <td>New MCP server in <code>src/mcp/</code></td>
