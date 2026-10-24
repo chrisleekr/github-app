@@ -45,6 +45,30 @@ vulnerabilities:
       the same expiry, and note that that allowlist matches by GHSA id alone
       with no `paths` scoping, so it suppresses more broadly than this does.
     expired_at: 2026-12-04
+  - id: CVE-2026-109869
+    paths:
+      - "usr/lib/node_modules/npm/node_modules/undici/package.json"
+    statement: |
+      undici 6.29.0 DoS via an unhandled stream error on an oversized response.
+      This copy is bundled inside the global npm CLI; the app's own undici is
+      pinned to the fixed 8.12.2 via package.json overrides. Within npm, only
+      node-gyp's lib/download.js requires it, to fetch Node headers when
+      compiling a native addon. The orchestrator never runs npm or node-gyp at
+      runtime: npm runs only at build time (self-upgrade to npm@11, then the
+      Claude Code CLI install).
+
+      The same path exists in the daemon image, and trivy-scan.yml applies this
+      file to both variants. There it IS reachable: the agent can run
+      `npm install` on a repo with a native addon (build-essential is present),
+      and the repo can point node-gyp at its own server via package.json
+      config. Impact is a crash of that one npm process, from a repo that can
+      already run install scripts. Accepted because the daemon leg is
+      visibility-only (exit-code 0) and the fix is blocked upstream on npm.
+
+      Not fixed by an upgrade: npm 11.21.1 (latest 11.x, which the Dockerfile
+      tracks) and npm 12.2.1 both still bundle undici 6.29.0. Delete this entry
+      once an npm 11.x release bundles undici >= 6.29.1.
+    expired_at: 2026-12-04
   #
   # Retired 2026-06-30 (all expired AND fixed upstream, per each entry's own
   # "delete when fixed" instruction):
