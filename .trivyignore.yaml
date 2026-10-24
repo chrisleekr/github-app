@@ -4,7 +4,8 @@
 #   https://trivy.dev/latest/docs/configuration/filtering/#trivyignoreyaml
 #
 # Wired into CI via the `trivyignores:` input on aquasecurity/trivy-action
-# (see .github/workflows/docker-build.yml). The action does NOT auto-discover
+# (see .github/workflows/trivy-scan.yml), orchestrator legs only: the daemon
+# scan is non-blocking and reports unfiltered. The action does NOT auto-discover
 # this file: it is only read when passed explicitly. See:
 #   https://github.com/aquasecurity/trivy-action/blob/v0.36.0/action.yaml
 #   https://github.com/aquasecurity/trivy-action/blob/v0.36.0/entrypoint.sh
@@ -45,6 +46,26 @@ vulnerabilities:
       the same expiry, and note that that allowlist matches by GHSA id alone
       with no `paths` scoping, so it suppresses more broadly than this does.
     expired_at: 2026-12-04
+  - id: CVE-2026-109869
+    paths:
+      - "usr/lib/node_modules/npm/node_modules/undici/package.json"
+    statement: |
+      undici 6.29.0 DoS via an unhandled stream error on an oversized response.
+      This copy is bundled inside the global npm CLI; the app's own undici is
+      pinned to the fixed 8.12.2 via package.json overrides. Within npm, only
+      node-gyp's lib/download.js requires it, to fetch Node headers when
+      compiling a native addon. The orchestrator never runs npm or node-gyp at
+      runtime: npm runs only at build time (self-upgrade to npm@11, then the
+      Claude Code CLI install).
+
+      The same copy is reachable in the daemon image (the agent can run
+      `npm install` on a repo with a native addon), so it stays visible there:
+      trivy-scan.yml passes this file to the orchestrator legs only.
+
+      Not fixed by an upgrade: npm 11.21.1 (latest 11.x, which the Dockerfile
+      tracks) and npm 12.2.1 both still bundle undici 6.29.0. Delete this entry
+      once an npm 11.x release bundles undici >= 6.29.1.
+    expired_at: 2026-12-04
   #
   # Retired 2026-06-30 (all expired AND fixed upstream, per each entry's own
   # "delete when fixed" instruction):
@@ -57,7 +78,7 @@ vulnerabilities:
   #
   # NOTE: prior entries for CVE-2026-33672 (MEDIUM picomatch) and
   # CVE-2026-33750 (MEDIUM brace-expansion) were removed when
-  # `limit-severities-for-sarif: true` was added in docker-build.yml. With
+  # `limit-severities-for-sarif: true` was added in trivy-scan.yml. With
   # that flag set the trivy-action honors `severity: CRITICAL,HIGH` at the
   # exit-code stage, so MEDIUMs are no longer blocking. If the severity filter
   # is ever dropped, re-add them.

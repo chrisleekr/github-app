@@ -108,7 +108,10 @@ jobs:
           # GitHub Security tab but don't fail the run. Orchestrator is lean
           # enough that a HIGH there is worth a red run and a fix.
           exit-code: ${{ matrix.variant == 'daemon' && '0' || '1' }}
-          trivyignores: .trivyignore.yaml
+          # Ignores only gate the orchestrator. A daemon finding can be
+          # reachable where the orchestrator's is not, and its report is the
+          # only signal, so the daemon scan stays unfiltered.
+          trivyignores: ${{ matrix.variant == 'orchestrator' && '.trivyignore.yaml' || '' }}
 
       # `if: always()` so the SARIF still lands when the orchestrator leg exits
       # non-zero. That upload is the whole point of a red run.
