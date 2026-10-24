@@ -91,10 +91,10 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
       await db`SELECT directive, scope, repo_name, file_glob FROM review_learnings
                WHERE repo_owner = ${TEST_OWNER}`;
     expect(rows.length).toBe(1);
-    expect(rows[0]!.scope).toBe("local");
-    expect(rows[0]!.repo_name).toBe(TEST_REPO);
-    expect(rows[0]!.file_glob).toBe("test/**/*.test.ts");
-    expect(rows[0]!.directive).toContain("mock.module factories");
+    expect(rows[0].scope).toBe("local");
+    expect(rows[0].repo_name).toBe(TEST_REPO);
+    expect(rows[0].file_glob).toBe("test/**/*.test.ts");
+    expect(rows[0].directive).toContain("mock.module factories");
   });
 
   it("loadReviewLearnings returns the full owner+repo set without bumping use_count (1.5.E)", async () => {
@@ -110,14 +110,14 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
     const loaded = await loadReviewLearnings(TEST_OWNER, TEST_REPO, {}, db);
 
     expect(loaded.length).toBe(1);
-    expect(loaded[0]!.fileGlob).toBe("test/**/*.test.ts");
-    expect(loaded[0]!.sourcePr).toBe(79);
+    expect(loaded[0].fileGlob).toBe("test/**/*.test.ts");
+    expect(loaded[0].sourcePr).toBe(79);
 
     const after: { use_count: number; last_used_at: Date | null }[] =
       await db`SELECT use_count, last_used_at FROM review_learnings
                WHERE repo_owner = ${TEST_OWNER}`;
-    expect(after[0]!.use_count).toBe(0);
-    expect(after[0]!.last_used_at).toBeNull();
+    expect(after[0].use_count).toBe(0);
+    expect(after[0].last_used_at).toBeNull();
   });
 
   it("bumpReviewLearningUsage increments use_count and stamps last_used_at (1.5.E)", async () => {
@@ -134,14 +134,14 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
     const after1: { use_count: number; last_used_at: Date | null }[] =
       await db`SELECT use_count, last_used_at FROM review_learnings
                WHERE id IN ${db(ids)}`;
-    expect(after1[0]!.use_count).toBe(1);
-    expect(after1[0]!.last_used_at).not.toBeNull();
+    expect(after1[0].use_count).toBe(1);
+    expect(after1[0].last_used_at).not.toBeNull();
 
     // Second bump on the same ids; counter increments to 2.
     await bumpReviewLearningUsage(ids, db);
     const after2: { use_count: number }[] =
       await db`SELECT use_count FROM review_learnings WHERE id IN ${db(ids)}`;
-    expect(after2[0]!.use_count).toBe(2);
+    expect(after2[0].use_count).toBe(2);
 
     // Empty input is a no-op.
     await bumpReviewLearningUsage([], db);
@@ -221,8 +221,8 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
                  WHERE repo_owner = ${TEST_OWNER} AND directive = 'global-attempt directive'`;
       expect(rows.length).toBe(1);
       // Downgraded.
-      expect(rows[0]!.scope).toBe("local");
-      expect(rows[0]!.repo_name).toBe(TEST_REPO);
+      expect(rows[0].scope).toBe("local");
+      expect(rows[0].repo_name).toBe(TEST_REPO);
     } finally {
       Object.defineProperty(config, "allowedOwners", {
         value: original,
@@ -255,9 +255,9 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
         await db`SELECT scope, repo_name FROM review_learnings
                  WHERE repo_owner = ${TEST_OWNER} AND directive = 'global-allowed directive'`;
       expect(rows.length).toBe(1);
-      expect(rows[0]!.scope).toBe("global");
+      expect(rows[0].scope).toBe("global");
       // Wildcard repo per migration 014 invariant.
-      expect(rows[0]!.repo_name).toBe("*");
+      expect(rows[0].repo_name).toBe("*");
     } finally {
       Object.defineProperty(config, "allowedOwners", {
         value: original,
@@ -340,12 +340,12 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
 
     // Try to delete from a DIFFERENT repo's job context. The id is real but
     // belongs to another repo, so the WHERE clause matches nothing.
-    const deleted = await deleteReviewLearnings(TEST_OWNER, "some-other-repo", [target[0]!.id], db);
+    const deleted = await deleteReviewLearnings(TEST_OWNER, "some-other-repo", [target[0].id], db);
     expect(deleted).toBe(0);
 
     // Row should still exist.
     const after: { id: string }[] = await db`
-      SELECT id FROM review_learnings WHERE id = ${target[0]!.id}
+      SELECT id FROM review_learnings WHERE id = ${target[0].id}
     `;
     expect(after.length).toBe(1);
   });
@@ -383,7 +383,7 @@ describe.skipIf(sql === null)("review-learnings loader and persistence", () => {
       const deleted = await deleteReviewLearnings(
         TEST_OWNER,
         "any-repo-under-owner",
-        [target[0]!.id],
+        [target[0].id],
         db,
       );
       expect(deleted).toBe(1);

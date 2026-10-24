@@ -72,7 +72,7 @@ export function createTickleScheduler(deps: TickleSchedulerDeps): TickleSchedule
    * conservatively flags any cross-async read/write of a closure
    * variable; disabled inline because the guarantee is structural.
    */
-  /* eslint-disable require-atomic-updates */
+  /* eslint-disable eslint-js/require-atomic-updates */
   async function tick(): Promise<void> {
     if (ticking) return;
     ticking = true;
@@ -105,7 +105,7 @@ export function createTickleScheduler(deps: TickleSchedulerDeps): TickleSchedule
       ticking = false;
     }
   }
-  /* eslint-enable require-atomic-updates */
+  /* eslint-enable eslint-js/require-atomic-updates */
 
   return {
     start: async (): Promise<void> => {

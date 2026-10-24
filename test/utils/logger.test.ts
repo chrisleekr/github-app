@@ -80,7 +80,7 @@ describe("logger redaction", () => {
 
     const raw = JSON.stringify(lines);
     expect(raw).not.toContain("MIIEowIBAAKCAQEA");
-    const line = lines[0]!;
+    const line = lines[0];
     expect(line["privateKey"]).toBe("[Redacted]");
   });
 
@@ -302,7 +302,7 @@ describe("logger redaction", () => {
     const raw = JSON.stringify(lines);
     expect(raw).not.toContain("PRIMARY_DAEMON_SECRET");
     expect(raw).not.toContain("PREVIOUS_DAEMON_SECRET");
-    const line = lines[0]!;
+    const line = lines[0];
     expect(line["daemonAuthToken"]).toBe("[Redacted]");
     expect(line["daemonAuthTokenPrevious"]).toBe("[Redacted]");
   });

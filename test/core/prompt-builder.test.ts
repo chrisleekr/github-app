@@ -402,8 +402,8 @@ describe("buildPrompt: repo_memory", () => {
     expect(directive).toBeDefined();
     expect(afterDirective).toBeDefined();
 
-    const directiveTag = /<(untrusted_repo_memory_[0-9a-f]{8})>/.exec(directive!)?.[1];
-    const dataTag = /<(untrusted_repo_memory_[0-9a-f]{8})>/.exec(afterDirective!)?.[1];
+    const directiveTag = /<(untrusted_repo_memory_[0-9a-f]{8})>/.exec(directive)?.[1];
+    const dataTag = /<(untrusted_repo_memory_[0-9a-f]{8})>/.exec(afterDirective)?.[1];
     expect(directiveTag).toBeDefined();
     expect(dataTag).toBeDefined();
     expect(dataTag).toBe(directiveTag);
@@ -458,7 +458,7 @@ describe("buildPrompt: repo_memory", () => {
     // the data-block opener). What matters for the boundary is that exactly
     // ONE closer is emitted (the data-block closer). An attacker who could
     // emit a phantom live closer would break the spotlighting boundary.
-    const liveCloseCount = result.split(`</${tagMatch![1]!}>`).length - 1;
+    const liveCloseCount = result.split(`</${tagMatch![1]}>`).length - 1;
     expect(liveCloseCount).toBe(1);
 
     // Attacker's literal `</untrusted_repo_memory_XXXXXXXX>` survives as data

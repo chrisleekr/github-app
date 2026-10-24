@@ -79,7 +79,7 @@ describe("spawnEphemeralDaemon: Pod spec", () => {
     });
 
     expect(createNamespacedPod).toHaveBeenCalledTimes(1);
-    const call = createNamespacedPod.mock.calls[0] as [CapturedCall];
+    const call = createNamespacedPod.mock.calls[0];
     const { namespace, body } = call[0];
     expect(namespace).toBe("default");
 
@@ -106,7 +106,7 @@ describe("spawnEphemeralDaemon: Pod spec", () => {
       image: "ghcr.io/org/daemon:1.0.0",
       orchestratorUrl: "wss://orch.example.com",
     });
-    const call = createNamespacedPod.mock.calls[0] as [CapturedCall];
+    const call = createNamespacedPod.mock.calls[0];
     const spec = (call[0].body as { spec: { automountServiceAccountToken: boolean } }).spec;
     expect(spec.automountServiceAccountToken).toBe(false);
   });
@@ -117,7 +117,7 @@ describe("spawnEphemeralDaemon: Pod spec", () => {
       image: "ghcr.io/org/daemon:1.0.0",
       orchestratorUrl: "wss://orch.example.com",
     });
-    const call = createNamespacedPod.mock.calls[0] as [CapturedCall];
+    const call = createNamespacedPod.mock.calls[0];
     const securityContext = (
       call[0].body as {
         spec: {
@@ -142,7 +142,7 @@ describe("spawnEphemeralDaemon: Pod spec", () => {
       image: "ghcr.io/org/daemon:1.0.0",
       orchestratorUrl: "wss://orch.example.com",
     });
-    const call = createNamespacedPod.mock.calls[0] as [CapturedCall];
+    const call = createNamespacedPod.mock.calls[0];
     const labels = (call[0].body as { metadata: { labels: Record<string, string> } }).metadata
       .labels;
     const value = labels["github-app/delivery-id"] ?? "";
@@ -156,7 +156,7 @@ describe("spawnEphemeralDaemon: Pod spec", () => {
       image: "ghcr.io/org/daemon:1.0.0",
       orchestratorUrl: "wss://orch.example.com",
     });
-    const call = createNamespacedPod.mock.calls[0] as [CapturedCall];
+    const call = createNamespacedPod.mock.calls[0];
     const spec = (
       call[0].body as { spec: { restartPolicy: string; activeDeadlineSeconds: number } }
     ).spec;
@@ -172,7 +172,7 @@ describe("spawnEphemeralDaemon: Pod spec", () => {
       image: "ghcr.io/org/daemon:1.0.0",
       orchestratorUrl: "wss://orch.example.com",
     });
-    const call = createNamespacedPod.mock.calls[0] as [CapturedCall];
+    const call = createNamespacedPod.mock.calls[0];
     const envFrom = (
       call[0].body as {
         spec: { containers: [{ envFrom: { secretRef: { name: string } }[] }] };

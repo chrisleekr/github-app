@@ -200,6 +200,11 @@ publish-dev-npm:
   services:
     - name: docker:29-dind
       alias: docker
+      # Classic image store instead of the Docker 29 containerd default. The
+      # containerd pusher waits only 30 s (ResponseHeaderTimeout) for each blob
+      # PUT, and registry.chrislee.kr's MinIO copy can take longer, which
+      # failed publish-daemon-docker. The classic pusher sets no such timeout.
+      command: ["--feature", "containerd-snapshotter=false"]
   variables:
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: "/certs"
@@ -231,6 +236,10 @@ publish-dev-npm:
   before_script:
     - apk add --no-cache curl git jq
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+    # The containerd store reports "overlayfs"; fail fast unless the classic
+    # overlay2 store is active (vfs fallback would be very slow and large).
+    - docker info --format '{{.Driver}} {{json .DriverStatus}}'
+    - test "$(docker info --format '{{.Driver}}')" = overlay2
     - docker context create dind
     - docker buildx create --driver docker-container --use dind --buildkitd-flags '--allow-insecure-entitlement network.host'
     # jq, not grep|cut|rev: the old chain assumed a fixed column offset.

@@ -431,7 +431,7 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
    * separates the read from the write; `require-atomic-updates` flags it
    * conservatively. Same structural guarantee as `tickle-scheduler.ts`.
    */
-  /* eslint-disable require-atomic-updates */
+  /* eslint-disable eslint-js/require-atomic-updates */
   const guardedScan = async (): Promise<void> => {
     if (scanning) {
       log.warn(
@@ -465,7 +465,7 @@ export function createScheduler(deps: SchedulerDeps): SchedulerHandle {
       scanning = false;
     }
   };
-  /* eslint-enable require-atomic-updates */
+  /* eslint-enable eslint-js/require-atomic-updates */
 
   return {
     start: async (): Promise<void> => {

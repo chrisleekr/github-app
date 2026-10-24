@@ -9,7 +9,7 @@ bun install             # Install dependencies
 bun run dev             # Run in watch mode
 bun run test            # Run tests, one Bun process per file (plain `bun test` hangs)
 bun run typecheck       # TypeScript type checking
-bun run lint            # ESLint (lint:fix to auto-fix)
+bun run lint            # Oxlint, type-aware (lint:fix to auto-fix)
 bun run format          # Prettier check (format:fix to auto-fix)
 bun run check           # Every CI gate: typecheck, lint, format, check:*, test
 bun run dev:deps        # Start local Valkey + Postgres (dev:deps:down to stop)

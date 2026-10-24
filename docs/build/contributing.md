@@ -25,7 +25,7 @@ Example: `feat(ship): wire ship iteration loop, tickle scheduler, and four scope
 `.husky/pre-commit` runs:
 
 1. `gitleaks protect --staged`, secret scan (hard exit if `gitleaks` is missing; install with your package manager).
-2. `bunx lint-staged`, Prettier and ESLint on staged files.
+2. `bunx lint-staged`, Prettier and Oxlint on staged files.
 
 `.husky/commit-msg` runs `commitlint` on the message itself.
 

@@ -108,7 +108,7 @@ async function paginateReviewThreads(
     // Pagination is single-threaded by construction (no concurrent
     // callers of this function inside one runProbe), so the
     // require-atomic-updates warning here is a false positive.
-    // eslint-disable-next-line require-atomic-updates
+    // eslint-disable-next-line eslint-js/require-atomic-updates
     cursor = rt.pageInfo.endCursor;
   }
   return merged;

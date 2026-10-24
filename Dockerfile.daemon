@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   mkdir -p /etc/apt/keyrings && \
   curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
   | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_25.x nodistro main" \
+  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_26.x nodistro main" \
   > /etc/apt/sources.list.d/nodesource.list && \
   apt-get update && \
   apt-get install -y --no-install-recommends nodejs && \
@@ -69,7 +69,7 @@ RUN apt-get update && \
 # `bun run check:claude-code-version` enforces the match in CI, and
 # renovate.json groups the two packages into one PR.
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.302
+ARG CLAUDE_CODE_VERSION=2.1.307
 
 # Tracks 11.x major (unlike the exact pins elsewhere).
 # The version is validated before it reaches npm: `--build-arg
@@ -79,7 +79,8 @@ ARG CLAUDE_CODE_VERSION=2.1.302
 RUN npm install -g npm@11 && \
   printf '%s' "${CLAUDE_CODE_VERSION:?CLAUDE_CODE_VERSION must not be empty}" \
   | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' && \
-  npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+  npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && \
+  npm cache clean --force
 
 # Stage: Build: install all deps and bundle the main app.
 FROM base AS development
@@ -97,7 +98,11 @@ RUN bun run build
 FROM base AS deps
 COPY package.json bun.lock ./
 # --ignore-scripts: husky is a devDependency: skip prepare/postinstall hooks.
-RUN bun install --frozen-lockfile --production --ignore-scripts
+# The image is glibc Linux: onnxruntime-node's Windows/macOS binaries and the
+# musl builds of the Agent SDK native binary and sharp are never loaded.
+RUN bun install --frozen-lockfile --production --ignore-scripts \
+  && rm -rf node_modules/onnxruntime-node/bin/napi-v*/win32 node_modules/onnxruntime-node/bin/napi-v*/darwin \
+  node_modules/@anthropic-ai/claude-agent-sdk-linux-*-musl node_modules/@img/*linuxmusl*
 # --- SHARED-BASE-END ---
 
 # Stage: daemon-tools: apt packages + third-party repos + sha-pinned binaries
@@ -115,9 +120,9 @@ ARG KUBECTL_VERSION=v1.37.1
 # renovate: datasource=github-releases depName=helm/helm
 ARG HELM_VERSION=v4.3.1
 # renovate: datasource=github-releases depName=hashicorp/terraform
-ARG TERRAFORM_VERSION=1.16.6
+ARG TERRAFORM_VERSION=1.17.0
 # renovate: datasource=github-releases depName=aws/aws-cli
-ARG AWSCLI_VERSION=2.38.1
+ARG AWSCLI_VERSION=2.38.4
 # renovate: datasource=github-releases depName=mikefarah/yq
 ARG YQ_VERSION=v4.54.1
 # renovate: datasource=github-releases depName=asdf-vm/asdf
@@ -131,7 +136,7 @@ ARG K9S_VERSION=v0.51.0
 # renovate: datasource=github-releases depName=stern/stern
 ARG STERN_VERSION=v1.34.0
 # renovate: datasource=github-releases depName=argoproj/argo-cd
-ARG ARGOCD_VERSION=v3.5.5
+ARG ARGOCD_VERSION=v3.5.6
 # renovate: datasource=github-releases depName=fluxcd/flux2
 ARG FLUX_VERSION=v2.9.6
 # renovate: datasource=github-releases depName=terraform-linters/tflint
@@ -141,26 +146,37 @@ ARG SHELLCHECK_VERSION=v0.11.0
 # renovate: datasource=github-releases depName=hadolint/hadolint
 ARG HADOLINT_VERSION=v2.15.1
 # renovate: datasource=golang-version depName=golang
-ARG GO_VERSION=1.27.2
+ARG GO_VERSION=1.27.3
 # renovate: datasource=pypi depName=poetry
 ARG POETRY_VERSION=2.5.1
 
-# 1. Debian apt staples + language runtimes + data clients.
+# 1. Debian apt staples + language runtimes + data clients. Split across
+#    several RUNs because registry.chrislee.kr must commit each pushed layer
+#    within containerd's 30 s response-header timeout; one combined layer was
+#    ~350 MB compressed. Keep any new layer well under ~150 MB compressed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
   vim nano less tree htop procps lsof strace file sudo \
   netcat-openbsd dnsutils iputils-ping openssh-client rsync \
   ripgrep fd-find zsh tmux bat direnv fzf httpie \
-  default-mysql-client postgresql-client redis-tools sqlite3 \
-  python3 python3-pip python3-venv pipx \
-  make build-essential ansible pandoc imagemagick \
   unzip zip wget \
   ca-certificates gnupg \
   && rm -rf /var/lib/apt/lists/* \
   && ln -sf /usr/bin/batcat /usr/local/bin/bat \
   && ln -sf /usr/bin/fdfind /usr/local/bin/fd
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  default-mysql-client postgresql-client redis-tools sqlite3 \
+  python3 python3-pip python3-venv pipx \
+  && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends make build-essential \
+  && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ansible \
+  && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends pandoc imagemagick \
+  && rm -rf /var/lib/apt/lists/*
 
 # 2. Third-party apt repos (signed): gh, Microsoft (azure-cli), Charmbracelet
-#    (gum/glow), MongoDB (mongosh), Google Cloud SDK (gated).
+#    (gum/glow), MongoDB (mongosh), Google Cloud SDK (gated). azure-cli is
+#    installed in its own RUN to keep each pushed layer small (see step 1).
 RUN install -m 0755 -d /etc/apt/keyrings && \
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
   | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null && \
@@ -179,10 +195,14 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/mongodb.gpg] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/8.0 main" \
   > /etc/apt/sources.list.d/mongodb.list && \
   apt-get update && \
-  apt-get install -y --no-install-recommends gh azure-cli gum glow mongodb-mongosh && \
+  apt-get install -y --no-install-recommends gh gum glow mongodb-mongosh && \
+  rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends azure-cli && \
   rm -rf /var/lib/apt/lists/*
 
 # 3. Kubernetes + IaC binaries. $TARGETARCH comes from buildx (amd64|arm64).
+#    Three RUNs (kubernetes, gitops, IaC) to keep each pushed layer small.
 # hadolint ignore=DL4001
 RUN set -eux; \
   curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \
@@ -190,19 +210,23 @@ RUN set -eux; \
   curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
   | tar -xz -C /tmp && mv "/tmp/linux-${TARGETARCH}/helm" /usr/local/bin/helm && \
   rm -rf "/tmp/linux-${TARGETARCH}"; \
-  curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip" \
-  -o /tmp/terraform.zip && unzip -q /tmp/terraform.zip -d /usr/local/bin/ && \
-  rm /tmp/terraform.zip && chmod +x /usr/local/bin/terraform; \
   curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${KUSTOMIZE_VERSION}/kustomize_${KUSTOMIZE_VERSION}_linux_${TARGETARCH}.tar.gz" \
   | tar -xz -C /usr/local/bin/ && chmod +x /usr/local/bin/kustomize; \
   K9S_URL="https://github.com/derailed/k9s/releases/download/${K9S_VERSION}/k9s_Linux_${TARGETARCH}.tar.gz"; \
   curl -fsSL "$K9S_URL" | tar -xz -C /tmp k9s && mv /tmp/k9s /usr/local/bin/ && chmod +x /usr/local/bin/k9s; \
   curl -fsSL "https://github.com/stern/stern/releases/download/${STERN_VERSION}/stern_${STERN_VERSION#v}_linux_${TARGETARCH}.tar.gz" \
-  | tar -xz -C /tmp stern && mv /tmp/stern /usr/local/bin/ && chmod +x /usr/local/bin/stern; \
+  | tar -xz -C /tmp stern && mv /tmp/stern /usr/local/bin/ && chmod +x /usr/local/bin/stern
+# hadolint ignore=DL4001
+RUN set -eux; \
   curl -fsSL "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-${TARGETARCH}" \
   -o /usr/local/bin/argocd && chmod +x /usr/local/bin/argocd; \
   curl -fsSL "https://github.com/fluxcd/flux2/releases/download/${FLUX_VERSION}/flux_${FLUX_VERSION#v}_linux_${TARGETARCH}.tar.gz" \
-  | tar -xz -C /tmp flux && mv /tmp/flux /usr/local/bin/ && chmod +x /usr/local/bin/flux; \
+  | tar -xz -C /tmp flux && mv /tmp/flux /usr/local/bin/ && chmod +x /usr/local/bin/flux
+# hadolint ignore=DL4001
+RUN set -eux; \
+  curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip" \
+  -o /tmp/terraform.zip && unzip -q /tmp/terraform.zip -d /usr/local/bin/ && \
+  rm /tmp/terraform.zip && chmod +x /usr/local/bin/terraform; \
   curl -fsSL "https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}/tflint_linux_${TARGETARCH}.zip" \
   -o /tmp/tflint.zip && unzip -q /tmp/tflint.zip -d /usr/local/bin/ && rm /tmp/tflint.zip && chmod +x /usr/local/bin/tflint; \
   curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${TARGETARCH}" \
@@ -237,9 +261,17 @@ RUN set -eux; \
 #     on the daemon, not the orchestrator.
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
   PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+#     Chromium's heaviest dependencies (LLVM via mesa, chromium-common, GTK)
+#     install in their own RUNs first, and mermaid-cli in another, so no
+#     single pushed layer gets large.
+RUN apt-get update && apt-get install -y --no-install-recommends libllvm19 mesa-libgallium && \
+  rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends chromium-common libgtk-3-0t64 adwaita-icon-theme && \
+  rm -rf /var/lib/apt/lists/*
 RUN apt-get update && apt-get install -y --no-install-recommends chromium && \
-  rm -rf /var/lib/apt/lists/* && \
-  npm install -g @mermaid-js/mermaid-cli@12.0.0 && \
+  rm -rf /var/lib/apt/lists/*
+RUN npm install -g @mermaid-js/mermaid-cli@12.0.0 && \
+  npm cache clean --force && \
   printf '{"args":["--no-sandbox"]}\n' > /etc/mmdc-puppeteer.json && \
   chmod 0444 /etc/mmdc-puppeteer.json
 
@@ -252,20 +284,30 @@ ENV PIPX_HOME=/usr/local/pipx \
   CARGO_HOME=/usr/local/cargo \
   RUSTUP_HOME=/usr/local/rustup
 ENV PATH="/usr/local/go/bin:/usr/local/cargo/bin:${PATH}"
+# Each toolchain home (pipx, cargo/rustup, nvm) is chowned to `bun` in the RUN
+# that creates it. Installers run as root, so the final `USER bun` could not
+# write registries/caches (cargo install, rustup update, pipx install, nvm
+# install all EACCES). A separate `chown -R` step would copy every file into
+# a new layer and roughly double these homes in the pushed image.
 # hadolint ignore=DL4001
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-  pipx install "poetry==${POETRY_VERSION}"
+  pipx install "poetry==${POETRY_VERSION}" && \
+  chown -R bun:bun /usr/local/pipx
 
-# 8. Language toolchains (gated via INSTALL_LANGS).
+# 8. Language toolchains (gated via INSTALL_LANGS), one layer each so no
+#    single blob is large enough to time out the registry commit on push.
 # hadolint ignore=DL4001
 RUN set -eux; \
   if echo "${INSTALL_LANGS}" | grep -qw go; then \
   curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" \
   | tar -xz -C /usr/local; \
-  fi; \
+  fi
+# hadolint ignore=DL4001
+RUN set -eux; \
   if echo "${INSTALL_LANGS}" | grep -qw rust; then \
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-  | sh -s -- -y --default-toolchain stable --profile minimal; \
+  | sh -s -- -y --default-toolchain stable --profile minimal && \
+  chown -R bun:bun /usr/local/cargo /usr/local/rustup; \
   fi
 
 # 9. Version managers: asdf (Go binary, shim-based) + nvm (bash script).
@@ -275,6 +317,7 @@ RUN set -eux; \
   | tar -xz -C /usr/local/bin asdf && chmod +x /usr/local/bin/asdf; \
   mkdir -p /usr/local/nvm && \
   git clone --depth 1 --branch "${NVM_VERSION}" https://github.com/nvm-sh/nvm.git /usr/local/nvm && \
+  chown -R bun:bun /usr/local/nvm && \
   printf 'export NVM_DIR=/usr/local/nvm\n[ -s "$NVM_DIR/nvm.sh" ] && \\. "$NVM_DIR/nvm.sh"\n' \
   > /etc/profile.d/nvm.sh
 
@@ -304,16 +347,6 @@ RUN printf '%s\n' \
   && chmod 0440 /etc/sudoers.d/bun-apt \
   && visudo -cf /etc/sudoers.d/bun-apt
 
-# 11b. Hand mutable toolchain homes to `bun`. Installers above run as root, so
-#      CARGO_HOME, RUSTUP_HOME, PIPX_HOME, and NVM_DIR are root-owned and the
-#      final `USER bun` can't write registries/caches (cargo install, rustup
-#      update, pipx install, nvm install all EACCES otherwise). Guarded with
-#      `-d` so gated dirs (rust off in INSTALL_LANGS) don't fail the build.
-RUN set -eux; \
-  for d in /usr/local/pipx /usr/local/cargo /usr/local/rustup /usr/local/nvm; do \
-  [ -d "$d" ] && chown -R bun:bun "$d" || true; \
-  done
-
 # 11c. Protect the worker's initial environment from same-UID agent children.
 # The constructor runs inside each dynamically linked process before its main
 # function. The Agent SDK allowlist omits LD_PRELOAD, so agent children do not
@@ -340,9 +373,11 @@ COPY --from=docker:29-cli /usr/local/libexec/docker/cli-plugins/ \
 COPY package.json bun.lock tsconfig.json ./
 COPY src/ ./src/
 COPY scripts/generate-capabilities-manifest.ts ./scripts/generate-capabilities-manifest.ts
-RUN bun install --frozen-lockfile --production --ignore-scripts \
+#     --cache-dir: Bun's default global cache (/root/.bun/install/cache) is
+#     about the size of node_modules and would otherwise stay in this layer.
+RUN bun install --frozen-lockfile --production --ignore-scripts --cache-dir /tmp/bun-cache \
   && bun run scripts/generate-capabilities-manifest.ts /app/daemon-capabilities.static.json \
-  && rm -rf node_modules scripts/generate-capabilities-manifest.ts src/ package.json bun.lock tsconfig.json
+  && rm -rf /tmp/bun-cache node_modules scripts/generate-capabilities-manifest.ts src/ package.json bun.lock tsconfig.json
 
 # Stage: production: final daemon image.
 FROM daemon-tools AS production

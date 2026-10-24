@@ -229,8 +229,8 @@ describe("job-queue", () => {
       expect(result).toBe(true);
       // The LPUSH call should contain retryCount: 1
       const lpushCall = mockSend.mock.calls[0];
-      expect(lpushCall![0]).toBe("LPUSH");
-      const serialized = JSON.parse(lpushCall![1][1] as string) as QueuedJob;
+      expect(lpushCall[0]).toBe("LPUSH");
+      const serialized = JSON.parse(lpushCall[1][1] as string) as QueuedJob;
       expect(serialized.retryCount).toBe(1);
     });
 
@@ -242,7 +242,7 @@ describe("job-queue", () => {
       await requeueJob(job);
 
       const lpushCall = mockSend.mock.calls[0];
-      const serialized = JSON.parse(lpushCall![1][1] as string) as QueuedJob;
+      const serialized = JSON.parse(lpushCall[1][1] as string) as QueuedJob;
       expect(serialized.enqueuedAt).toBeGreaterThan(oldTimestamp);
     });
 
@@ -295,7 +295,7 @@ describe("job-queue", () => {
       await requeueJob(job);
 
       const lpushCall = mockSend.mock.calls[0];
-      const serialized = JSON.parse(lpushCall![1][1] as string) as QueuedJob;
+      const serialized = JSON.parse(lpushCall[1][1] as string) as QueuedJob;
       expect(serialized.deliveryId).toBe("d-preserve");
       expect(serialized.repoOwner).toBe("owner-x");
       expect(serialized.repoName).toBe("repo-y");
