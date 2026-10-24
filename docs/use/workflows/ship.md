@@ -98,6 +98,8 @@ stateDiagram-v2
 | Mark a draft PR ready-for-review on terminal `ready`                | Cancel a foreign push, manual push wins; the session terminates |
 | Self-remove the `bot:ship` label after acting                       | Take any mutating action after `bot:abort-ship`                 |
 
+The `bot:triage` scoped command is suggest-only: it posts a proposal comment and never applies labels, closes, locks, assigns, or pins. An Oxlint `eslint-js/no-restricted-syntax` rule on `src/workflows/ship/scoped/triage.ts` (`.oxlintrc.json`) rejects those mutation calls at lint time.
+
 The trigger is refused before any session is created (`src/workflows/ship/eligibility.ts`) when:
 
 - `ALLOWED_OWNERS` is set and the triggering user is not in it (`unauthorized`).
