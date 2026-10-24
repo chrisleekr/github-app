@@ -274,9 +274,9 @@ describe("executeAgent: cancellation", () => {
     try {
       await executeAgent(baseParams());
     } finally {
-      // eslint-disable-next-line require-atomic-updates -- restore in finally
+      // eslint-disable-next-line eslint-js/require-atomic-updates -- restore in finally
       globalThis.setTimeout = realSetTimeout;
-      // eslint-disable-next-line require-atomic-updates -- restore in finally
+      // eslint-disable-next-line eslint-js/require-atomic-updates -- restore in finally
       globalThis.clearTimeout = realClearTimeout;
     }
 

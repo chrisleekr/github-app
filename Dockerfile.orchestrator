@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   mkdir -p /etc/apt/keyrings && \
   curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
   | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_25.x nodistro main" \
+  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_26.x nodistro main" \
   > /etc/apt/sources.list.d/nodesource.list && \
   apt-get update && \
   apt-get install -y --no-install-recommends nodejs && \
@@ -68,7 +68,7 @@ RUN apt-get update && \
 # `bun run check:claude-code-version` enforces the match in CI, and
 # renovate.json groups the two packages into one PR.
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.302
+ARG CLAUDE_CODE_VERSION=2.1.307
 
 # Tracks 11.x major (unlike the exact pins elsewhere).
 # The version is validated before it reaches npm: `--build-arg
@@ -78,7 +78,8 @@ ARG CLAUDE_CODE_VERSION=2.1.302
 RUN npm install -g npm@11 && \
   printf '%s' "${CLAUDE_CODE_VERSION:?CLAUDE_CODE_VERSION must not be empty}" \
   | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' && \
-  npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+  npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && \
+  npm cache clean --force
 
 # Stage: Build: install all deps and bundle the main app.
 FROM base AS development
@@ -96,7 +97,11 @@ RUN bun run build
 FROM base AS deps
 COPY package.json bun.lock ./
 # --ignore-scripts: husky is a devDependency: skip prepare/postinstall hooks.
-RUN bun install --frozen-lockfile --production --ignore-scripts
+# The image is glibc Linux: onnxruntime-node's Windows/macOS binaries and the
+# musl builds of the Agent SDK native binary and sharp are never loaded.
+RUN bun install --frozen-lockfile --production --ignore-scripts \
+  && rm -rf node_modules/onnxruntime-node/bin/napi-v*/win32 node_modules/onnxruntime-node/bin/napi-v*/darwin \
+  node_modules/@anthropic-ai/claude-agent-sdk-linux-*-musl node_modules/@img/*linuxmusl*
 # --- SHARED-BASE-END ---
 
 # Stage: Orchestrator production image.

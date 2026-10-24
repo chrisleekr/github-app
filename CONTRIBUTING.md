@@ -160,7 +160,7 @@ Equivalent to running these four commands in order:
 
 ```bash
 bun run typecheck     # TypeScript strict type check (no emit)
-bun run lint          # ESLint check
+bun run lint          # Oxlint check (type-aware)
 bun run format        # Prettier format check
 bun run test          # Tests with coverage threshold enforcement
 ```
@@ -168,7 +168,7 @@ bun run test          # Tests with coverage threshold enforcement
 Auto-fix helpers (run individually as needed):
 
 ```bash
-bun run lint:fix      # ESLint auto-fix
+bun run lint:fix      # Oxlint auto-fix
 bun run format:fix    # Prettier auto-fix
 ```
 
@@ -184,7 +184,7 @@ These checks are enforced by Husky on every commit:
      `go install github.com/gitleaks/gitleaks/v8@latest`. The hook fails
      closed: if the binary is missing, the commit is blocked with install
      guidance.
-  2. `lint-staged` runs Prettier + ESLint on staged `.ts`/`.js` files and
+  2. `lint-staged` runs Prettier + Oxlint on staged `.ts`/`.js` files and
      Prettier on staged `.json`/`.md`/`.yml` files.
 - **commit-msg**: `commitlint` validates the commit message format.
 

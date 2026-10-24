@@ -333,7 +333,7 @@ async function sampleOnce(
 
     emitVerdict(state, opts, deps, tables);
   } finally {
-    // eslint-disable-next-line require-atomic-updates -- single-threaded re-entrancy latch; the reset cannot interleave
+    // eslint-disable-next-line eslint-js/require-atomic-updates -- single-threaded re-entrancy latch; the reset cannot interleave
     sampling = false;
   }
 }
@@ -424,7 +424,7 @@ export async function startSocketHealthWatchdog(opts: SocketHealthOptions): Prom
   // Cannot arm before the await like instance-liveness does: the procfs probe
   // above decides whether to arm at all. Single boot-time caller, so the
   // read-then-write of `timer` across the await cannot actually double-arm.
-  // eslint-disable-next-line require-atomic-updates -- single-threaded, one boot-time caller
+  // eslint-disable-next-line eslint-js/require-atomic-updates -- single-threaded, one boot-time caller
   timer = setInterval(() => {
     void sampleOnce(state, effectiveOpts, deps, armedGeneration);
   }, intervalMs);

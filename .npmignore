@@ -5,7 +5,7 @@ scripts/
 .husky/
 *.test.ts
 tsconfig.json
-eslint.config.*
+.oxlintrc.json
 .prettierrc*
 .commitlintrc*
 docker*
