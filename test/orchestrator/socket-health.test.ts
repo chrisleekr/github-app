@@ -399,7 +399,7 @@ async function captureStdout(fn: () => Promise<void>): Promise<string> {
     await fn();
     return chunks.join("");
   } finally {
-    // eslint-disable-next-line require-atomic-updates -- single-threaded test helper restoring a stubbed global
+    // eslint-disable-next-line eslint-js/require-atomic-updates -- single-threaded test helper restoring a stubbed global
     process.stdout.write = original;
   }
 }

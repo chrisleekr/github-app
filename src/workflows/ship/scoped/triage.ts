@@ -7,8 +7,8 @@
  * **Suggest-only: v1 MUST NOT mutate.** This module deliberately does
  * NOT import `addLabelsToLabelable`, `removeLabelsFromLabelable`,
  * `closeIssue`, `lockLockable`, `addAssigneesToAssignable`, or
- * `pinIssue`. The ESLint `no-restricted-syntax` rule on this file path
- * (eslint.config.mjs) backs the contract at lint time; the test suite
+ * `pinIssue`. The Oxlint `eslint-js/no-restricted-syntax` rule on this file path
+ * (.oxlintrc.json) backs the contract at lint time; the test suite
  * (T078) backs it at runtime.
  *
  * Mutation paths are a deliberate v2 follow-up, kept out of v1 to give

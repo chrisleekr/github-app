@@ -61,8 +61,8 @@ bun run build           # Compile to dist/
 
 bun run check           # Unified gate: typecheck + lint + format + tests + no-destructive
 bun run typecheck       # tsc --noEmit
-bun run lint            # ESLint
-bun run lint:fix        # ESLint auto-fix
+bun run lint            # Oxlint (type-aware)
+bun run lint:fix        # Oxlint auto-fix
 bun run format          # Prettier check
 bun run format:fix      # Prettier auto-fix
 

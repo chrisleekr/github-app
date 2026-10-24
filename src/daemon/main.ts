@@ -146,7 +146,7 @@ function handleMessage(msg: ServerMessage): void {
           capabilities,
           config.cloneBaseDir,
         );
-        // eslint-disable-next-line require-atomic-updates -- single-threaded; stale write is acceptable
+        // eslint-disable-next-line eslint-js/require-atomic-updates -- single-threaded; stale write is acceptable
         capabilities = updatedCapabilities;
         wsClient.send(pong);
       })();
