@@ -242,7 +242,7 @@ describe.skipIf(sql2 === null)("saveRepoLearnings sanitization at durability bou
       WHERE repo_owner = ${TEST_OWNER} AND repo_name = ${TEST_REPO} AND category = 'setup'
     `;
     expect(rows.length).toBe(1);
-    const persisted = rows[0].content;
+    const persisted = rows[0]!.content;
 
     expect(persisted).not.toContain("\n");
     expect(persisted).not.toContain("<!--");
@@ -268,8 +268,8 @@ describe.skipIf(sql2 === null)("saveRepoLearnings sanitization at durability bou
       WHERE repo_owner = ${TEST_OWNER} AND repo_name = ${TEST_REPO} AND category = 'env'
     `;
     expect(rows.length).toBe(1);
-    expect(rows[0].content).not.toContain(tok);
-    expect(rows[0].content).toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(rows[0]!.content).not.toContain(tok);
+    expect(rows[0]!.content).toContain("[REDACTED_GITHUB_TOKEN]");
   });
 
   it("hashes text bytes without interpreting bytea escape syntax", async () => {

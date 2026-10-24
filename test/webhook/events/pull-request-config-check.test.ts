@@ -162,7 +162,7 @@ describe("handlePullRequestConfigCheck", () => {
     await flushMicrotasks();
 
     expect(mockClaimDelivery).toHaveBeenCalledTimes(1);
-    const key = mockClaimDelivery.mock.calls[0][0];
+    const key = (mockClaimDelivery.mock.calls[0] as unknown as [string])[0];
     expect(key).toBe("delivery-a:config-check");
 
     expect(mockRunPrConfigCheck).toHaveBeenCalledTimes(1);

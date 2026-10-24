@@ -117,7 +117,7 @@ function apiError(code: number): Error & { code: number } {
 }
 
 function createdPod(): Record<string, unknown> {
-  const call = createNamespacedPod.mock.calls[0];
+  const call = createNamespacedPod.mock.calls[0] as [ResourceCall<Record<string, unknown>>];
   return call[0].body;
 }
 

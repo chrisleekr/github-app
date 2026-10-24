@@ -147,7 +147,7 @@ describe("createForbiddenBashHook", () => {
     // command's attacker-controlled tail (the ref/args) must not leak.
     expect(JSON.stringify(warns[0]?.obj)).not.toContain("SECRET_BRANCH_token");
     // Exact key set: a future change adding a raw-command field would fail here.
-    expect(Object.keys(warns[0].obj).sort()).toEqual(["event", "rule", "tool"]);
+    expect(Object.keys(warns[0]!.obj).sort()).toEqual(["event", "rule", "tool"]);
   });
 
   it("allows a non-Bash tool", async () => {

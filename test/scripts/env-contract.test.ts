@@ -153,7 +153,7 @@ describe("scripts/env-contract.ts", () => {
 
   it("fails when SECRET_ENV_VARS has an entry absent from the schema", () => {
     // Drop one classified secret from the config so the stale-entry branch fires.
-    const dropped = [...SECRET_ENV_VARS][0];
+    const dropped = [...SECRET_ENV_VARS][0]!;
     const vars = CLEAN_VARS.filter((v) => v !== dropped);
     const root = makeFixture({ vars });
     fixtures.push(root);
