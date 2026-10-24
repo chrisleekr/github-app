@@ -1977,6 +1977,7 @@
 </tr>
 </tbody>
 </table>
+<p>The <code>bot:triage</code> scoped command is suggest-only: it posts a proposal comment and never applies labels, closes, locks, assigns, or pins. An Oxlint <code>eslint-js/no-restricted-syntax</code> rule on <code>src/workflows/ship/scoped/triage.ts</code> (<code>.oxlintrc.json</code>) rejects those mutation calls at lint time.</p>
 <p>The trigger is refused before any session is created (<code>src/workflows/ship/eligibility.ts</code>) when:</p>
 <ul>
 <li><code>ALLOWED_OWNERS</code> is set and the triggering user is not in it (<code>unauthorized</code>).</li>
