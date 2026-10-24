@@ -4,7 +4,8 @@
 #   https://trivy.dev/latest/docs/configuration/filtering/#trivyignoreyaml
 #
 # Wired into CI via the `trivyignores:` input on aquasecurity/trivy-action
-# (see .github/workflows/docker-build.yml). The action does NOT auto-discover
+# (see .github/workflows/trivy-scan.yml), orchestrator legs only: the daemon
+# scan is non-blocking and reports unfiltered. The action does NOT auto-discover
 # this file: it is only read when passed explicitly. See:
 #   https://github.com/aquasecurity/trivy-action/blob/v0.36.0/action.yaml
 #   https://github.com/aquasecurity/trivy-action/blob/v0.36.0/entrypoint.sh
@@ -57,13 +58,9 @@ vulnerabilities:
       runtime: npm runs only at build time (self-upgrade to npm@11, then the
       Claude Code CLI install).
 
-      The same path exists in the daemon image, and trivy-scan.yml applies this
-      file to both variants. There it IS reachable: the agent can run
-      `npm install` on a repo with a native addon (build-essential is present),
-      and the repo can point node-gyp at its own server via package.json
-      config. Impact is a crash of that one npm process, from a repo that can
-      already run install scripts. Accepted because the daemon leg is
-      visibility-only (exit-code 0) and the fix is blocked upstream on npm.
+      The same copy is reachable in the daemon image (the agent can run
+      `npm install` on a repo with a native addon), so it stays visible there:
+      trivy-scan.yml passes this file to the orchestrator legs only.
 
       Not fixed by an upgrade: npm 11.21.1 (latest 11.x, which the Dockerfile
       tracks) and npm 12.2.1 both still bundle undici 6.29.0. Delete this entry
@@ -81,7 +78,7 @@ vulnerabilities:
   #
   # NOTE: prior entries for CVE-2026-33672 (MEDIUM picomatch) and
   # CVE-2026-33750 (MEDIUM brace-expansion) were removed when
-  # `limit-severities-for-sarif: true` was added in docker-build.yml. With
+  # `limit-severities-for-sarif: true` was added in trivy-scan.yml. With
   # that flag set the trivy-action honors `severity: CRITICAL,HIGH` at the
   # exit-code stage, so MEDIUMs are no longer blocking. If the severity filter
   # is ever dropped, re-add them.
