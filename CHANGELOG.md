@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.2](https://github.com/chrisleekr/github-app/compare/v1.18.1...v1.18.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **docker:** patch libbrotli1 and scope-ignore npm-bundled undici ([#327](https://github.com/chrisleekr/github-app/issues/327)) ([42b3796](https://github.com/chrisleekr/github-app/commit/42b37963b800b15afbaeb02b846d53c17f167b4e))
+
 ## [1.18.1](https://github.com/chrisleekr/github-app/compare/v1.18.0...v1.18.1) (2026-10-18)
 
 
