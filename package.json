@@ -34,9 +34,9 @@
   },
   "homepage": "https://github.com/chrisleekr/github-app#readme",
   "engines": {
-    "bun": ">=1.4.3"
+    "bun": ">=1.4.4"
   },
-  "packageManager": "bun@1.4.3",
+  "packageManager": "bun@1.4.4",
   "scripts": {
     "prepublishOnly": "bun run clean && NODE_ENV=production bun run build",
     "clean": "rm -rf dist",
@@ -91,11 +91,11 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/bedrock-sdk": "^0.35.0",
-    "@anthropic-ai/claude-agent-sdk": "^0.3.307",
+    "@anthropic-ai/bedrock-sdk": "^0.36.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.310",
     "@huggingface/transformers": "^4.3.1",
     "@kubernetes/client-node": "^2.0.1",
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@octokit/webhooks": "14.2.0",
     "@octokit/webhooks-types": "^7.6.1",
     "cron-parser": "^5.10.2",
@@ -109,7 +109,7 @@
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@octokit/plugin-paginate-graphql": "^6.0.0",
-    "@types/bun": "^1.4.3",
+    "@types/bun": "^1.4.4",
     "@types/node": "^26.6.5",
     "@types/picomatch": "^4.0.3",
     "eslint-plugin-security": "^4.2.0",
@@ -118,7 +118,7 @@
     "lint-staged": "^17.6.0",
     "oxlint": "^1.89.0",
     "oxlint-plugin-eslint": "^1.89.0",
-    "oxlint-tsgolint": "^7.0.2004",
+    "oxlint-tsgolint": "^7.0.2005",
     "pino-pretty": "^13.2.0",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2"
@@ -139,18 +139,18 @@
     "body-parser": "2.4.0",
     "brace-expansion": "5.0.12",
     "express-rate-limit": "8.7.1",
-    "fast-uri": "4.2.1",
+    "fast-uri": "3.1.9",
     "fast-xml-parser": "5.11.2",
     "flatted": "3.4.4",
     "form-data": "4.0.6",
     "hono": "4.13.13",
-    "ip-address": "10.7.4",
+    "ip-address": "10.7.5",
     "path-to-regexp": "8.4.2",
     "picomatch": "4.0.7",
     "protobufjs": "7.6.6",
     "proxy-addr": "2.0.8",
     "sharp": "0.35.5",
-    "undici": "8.12.2",
+    "undici": "8.12.3",
     "ws": "8.22.0"
   }
 }

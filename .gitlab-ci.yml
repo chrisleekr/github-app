@@ -1,4 +1,4 @@
-image: oven/bun:1.4.3-alpine
+image: oven/bun:1.4.4-alpine
 
 stages:
   - prepare
@@ -125,7 +125,7 @@ admission-policy:
   # DinD runner, so never expose this job to branch-controlled pipelines.
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
-  image: oven/bun:1.4.3-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373
+  image: oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a
   services:
     - name: docker:29-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0
       alias: docker
@@ -148,7 +148,7 @@ admission-policy:
       --volume /var/run/docker.sock:/var/run/docker.sock
       --volume "$CI_PROJECT_DIR:$CI_PROJECT_DIR"
       --workdir "$CI_PROJECT_DIR"
-      oven/bun:1.4.3-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373
+      oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a
       sh -ec 'apk add --no-cache bash ca-certificates coreutils curl docker-cli
       && bun run test:admission'
 

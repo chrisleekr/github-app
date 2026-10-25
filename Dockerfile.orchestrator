@@ -10,7 +10,7 @@
 # enforces this in CI.
 
 # --- SHARED-BASE-BEGIN ---
-FROM oven/bun:1.4.3 AS base
+FROM oven/bun:1.4.4 AS base
 WORKDIR /app
 
 # Node.js required by Claude Code CLI; git required for repo checkout.
@@ -68,7 +68,7 @@ RUN apt-get update && \
 # `bun run check:claude-code-version` enforces the match in CI, and
 # renovate.json groups the two packages into one PR.
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.307
+ARG CLAUDE_CODE_VERSION=2.1.310
 
 # Tracks 11.x major (unlike the exact pins elsewhere).
 # The version is validated before it reaches npm: `--build-arg

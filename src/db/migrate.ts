@@ -94,7 +94,7 @@ export async function runMigrations(sql: SQL): Promise<void> {
         await conn`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY})`;
       }
     } finally {
-      conn.release();
+      await conn.release();
     }
   }
 }
