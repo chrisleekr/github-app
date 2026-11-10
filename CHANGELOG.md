@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.3](https://github.com/chrisleekr/github-app/compare/v1.18.2...v1.18.3) (2026-11-10)
+
+
+### Bug Fixes
+
+* **deps:** bump Claude Code CLI to 2.1.318, Anthropic SDK to 1.5.0, and models to 5.5 ([#334](https://github.com/chrisleekr/github-app/issues/334)) ([762a9f6](https://github.com/chrisleekr/github-app/commit/762a9f6cf6fe9529d8a4486eb9c26222dbaeac6c))
+
 ## [1.18.2](https://github.com/chrisleekr/github-app/compare/v1.18.1...v1.18.2) (2026-10-25)
 
 
