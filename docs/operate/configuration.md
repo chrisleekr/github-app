@@ -156,7 +156,7 @@ The Pod also receives `ORCHESTRATOR_URL`, derived from `ORCHESTRATOR_PUBLIC_URL`
 | ----------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------- |
 | `TRIAGE_ENABLED`              | `true`       | Kill-switch. When `false`, triage returns `heavy=false` and the job routes to `persistent-daemon`.                    |
 | `TRIAGE_TOOLS_ENABLED`        | `true`       | Kill-switch for the tool-driven triage classifier. When `false`, triage runs without the on-demand state-fetch tools. |
-| `TRIAGE_MODEL`                | `sonnet-4-6` | Alias resolved at runtime.                                                                                            |
+| `TRIAGE_MODEL`                | `sonnet-5-5` | Alias resolved at runtime.                                                                                            |
 | `TRIAGE_CONFIDENCE_THRESHOLD` | `1.0`        | Below this, triage is treated as sub-threshold and the job routes to `persistent-daemon`.                             |
 | `TRIAGE_MAX_TOKENS`           | `256`        | Cap on the JSON response. Above ~100 is wasted budget.                                                                |
 | `TRIAGE_TIMEOUT_MS`           | `5000`       | Per-call wall clock. Beyond this, the circuit-breaker counter increments.                                             |
@@ -166,7 +166,7 @@ The Pod also receives `ORCHESTRATOR_URL`, derived from `ORCHESTRATOR_PUBLIC_URL`
 
 | Variable                  | Default      | Notes                                                                                                                       |
 | ------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `DISCUSSION_DIGEST_MODEL` | `sonnet-4-6` | Alias resolved at runtime. Model for the LLM that distills an issue/PR comment thread into maintainer guidance (see below). |
+| `DISCUSSION_DIGEST_MODEL` | `sonnet-5-5` | Alias resolved at runtime. Model for the LLM that distills an issue/PR comment thread into maintainer guidance (see below). |
 
 The discussion-digest step (`src/workflows/discussion-digest.ts`) runs before each
 structured workflow: it summarises the comment thread into a guidance digest the
@@ -393,11 +393,11 @@ Only one controller replica is supported. Queue recovery is durable, but workflo
 
 Per-call LLM scan of every agent-generated GitHub-bound body, after the deterministic regex pass in `redactSecrets()`. Catches encoded / obfuscated secrets the regex misses.
 
-| Variable                        | Default     | Notes                                                                                                                                                                                                                                     |
-| ------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LLM_OUTPUT_SCANNER_ENABLED`    | `true`      | Set `false` to disable. General GitHub-bound output keeps the deterministic regex floor and skips the encoded-secret backstop. Structured runner commands are rejected and results become a fixed safe failure while disabled.            |
-| `LLM_OUTPUT_SCANNER_MODEL`      | `haiku-4-5` | Operator-friendly alias resolved by `src/ai/llm-client.ts MODEL_MAP`. A Sonnet alias detects more encoded or obfuscated variants; raise the timeout alongside it, because the isolated-runner boundary treats a slow scan as a rejection. |
-| `LLM_OUTPUT_SCANNER_TIMEOUT_MS` | `30000`     | Per-call wall-clock cap. General GitHub-bound output fails open to the deterministic regex result. Structured runner RPC fails closed as described above, so the default is sized for that case rather than for comment latency.          |
+| Variable                        | Default     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_OUTPUT_SCANNER_ENABLED`    | `true`      | Set `false` to disable. General GitHub-bound output keeps the deterministic regex floor and skips the encoded-secret backstop. Structured runner commands are rejected and results become a fixed safe failure while disabled.                                                                                                                                                                                       |
+| `LLM_OUTPUT_SCANNER_MODEL`      | `haiku-5-5` | Operator-friendly alias resolved by `src/ai/llm-client.ts MODEL_MAP` (`sonnet-5-5`, `haiku-5-5`). On Bedrock the 5.5 models may need model access enabled in your account; legacy ARN-versioned Bedrock models are not supported by this client. A Sonnet alias detects more encoded or obfuscated variants; raise the timeout alongside it, because the isolated-runner boundary treats a slow scan as a rejection. |
+| `LLM_OUTPUT_SCANNER_TIMEOUT_MS` | `30000`     | Per-call wall-clock cap. General GitHub-bound output fails open to the deterministic regex result. Structured runner RPC fails closed as described above, so the default is sized for that case rather than for comment latency.                                                                                                                                                                                     |
 
 System messages (router capacity, marker comments, lifecycle pings) skip the LLM pass, they cannot legitimately contain secrets and the scan is wasted spend.
 

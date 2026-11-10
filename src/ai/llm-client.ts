@@ -12,7 +12,7 @@
  *   - `createLLMClient(cfg)` branches on the already-validated
  *     `config.provider` enum to return the right SDK wrapper.
  *   - `resolveModelId(alias, provider)` turns operator-friendly aliases
- *     (e.g. "haiku-3-5") into provider-specific IDs, falling through to
+ *     (e.g. "haiku-5-5") into provider-specific IDs, falling through to
  *     the raw value if no alias matches so operators can pin any ID.
  */
 
@@ -45,23 +45,18 @@ export type AuthMode = "anthropic-apikey" | "anthropic-oauth" | "bedrock";
 export const CLAUDE_CODE_IDENTIFIER = "You are Claude Code, Anthropic's official CLI for Claude.";
 
 /**
- * Operator-friendly aliases → provider-specific model IDs. Haiku entries
- * remain available for cost-sensitive deployments; Sonnet 4.6 is the
- * default for triage and the output scanner where reasoning quality
- * outweighs the higher per-token cost.
+ * Operator-friendly aliases to provider-specific model IDs. Only models that
+ * accept API version 2026-10-21 (sdk 1.x) are listed; ARN-versioned Bedrock
+ * models reject it.
  */
 export const MODEL_MAP: Readonly<Record<string, Readonly<Record<Provider, string>>>> = {
-  "haiku-3-5": {
-    anthropic: "claude-3-5-haiku-20241022",
-    bedrock: "anthropic.claude-3-5-haiku-20241022-v1:0",
+  "sonnet-5-5": {
+    anthropic: "claude-sonnet-5-5",
+    bedrock: "global.anthropic.claude-sonnet-5-5",
   },
-  "haiku-4-5": {
-    anthropic: "claude-haiku-4-5-20251001",
-    bedrock: "anthropic.claude-haiku-4-5-20251001-v1:0",
-  },
-  "sonnet-4-6": {
-    anthropic: "claude-sonnet-4-6",
-    bedrock: "us.anthropic.claude-sonnet-4-6",
+  "haiku-5-5": {
+    anthropic: "claude-haiku-5-5",
+    bedrock: "global.anthropic.claude-haiku-5-5",
   },
 };
 
@@ -74,6 +69,16 @@ export function resolveModelId(aliasOrId: string, provider: Provider): string {
   const entry = MODEL_MAP[aliasOrId];
   if (entry === undefined) return aliasOrId;
   return entry[provider];
+}
+
+/**
+ * `thinking` field for a resolved model ID. Thinking is on by default and counts
+ * toward max_tokens; Sonnet 5.5 rejects "disabled", so it gets its lowest setting.
+ */
+function thinkingField(model: string): { thinking?: { type: string } } {
+  if (model.includes("sonnet-5-5")) return { thinking: { type: "between_tools" } };
+  if (model.includes("haiku-5-5")) return { thinking: { type: "disabled" } };
+  return {};
 }
 
 /** One message in the request, Anthropic-style schema. */
@@ -102,7 +107,8 @@ export type LLMContentBlock =
       readonly tool_use_id: string;
       readonly content: string;
       readonly is_error?: boolean;
-    };
+    }
+  | { readonly type: "thinking"; readonly thinking: string; readonly signature: string };
 
 /** A message in a tool-use-aware turn, content may be a string or block array. */
 export interface LLMRichMessage {
@@ -143,8 +149,6 @@ export interface LLMCreateParams {
   readonly messages: readonly LLMMessage[];
   /** Hard upper bound on generated tokens; prevents runaway cost on malformed responses. */
   readonly maxTokens: number;
-  /** Passed through only when set. Claude 5 models reject the field. */
-  readonly temperature?: number;
 }
 
 export interface LLMUsage {
@@ -180,7 +184,6 @@ export interface LLMRichCreateParams {
   readonly system?: string;
   readonly messages: readonly LLMRichMessage[];
   readonly maxTokens: number;
-  readonly temperature?: number;
   readonly tools?: readonly LLMTool[];
   readonly toolChoice?: LLMToolChoice;
 }
@@ -234,9 +237,9 @@ export function createLLMClient(params: CreateLLMClientParams): LLMClient {
         `createLLMClient: provider=anthropic requires a non-empty anthropicApiKey or claudeCodeOauthToken (anthropicApiKey=${apiKeyState}, claudeCodeOauthToken=${oauthState})`,
       );
     }
-    // OAuth tokens (sk-ant-oat-...) authenticate via Authorization: Bearer
-    // (SDK `authToken`), NOT x-api-key. Passing OAuth as `apiKey` produces a
-    // 401 "invalid x-api-key" because the API distinguishes the two headers.
+    // OAuth tokens (sk-ant-oat-...) go in SDK `authToken`, not `apiKey`.
+    // sdk 1.x sends both as Authorization: Bearer, but keep them separate so
+    // the credential type stays explicit.
     // Prefer the API key when both are provided, it's the lower-friction
     // credential and matches the precedence in config.ts. (Restoring the
     // fix from 82f8332 that PR #104 silently regressed.)
@@ -329,10 +332,7 @@ export function buildRequest(
     model: p.model,
     max_tokens: p.maxTokens,
     messages: p.messages.map((m) => ({ role: m.role, content: m.content })),
-    // Only sent when a caller asks for it. Claude 5 models reject the field
-    // outright ("`temperature` is deprecated for this model", 400), so
-    // defaulting it here made every single-turn call fail against them.
-    ...(p.temperature !== undefined ? { temperature: p.temperature } : {}),
+    ...thinkingField(p.model),
   };
   if (system !== undefined) base["system"] = system;
   return base;
@@ -348,10 +348,7 @@ export function buildRichRequest(
     model: p.model,
     max_tokens: p.maxTokens,
     messages: p.messages.map((m) => ({ role: m.role, content: m.content })),
-    // Only sent when a caller asks for it. Claude 5 models reject the field
-    // outright ("`temperature` is deprecated for this model", 400), so
-    // defaulting it here made every single-turn call fail against them.
-    ...(p.temperature !== undefined ? { temperature: p.temperature } : {}),
+    ...thinkingField(p.model),
   };
   if (system !== undefined) base["system"] = system;
   if (p.tools !== undefined && p.tools.length > 0) {
@@ -361,6 +358,7 @@ export function buildRichRequest(
   return base;
 }
 
+// Sonnet 5.5 rejects forced tool_choice (any/tool) with a 400; callers use "auto".
 function toolChoiceWire(c: LLMToolChoice): unknown {
   if (c === "auto") return { type: "auto" };
   if (c === "any") return { type: "any" };
@@ -391,6 +389,8 @@ export interface AnthropicRichMessageResponse {
     id?: string;
     name?: string;
     input?: unknown;
+    thinking?: string;
+    signature?: string;
   }[];
   readonly model: string;
   readonly usage: { input_tokens: number; output_tokens: number };
@@ -416,9 +416,16 @@ export function parseAnthropicRichResponse(raw: AnthropicRichMessageResponse): L
         name: block.name,
         input: block.input ?? {},
       });
+    } else if (block.type === "thinking" && typeof block.signature === "string") {
+      // Must be passed back unchanged with the tool_use that follows it.
+      content.push({
+        type: "thinking",
+        thinking: block.thinking ?? "",
+        signature: block.signature,
+      });
     }
-    // Other block types (e.g. thinking, citations) are dropped: we only
-    // round-trip the shapes the tool loop reasons about.
+    // Other block types (e.g. citations) are dropped: we only round-trip the
+    // shapes the tool loop reasons about.
   }
   const stop = raw.stop_reason;
   const stopReason: LLMRichResponse["stopReason"] =
@@ -523,7 +530,6 @@ export interface RunWithToolsParams {
   /** Initial conversation, usually one user message. Subsequent assistant + tool_result turns are appended internally. */
   readonly messages: readonly LLMMessage[];
   readonly maxTokens: number;
-  readonly temperature?: number;
   readonly tools: readonly LLMTool[];
   readonly toolChoice?: LLMToolChoice;
   readonly onToolCall: LLMToolHandler;
@@ -606,7 +612,6 @@ export async function runWithTools(
       tools: params.tools,
       toolChoice: params.toolChoice ?? "auto",
       ...(params.system !== undefined ? { system: params.system } : {}),
-      ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
     };
     const response = await client.createRich(richParams);
     lastResponse = response;
@@ -750,6 +755,10 @@ const RATE_SHEET_USD_PER_TOKEN: Readonly<Record<string, { input: number; output:
   // Haiku 4.5
   "claude-haiku-4-5-20251001": { input: 1.0 / 1_000_000, output: 5.0 / 1_000_000 },
   "anthropic.claude-haiku-4-5-20251001-v1:0": { input: 1.0 / 1_000_000, output: 5.0 / 1_000_000 },
+  // Sonnet 5.5, the triage default (platform.claude.com/docs/en/models/overview).
+  "claude-sonnet-5-5": { input: 2.0 / 1_000_000, output: 10.0 / 1_000_000 },
+  "anthropic.claude-sonnet-5-5": { input: 2.0 / 1_000_000, output: 10.0 / 1_000_000 },
+  "global.anthropic.claude-sonnet-5-5": { input: 2.0 / 1_000_000, output: 10.0 / 1_000_000 },
 };
 
 /**

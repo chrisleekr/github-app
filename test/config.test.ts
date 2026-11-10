@@ -638,16 +638,16 @@ describe("configSchema: ship workflow defaults", () => {
 });
 
 describe("configSchema: discussion-digest model", () => {
-  it("defaults digestModel to sonnet-4-6", () => {
+  it("defaults digestModel to sonnet-5-5", () => {
     const result = configSchema.safeParse({ ...ANTHROPIC_BASE });
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.digestModel).toBe("sonnet-4-6");
+    if (result.success) expect(result.data.digestModel).toBe("sonnet-5-5");
   });
 
   it("accepts an explicit digestModel override", () => {
-    const result = configSchema.safeParse({ ...ANTHROPIC_BASE, digestModel: "haiku-4-5" });
+    const result = configSchema.safeParse({ ...ANTHROPIC_BASE, digestModel: "haiku-5-5" });
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.digestModel).toBe("haiku-4-5");
+    if (result.success) expect(result.data.digestModel).toBe("haiku-5-5");
   });
 });
 

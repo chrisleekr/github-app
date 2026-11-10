@@ -54,7 +54,7 @@ jobs:
           echo "trigger_type=$EVENT_NAME"
 
       - name: Checkout repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -69,7 +69,7 @@ jobs:
         # reproducibly across runs. Bump deliberately: see
         # https://github.com/mermaid-js/mermaid-cli/releases.
         run: |
-          npm install -g @mermaid-js/mermaid-cli@12.0.0
+          npm install -g @mermaid-js/mermaid-cli@12.2.0
           mmdc --version
 
       # User input passed via env: (never interpolated into run:) and validated
@@ -108,7 +108,7 @@ jobs:
       # - --disallowedTools "": WebSearch/WebFetch are denied by default (#690)
       - name: Run research with Claude Code
         id: claude
-        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c # v1.0.268
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}

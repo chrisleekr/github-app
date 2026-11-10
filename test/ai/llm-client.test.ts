@@ -14,12 +14,12 @@ import {
 } from "../../src/ai/llm-client";
 
 describe("resolveModelId", () => {
-  it("resolves the haiku-3-5 alias for anthropic", () => {
-    expect(resolveModelId("haiku-3-5", "anthropic")).toBe("claude-3-5-haiku-20241022");
+  it("resolves the haiku-5-5 alias for anthropic", () => {
+    expect(resolveModelId("haiku-5-5", "anthropic")).toBe("claude-haiku-5-5");
   });
 
-  it("resolves the haiku-3-5 alias for bedrock", () => {
-    expect(resolveModelId("haiku-3-5", "bedrock")).toBe("anthropic.claude-3-5-haiku-20241022-v1:0");
+  it("resolves the sonnet-5-5 alias for bedrock", () => {
+    expect(resolveModelId("sonnet-5-5", "bedrock")).toBe("global.anthropic.claude-sonnet-5-5");
   });
 
   it("falls through unchanged for an unknown alias (explicit pinning)", () => {
@@ -29,7 +29,7 @@ describe("resolveModelId", () => {
   });
 
   it("MODEL_MAP is a frozen-shape snapshot (no accidental growth in tests)", () => {
-    expect(Object.keys(MODEL_MAP).sort()).toEqual(["haiku-3-5", "haiku-4-5", "sonnet-4-6"]);
+    expect(Object.keys(MODEL_MAP).sort()).toEqual(["haiku-5-5", "sonnet-5-5"]);
   });
 });
 
@@ -110,36 +110,20 @@ describe("buildRequest: shaping the SDK payload", () => {
     expect(req["system"]).toBeUndefined();
     expect(req["model"]).toBe("haiku");
     expect(req["max_tokens"]).toBe(256);
-    expect(req).not.toHaveProperty("temperature");
   });
 
-  // Claude 5 rejects the field outright with 400 "`temperature` is deprecated
-  // for this model", so injecting a default here broke every single-turn call:
-  // intent classification, triage, discussion digest, and the fail-closed
-  // output scanner. It is opt-in now, including an explicit 0.
-  it("omits `temperature` unless the caller asks for it", () => {
-    const bare = buildRequest({
-      model: "haiku",
-      messages: [{ role: "user", content: "hi" }],
-      maxTokens: 256,
-    });
-    expect(bare).not.toHaveProperty("temperature");
-
-    const explicitZero = buildRequest({
-      model: "haiku",
-      messages: [{ role: "user", content: "hi" }],
-      maxTokens: 256,
-      temperature: 0,
-    });
-    expect(explicitZero["temperature"]).toBe(0);
-
-    const rich = buildRichRequest({
-      model: "haiku",
-      messages: [{ role: "user", content: "hi" }],
-      maxTokens: 256,
-      tools: [],
-    });
-    expect(rich).not.toHaveProperty("temperature");
+  it("adds the model-specific `thinking` field", () => {
+    const base = { messages: [{ role: "user", content: "hi" }] as const, maxTokens: 256 };
+    for (const model of ["claude-sonnet-5-5", "global.anthropic.claude-sonnet-5-5"]) {
+      expect(buildRequest({ ...base, model })["thinking"]).toEqual({ type: "between_tools" });
+      expect(buildRichRequest({ ...base, model })["thinking"]).toEqual({ type: "between_tools" });
+    }
+    for (const model of ["claude-haiku-5-5", "global.anthropic.claude-haiku-5-5"]) {
+      expect(buildRequest({ ...base, model })["thinking"]).toEqual({ type: "disabled" });
+      expect(buildRichRequest({ ...base, model })["thinking"]).toEqual({ type: "disabled" });
+    }
+    expect(buildRequest({ ...base, model: "some-raw-id" })).not.toHaveProperty("thinking");
+    expect(buildRichRequest({ ...base, model: "some-raw-id" })).not.toHaveProperty("thinking");
   });
 
   it("includes `system` verbatim when supplied", () => {
@@ -148,10 +132,8 @@ describe("buildRequest: shaping the SDK payload", () => {
       system: "you are a classifier",
       messages: [{ role: "user", content: "hi" }],
       maxTokens: 256,
-      temperature: 0.5,
     });
     expect(req["system"]).toBe("you are a classifier");
-    expect(req["temperature"]).toBe(0.5);
   });
 
   describe("Claude Code OAuth gate", () => {
@@ -161,7 +143,7 @@ describe("buildRequest: shaping the SDK payload", () => {
     it("emits a two-block array system on the OAuth path so the gate's first-block check passes", () => {
       const req = buildRequest(
         {
-          model: "claude-sonnet-4-6",
+          model: "claude-sonnet-5-5",
           system: CALLER_SYSTEM,
           messages: [{ role: "user", content: "hi" }],
           maxTokens: 256,
@@ -177,7 +159,7 @@ describe("buildRequest: shaping the SDK payload", () => {
     it("uses the Claude Code identifier alone (string form) when no caller system is supplied (OAuth)", () => {
       const req = buildRequest(
         {
-          model: "claude-sonnet-4-6",
+          model: "claude-sonnet-5-5",
           messages: [{ role: "user", content: "hi" }],
           maxTokens: 256,
         },
@@ -189,7 +171,7 @@ describe("buildRequest: shaping the SDK payload", () => {
     it("does NOT prepend the identifier on the API-key path", () => {
       const req = buildRequest(
         {
-          model: "claude-sonnet-4-6",
+          model: "claude-sonnet-5-5",
           system: CALLER_SYSTEM,
           messages: [{ role: "user", content: "hi" }],
           maxTokens: 256,
@@ -202,7 +184,7 @@ describe("buildRequest: shaping the SDK payload", () => {
     it("does NOT prepend the identifier on the Bedrock path", () => {
       const req = buildRequest(
         {
-          model: "us.anthropic.claude-sonnet-4-6",
+          model: "anthropic.claude-sonnet-5-5",
           system: CALLER_SYSTEM,
           messages: [{ role: "user", content: "hi" }],
           maxTokens: 256,
@@ -357,6 +339,18 @@ describe("estimateHaikuCostUsd", () => {
         "anthropic.claude-haiku-4-5-20251001-v1:0",
       ),
     ).toBeCloseTo(6.0, 6);
+  });
+
+  it("matches the Sonnet 5.5 rate sheet ($2 input / $10 output per 1M) on both providers", () => {
+    for (const id of [
+      "claude-sonnet-5-5",
+      "anthropic.claude-sonnet-5-5",
+      "global.anthropic.claude-sonnet-5-5",
+    ]) {
+      expect(
+        estimateHaikuCostUsd({ inputTokens: 1_000_000, outputTokens: 1_000_000 }, id),
+      ).toBeCloseTo(12.0, 6);
+    }
   });
 
   it("falls back to Haiku 3.5 rates for an unknown modelId (under-count, never over-count)", () => {

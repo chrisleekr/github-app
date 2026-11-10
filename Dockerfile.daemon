@@ -69,7 +69,7 @@ RUN apt-get update && \
 # `bun run check:claude-code-version` enforces the match in CI, and
 # renovate.json groups the two packages into one PR.
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-ARG CLAUDE_CODE_VERSION=2.1.310
+ARG CLAUDE_CODE_VERSION=2.1.318
 
 # Tracks 11.x major (unlike the exact pins elsewhere).
 # The version is validated before it reaches npm: `--build-arg
@@ -116,13 +116,13 @@ ARG INSTALL_LANGS="go rust"
 # at the repo root for the custom manager that parses these annotations, the
 # weekly schedule, and the auto-merge policy (minor/patch/digest only).
 # renovate: datasource=github-releases depName=kubernetes/kubernetes
-ARG KUBECTL_VERSION=v1.37.1
+ARG KUBECTL_VERSION=v1.37.2
 # renovate: datasource=github-releases depName=helm/helm
 ARG HELM_VERSION=v4.3.1
 # renovate: datasource=github-releases depName=hashicorp/terraform
-ARG TERRAFORM_VERSION=1.17.0
+ARG TERRAFORM_VERSION=1.17.1
 # renovate: datasource=github-releases depName=aws/aws-cli
-ARG AWSCLI_VERSION=2.38.5
+ARG AWSCLI_VERSION=2.39.3
 # renovate: datasource=github-releases depName=mikefarah/yq
 ARG YQ_VERSION=v4.54.1
 # renovate: datasource=github-releases depName=asdf-vm/asdf
@@ -136,9 +136,9 @@ ARG K9S_VERSION=v0.51.0
 # renovate: datasource=github-releases depName=stern/stern
 ARG STERN_VERSION=v1.35.0
 # renovate: datasource=github-releases depName=argoproj/argo-cd
-ARG ARGOCD_VERSION=v3.5.6
+ARG ARGOCD_VERSION=v3.6.1
 # renovate: datasource=github-releases depName=fluxcd/flux2
-ARG FLUX_VERSION=v2.9.6
+ARG FLUX_VERSION=v2.10.0
 # renovate: datasource=github-releases depName=terraform-linters/tflint
 ARG TFLINT_VERSION=v0.65.0
 # renovate: datasource=github-releases depName=koalaman/shellcheck
@@ -270,7 +270,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends chromium-common
   rm -rf /var/lib/apt/lists/*
 RUN apt-get update && apt-get install -y --no-install-recommends chromium && \
   rm -rf /var/lib/apt/lists/*
-RUN npm install -g @mermaid-js/mermaid-cli@12.0.0 && \
+RUN npm install -g @mermaid-js/mermaid-cli@12.2.0 && \
   npm cache clean --force && \
   printf '{"args":["--no-sandbox"]}\n' > /etc/mmdc-puppeteer.json && \
   chmod 0444 /etc/mmdc-puppeteer.json
