@@ -43,13 +43,13 @@ Mitigations:
 
 ## Tuning knobs
 
-| Variable                      | Default     | When to change                                          |
-| ----------------------------- | ----------- | ------------------------------------------------------- |
-| `TRIAGE_ENABLED`              | `true`      | Incident kill-switch.                                   |
-| `TRIAGE_MODEL`                | `haiku-3-5` | Experiment with newer Haiku aliases for latency.        |
-| `TRIAGE_CONFIDENCE_THRESHOLD` | `1.0`       | Relax to `0.8`–`0.9` once the classifier is calibrated. |
-| `TRIAGE_MAX_TOKENS`           | `256`       | Only raise if rationale is being truncated.             |
-| `TRIAGE_TIMEOUT_MS`           | `5000`      | Raise if provider latency is consistently > 5 s.        |
+| Variable                      | Default      | When to change                                          |
+| ----------------------------- | ------------ | ------------------------------------------------------- |
+| `TRIAGE_ENABLED`              | `true`       | Incident kill-switch.                                   |
+| `TRIAGE_MODEL`                | `sonnet-5-5` | Try `haiku-5-5` for lower latency.                      |
+| `TRIAGE_CONFIDENCE_THRESHOLD` | `1.0`        | Relax to `0.8`–`0.9` once the classifier is calibrated. |
+| `TRIAGE_MAX_TOKENS`           | `256`        | Only raise if rationale is being truncated.             |
+| `TRIAGE_TIMEOUT_MS`           | `5000`       | Raise if provider latency is consistently > 5 s.        |
 
 Full schema: [`../configuration.md`](../configuration.md#triage).
 

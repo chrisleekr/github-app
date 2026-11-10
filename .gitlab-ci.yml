@@ -127,7 +127,7 @@ admission-policy:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
   image: oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a
   services:
-    - name: docker:29-dind@sha256:9e79b879b177fbd72c34376a3dd3d91747da5db49e1f560f76aea59561471977
+    - name: docker:29-dind@sha256:d035bd30886e451b2727ef3cdb9af9a5c537a10d4bc5d18c08d0ffa597e46aeb
       alias: docker
   # Runner prerequisite: the executor must mount /certs/client into the build
   # container, `[runners.docker] volumes = ["/certs/client", "/cache"]`. GitLab

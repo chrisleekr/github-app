@@ -26,7 +26,15 @@ const tools: readonly LLMTool[] = [
 ];
 
 interface FakeTurn {
-  readonly content: { type: string; text?: string; id?: string; name?: string; input?: unknown }[];
+  readonly content: {
+    type: string;
+    text?: string;
+    id?: string;
+    name?: string;
+    input?: unknown;
+    thinking?: string;
+    signature?: string;
+  }[];
   readonly stop_reason: string;
   readonly usage?: { input_tokens: number; output_tokens: number };
 }
@@ -124,6 +132,23 @@ describe("parseAnthropicRichResponse", () => {
     expect(r.stopReason).toBe("tool_use");
   });
 
+  it("keeps signed thinking blocks in order and excludes them from text", () => {
+    const r = parseAnthropicRichResponse({
+      content: [
+        { type: "thinking", thinking: "", signature: "sig1" },
+        { type: "tool_use", id: "t1", name: "echo", input: {} },
+        { type: "thinking", thinking: "no sig" },
+        { type: "text", text: "done" },
+      ],
+      model: "m",
+      usage: { input_tokens: 1, output_tokens: 2 },
+      stop_reason: "tool_use",
+    });
+    expect(r.content.map((b) => b.type)).toEqual(["thinking", "tool_use", "text"]);
+    expect(r.content[0]).toEqual({ type: "thinking", thinking: "", signature: "sig1" });
+    expect(r.text).toBe("done");
+  });
+
   it("normalises unknown stop_reason to 'unknown'", () => {
     const r = parseAnthropicRichResponse({
       content: [{ type: "text", text: "" }],
@@ -168,6 +193,27 @@ describe("runWithTools", () => {
     expect(result.toolCallCount).toBe(0);
     expect(result.capExceeded).toBe(false);
     expect(calls).toHaveLength(1);
+  });
+
+  it("echoes thinking blocks back unchanged in the next request", async () => {
+    const thinking = { type: "thinking", thinking: "", signature: "sig1" };
+    const { sdk, calls } = fakeSdk([
+      {
+        content: [thinking, { type: "tool_use", id: "t1", name: "echo", input: { value: "hi" } }],
+        stop_reason: "tool_use",
+      },
+      { content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" },
+    ]);
+    await runWithTools(_createLLMClientForTests("anthropic", sdk), {
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+      maxTokens: 100,
+      tools,
+      onToolCall: okHandler,
+    });
+    const msgs = (calls[1] as { messages: { role: string; content: unknown[] }[] }).messages;
+    expect(msgs[1]?.role).toBe("assistant");
+    expect(msgs[1]?.content[0]).toEqual(thinking);
   });
 
   it("loops once: tool_use → tool_result → end_turn", async () => {

@@ -636,13 +636,13 @@ const configSchema = z
 
     // Model ID for the single-turn triage call via src/ai/llm-client.ts. Affects
     // triage latency/cost only, does NOT change the main agent's model.
-    triageModel: z.string().default("sonnet-4-6"),
+    triageModel: z.string().default("sonnet-5-5"),
 
     // Model ID for the discussion-digest LLM call (src/workflows/discussion-digest.ts).
     // The digest distills the issue/PR comment thread into a guidance summary the
     // structured workflows consume. Sonnet by default: low-hallucination extraction
     // and the reduce-merge precedence logic need the reasoning headroom.
-    digestModel: z.string().default("sonnet-4-6"),
+    digestModel: z.string().default("sonnet-5-5"),
 
     // Strict (1.0) on day 1 so only perfectly confident triage decisions are
     // accepted; below threshold, the scaler falls back to persistent-daemon routing.
@@ -715,11 +715,11 @@ const configSchema = z
     // if Bedrock latency or cost is unacceptable for the deployment.
     llmOutputScannerEnabled: z.boolean().default(true),
 
-    // Model alias for the scanner call. Haiku 4.5 is the latency floor and
+    // Model alias for the scanner call. Haiku 5.5 is the latency floor and
     // what the per-call budget below is sized around. A Sonnet alias detects
     // more obfuscated/encoded variants; raise the timeout with it, because the
     // isolated-runner boundary treats a slow scan as a rejection.
-    llmOutputScannerModel: z.string().default("haiku-4-5"),
+    llmOutputScannerModel: z.string().default("haiku-5-5"),
 
     // Hard cap per scanner call. Fail-open on the GitHub-output path (post the
     // body that survived the regex pass, log a warn); fail-CLOSED on the

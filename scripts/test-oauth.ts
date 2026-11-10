@@ -30,9 +30,9 @@ console.log(`token prefix: ${token.slice(0, 12)}…  length: ${String(token.leng
 const client = new Anthropic({ authToken: token });
 
 const MODELS: readonly { label: string; id: string }[] = [
-  { label: "sonnet-4-6 (alias)", id: "claude-sonnet-4-6" },
+  { label: "sonnet-5-5", id: "claude-sonnet-5-5" },
   { label: "opus-5 (default)", id: "claude-opus-5" },
-  { label: "haiku-4-5 (snapshot)", id: "claude-haiku-4-5-20251001" },
+  { label: "haiku-5-5", id: "claude-haiku-5-5" },
 ];
 
 for (const m of MODELS) {

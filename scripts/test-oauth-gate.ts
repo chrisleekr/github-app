@@ -41,7 +41,7 @@ const ARRAY_CASES: { label: string; req: Anthropic.MessageCreateParamsNonStreami
   {
     label: "G. system as ARRAY: [identifier, callerSystem]",
     req: {
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5-5",
       system: [
         { type: "text", text: ID },
         { type: "text", text: "You are a classifier. Reply with: OK" },
@@ -53,7 +53,7 @@ const ARRAY_CASES: { label: string; req: Anthropic.MessageCreateParamsNonStreami
   {
     label: "H. system=identifier ALONE; caller's system instructions moved into user turn",
     req: {
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5-5",
       system: ID,
       max_tokens: 16,
       messages: [
@@ -72,7 +72,7 @@ for (const c of CASES) {
   );
   try {
     const res = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5-5",
       system: c.system,
       max_tokens: 16,
       messages: [{ role: "user", content: "Reply OK" }],
