@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -2444,9 +2444,9 @@
 <tbody>
 <tr>
 <td><code>@anthropic-ai/sdk</code></td>
-<td><code>0.137.0</code></td>
-<td>Holds the 0.x line. 1.x sends API version <code>2026-10-21</code>, which Bedrock rejects with a 400 for pre-4.7 models such as the default <code>sonnet-4-6</code> and <code>haiku-4-5</code>; <code>@anthropic-ai/bedrock-sdk</code> 1.x forwards that version, while 0.x sends <code>bedrock-2023-05-31</code>. Also keeps a single copy shared by <code>@anthropic-ai/claude-agent-sdk</code> (peer <code>&gt;=0.93.0</code>) and <code>@anthropic-ai/bedrock-sdk</code> 0.x (<code>&gt;=0.115.1 &lt;1</code>). See <a href="https://platform.claude.com/docs/en/build-with-claude/claude-on-amazon-bedrock-legacy">Claude on Amazon Bedrock</a>.</td>
-<td>Every configured Bedrock model accepts <code>2026-10-21</code>; then bump this and <code>@anthropic-ai/bedrock-sdk</code> to 1.x together.</td>
+<td><code>1.5.0</code></td>
+<td>Pins one copy of sdk 1.x shared by <code>@anthropic-ai/claude-agent-sdk</code> (peer <code>&gt;=0.93.0</code>) and <code>@anthropic-ai/bedrock-sdk</code> 1.x (<code>&gt;=1.0.0 &lt;2</code>). It sends API version <code>2026-10-21</code>, which Bedrock accepts only for Claude 4.7 and later, so the Bedrock aliases target 5.5 models. See <a href="https://platform.claude.com/docs/en/api/versioning">API versioning</a>.</td>
+<td>A single copy resolves without it.</td>
 </tr>
 <tr>
 <td><code>adm-zip</code></td>
@@ -3054,7 +3054,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.instant.progress", "navigation.tabs", "navigation.sections", "navigation.top", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.select", "content.code.annotate", "content.action.edit"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>
