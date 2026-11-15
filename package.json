@@ -134,7 +134,7 @@
   },
   "overrides": {
     "@anthropic-ai/sdk": "1.5.0",
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.6",
     "adm-zip": "0.6.1",
     "body-parser": "2.4.0",
     "brace-expansion": "5.0.12",
